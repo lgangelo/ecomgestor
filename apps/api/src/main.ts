@@ -9,7 +9,10 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { AppLoggerService } from './common/logger/app-logger.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // rawBody: true expõe request.rawBody (Buffer) — necessário para verificar a assinatura de
+  // webhook da TikTok Shop, que é calculada sobre os bytes brutos do corpo, nunca sobre o JSON
+  // já parseado (ver apps/api/src/integrations/tiktok/tiktok-webhook.controller.ts).
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
   const configService = app.get(ConfigService);
   const logger = await app.resolve(AppLoggerService);
   logger.setContext('Bootstrap');

@@ -14,6 +14,7 @@ import { MONTHLY_CLOSING_STATUS_PRESENTATION } from '@ecommerce-manager/ui';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { useCloseMonth, useMonthlyClosings } from '@/hooks/use-finance';
 import { DreBreakdown } from './dre-breakdown';
+import { ReopenClosingDialog } from './reopen-closing-dialog';
 
 function currentMonthValue(): string {
   const now = new Date();
@@ -69,7 +70,19 @@ export function MonthlyClosingView() {
                   </span>
                   <StatusBadge status={closing.status} map={MONTHLY_CLOSING_STATUS_PRESENTATION} />
                 </div>
-                <span className="text-sm font-medium">{formatBRL(closing.managementResult)}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium">{formatBRL(closing.managementResult)}</span>
+                  {closing.status === 'CLOSED' && (
+                    <ReopenClosingDialog
+                      closingId={closing.id}
+                      trigger={
+                        <Button variant="outline" size="sm">
+                          Reabrir período
+                        </Button>
+                      }
+                    />
+                  )}
+                </div>
               </button>
               {expanded === closing.id && (
                 <div className="border-t border-border p-4">

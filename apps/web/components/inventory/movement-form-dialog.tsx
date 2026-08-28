@@ -40,6 +40,7 @@ export function MovementFormDialog({
     variantId: variantId ?? '',
     type: 'ADJUSTMENT',
     quantity: '',
+    reason: '',
     note: '',
   });
 
@@ -53,10 +54,11 @@ export function MovementFormDialog({
       variantId: form.variantId,
       type: form.type,
       quantity: Number(form.quantity),
+      reason: form.reason,
       note: form.note || undefined,
     });
     setOpen(false);
-    setForm({ variantId: variantId ?? '', type: 'ADJUSTMENT', quantity: '', note: '' });
+    setForm({ variantId: variantId ?? '', type: 'ADJUSTMENT', quantity: '', reason: '', note: '' });
   }
 
   return (
@@ -107,11 +109,22 @@ export function MovementFormDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="note">Observação</Label>
+            <Label htmlFor="reason">Motivo (obrigatório)</Label>
+            <Input
+              id="reason"
+              required
+              minLength={3}
+              placeholder="Ex: Conferência de estoque encontrou divergência"
+              value={form.reason}
+              onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="note">Observação (opcional)</Label>
             <Textarea id="note" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={createMovement.isPending}>
+            <Button type="submit" disabled={createMovement.isPending || form.reason.trim().length < 3}>
               {createMovement.isPending ? 'Salvando...' : 'Registrar movimentação'}
             </Button>
           </DialogFooter>

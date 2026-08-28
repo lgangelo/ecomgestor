@@ -176,3 +176,83 @@ export function useCreateCostHistory(productId: string, variantId: string) {
     onError: onErrorToast('Não foi possível registrar o custo'),
   });
 }
+
+// -----------------------------------------------------------------------
+// Abas da página de produto (seção 4)
+// -----------------------------------------------------------------------
+
+export interface ProductSummary {
+  productId: string;
+  name: string;
+  status: string;
+  available: number;
+  reserved: number;
+  currentCost: number | null;
+  suggestedPrice: number | null;
+  avgSoldPrice30d: number | null;
+  unitsSold30d: number;
+  revenue30d: number;
+  estimatedProfit30d: number;
+  avgMargin30d: number | null;
+}
+
+export function useProductSummary(productId: string | undefined) {
+  return useQuery({
+    queryKey: ['products', productId, 'summary'],
+    queryFn: () => apiFetch<ProductSummary>(`/products/${productId}/summary`),
+    enabled: Boolean(productId),
+  });
+}
+
+export interface ProductMovement {
+  id: string;
+  variantId: string;
+  variant: { sku: string };
+  type: string;
+  quantity: number;
+  reason: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+export function useProductMovements(productId: string | undefined) {
+  return useQuery({
+    queryKey: ['products', productId, 'movements'],
+    queryFn: () => apiFetch<ProductMovement[]>(`/products/${productId}/movements`),
+    enabled: Boolean(productId),
+  });
+}
+
+export interface ProductCostHistoryEntry {
+  id: string;
+  sku: string | null;
+  cost: string;
+  effectiveDate: string;
+  note: string | null;
+}
+
+export function useProductCostHistory(productId: string | undefined) {
+  return useQuery({
+    queryKey: ['products', productId, 'cost-history'],
+    queryFn: () => apiFetch<ProductCostHistoryEntry[]>(`/products/${productId}/cost-history`),
+    enabled: Boolean(productId),
+  });
+}
+
+export interface ProductChannelMapping {
+  id: string;
+  sku: string | null;
+  channelName: string;
+  channelType: string;
+  externalProductId: string | null;
+  externalSku: string | null;
+  syncStatus: string;
+}
+
+export function useProductChannels(productId: string | undefined) {
+  return useQuery({
+    queryKey: ['products', productId, 'channels'],
+    queryFn: () => apiFetch<ProductChannelMapping[]>(`/products/${productId}/channels`),
+    enabled: Boolean(productId),
+  });
+}

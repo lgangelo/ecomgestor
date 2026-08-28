@@ -49,8 +49,20 @@ export const INVENTORY_MOVEMENT_PRESENTATION: Record<string, StatusPresentation>
 export const INTEGRATION_STATUS_PRESENTATION: Record<string, StatusPresentation> = {
   CONNECTED: { label: 'Conectado', tone: 'success' },
   DISCONNECTED: { label: 'Desconectado', tone: 'muted' },
+  DEGRADED: { label: 'Degradado', tone: 'warning' },
+  AUTH_EXPIRED: { label: 'Autorização expirada', tone: 'danger' },
   ERROR: { label: 'Erro', tone: 'danger' },
   COMING_SOON: { label: 'Em breve', tone: 'muted' },
+};
+
+/** Estados de área individual do painel de saúde da TikTok Shop (seção 8/55 da Fase 3). */
+export const TIKTOK_AREA_STATUS_PRESENTATION: Record<string, StatusPresentation> = {
+  OK: { label: 'OK', tone: 'success' },
+  STALE: { label: 'Sem sincronizar', tone: 'warning' },
+  DEGRADED: { label: 'Degradado', tone: 'danger' },
+  DISCONNECTED: { label: 'Desconectado', tone: 'muted' },
+  AUTH_EXPIRED: { label: 'Autorização expirada', tone: 'danger' },
+  CONFORME_DISPONIBILIDADE: { label: 'Conforme disponibilidade', tone: 'info' },
 };
 
 export const FISCAL_DOCUMENT_STATUS_PRESENTATION: Record<string, StatusPresentation> = {

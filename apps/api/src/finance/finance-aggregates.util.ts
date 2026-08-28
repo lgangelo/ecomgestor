@@ -1,5 +1,7 @@
 import { PrismaService } from '../common/prisma/prisma.service';
 
+export { getCurrentMonthRange, getMonthRangeFromReference } from '../common/date/month-range.util';
+
 export interface FinanceAggregates {
   grossRevenue: number;
   discounts: number;
@@ -20,26 +22,24 @@ function round2(value: number): number {
 }
 
 /**
- * Retorna o primeiro instante (00:00:00.000 UTC) do mês corrente e o primeiro instante
- * do mês seguinte, usado como limite exclusivo do período padrão de fechamento/overview.
+ * Retorna a alíquota estimada vigente na data de referência (seção 29) — nunca hardcoded.
+ * Se a empresa não tiver nenhuma configuração cadastrada, a estimativa é 0 (e o DRE deixa
+ * isso implícito ao mostrar "Impostos estimados: R$ 0,00").
  */
-export function getCurrentMonthRange(reference = new Date()): { start: Date; end: Date } {
-  const start = new Date(Date.UTC(reference.getUTCFullYear(), reference.getUTCMonth(), 1, 0, 0, 0, 0));
-  const end = new Date(Date.UTC(reference.getUTCFullYear(), reference.getUTCMonth() + 1, 1, 0, 0, 0, 0));
-  return { start, end };
-}
-
-/** Converte 'YYYY-MM' no intervalo [primeiro dia do mês, primeiro dia do mês seguinte) em UTC. */
-export function getMonthRangeFromReference(referenceMonth: string): { start: Date; end: Date } {
-  const match = /^(\d{4})-(\d{2})$/.exec(referenceMonth);
-  if (!match) {
-    throw new Error(`referenceMonth inválido: ${referenceMonth}. Formato esperado: YYYY-MM`);
-  }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
-  const end = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
-  return { start, end };
+export async function getVigentTaxRate(
+  prisma: PrismaService,
+  companyId: string,
+  referenceDate: Date,
+): Promise<number> {
+  const config = await prisma.client.taxConfiguration.findFirst({
+    where: {
+      companyId,
+      validFrom: { lte: referenceDate },
+      OR: [{ validTo: null }, { validTo: { gte: referenceDate } }],
+    },
+    orderBy: { validFrom: 'desc' },
+  });
+  return config ? Number(config.estimatedRate) : 0;
 }
 
 /**
@@ -58,7 +58,7 @@ export async function computeFinanceAggregates(
     status: { not: 'CANCELLED' as const },
   };
 
-  const [orderAgg, refundAgg, feeAgg, orderItems, expenses] = await Promise.all([
+  const [orderAgg, refundAgg, feeAgg, orderItems, expenses, taxRate] = await Promise.all([
     prisma.client.order.aggregate({
       where: orderWhere,
       _sum: { total: true, discount: true },
@@ -76,9 +76,10 @@ export async function computeFinanceAggregates(
       select: { quantity: true, unitCost: true },
     }),
     prisma.client.expense.findMany({
-      where: { companyId, date: { gte: start, lt: end } },
+      where: { companyId, date: { gte: start, lt: end }, status: { not: 'CANCELLED' } },
       select: { amount: true, category: { select: { name: true } } },
     }),
+    getVigentTaxRate(prisma, companyId, start),
   ]);
 
   const grossRevenue = Number(orderAgg._sum.total ?? 0);
@@ -90,7 +91,6 @@ export async function computeFinanceAggregates(
 
   let marketing = 0;
   let packaging = 0;
-  let estimatedTaxes = 0;
   let otherExpenses = 0;
 
   for (const expense of expenses) {
@@ -103,7 +103,8 @@ export async function computeFinanceAggregates(
         packaging += amount;
         break;
       case 'Impostos':
-        estimatedTaxes += amount;
+        // Pagamentos reais de imposto não entram na despesa gerencial — o DRE usa a
+        // estimativa configurável (estimatedTaxes) para esta linha, não o valor pago.
         break;
       default:
         otherExpenses += amount;
@@ -113,6 +114,7 @@ export async function computeFinanceAggregates(
 
   const netRevenue = grossRevenue - discounts - returnsAmount;
   const grossProfit = netRevenue - cmv;
+  const estimatedTaxes = netRevenue * taxRate;
   const managementResult = grossProfit - fees - marketing - packaging - otherExpenses - estimatedTaxes;
 
   return {

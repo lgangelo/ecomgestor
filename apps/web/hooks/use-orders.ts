@@ -14,16 +14,21 @@ export interface OrderListItem {
   customerName: string | null;
   total: string;
   status: string;
+  integrationSyncStatus: 'OK' | 'REQUIRES_MAPPING' | 'ERROR';
 }
 
 export interface OrderItemDetail {
   id: string;
-  variantId: string;
+  variantId: string | null;
   sku: string;
   productName: string;
   quantity: number;
   unitPrice: string;
-  discount: string;
+  sellerDiscount: string;
+  platformDiscount: string;
+  shippingRevenue: string;
+  shippingCost: string;
+  marketplaceFee: string;
   unitCost: string;
   lineTotal: number;
 }
@@ -33,6 +38,8 @@ export interface OrderDetail {
   channel: { id: string; name: string; type: string };
   externalOrderId: string | null;
   externalStatus: string | null;
+  integrationSyncStatus: 'OK' | 'REQUIRES_MAPPING' | 'ERROR';
+  integrationIssue: string | null;
   customerName: string | null;
   customerDocument: string | null;
   status: string;

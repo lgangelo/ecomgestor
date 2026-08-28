@@ -7,6 +7,7 @@ networks:
 volumes:
   redis-data:
   traefik-certs:
+  fiscal-xml-storage:
 
 services:
   traefik:
@@ -56,6 +57,8 @@ services:
     # (fora do Docker) via host.docker.internal, como recomendado no Docker >= 20.10 no Linux.
     extra_hosts:
       - 'host.docker.internal:host-gateway'
+    volumes:
+      - fiscal-xml-storage:/data/fiscal-xml
     depends_on:
       redis:
         condition: service_healthy

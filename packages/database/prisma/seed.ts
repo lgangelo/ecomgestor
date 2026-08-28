@@ -12,7 +12,9 @@ import {
   PaymentStatus,
   StockEntryStatus,
   ReturnStatus,
+  ReturnItemCondition,
   RefundStatus,
+  RefundType,
   FiscalDocumentType,
   FiscalDocumentStatus,
   MonthlyClosingStatus,
@@ -477,6 +479,7 @@ async function main() {
   const variantIds = new Map<string, string>(); // sku -> variantId
   const latestCost = new Map<string, number>(); // sku -> latest cost
   const minStockBySku = new Map<string, number>();
+  const productNameBySku = new Map<string, string>();
 
   for (const p of productSeeds) {
     const product = await prisma.product.upsert({
@@ -514,6 +517,7 @@ async function main() {
       });
       variantIds.set(v.sku, variant.id);
       minStockBySku.set(v.sku, v.minStock);
+      productNameBySku.set(v.sku, p.name);
 
       for (const ch of v.costHistory) {
         await prisma.productCostHistory.create({
@@ -548,9 +552,52 @@ async function main() {
     },
   });
 
-  const stock: Record<string, number> = {};
-  function addStock(sku: string, qty: number) {
-    stock[sku] = (stock[sku] ?? 0) + qty;
+  // Estado do ledger acompanhado em memória para que cada InventoryMovement grave o
+  // snapshot de antes/depois corretamente (seção 10) — sem isso não temos como preencher
+  // previousOnHand/newOnHand/previousReserved/newReserved de forma consistente aqui no seed
+  // (que roda fora do NestJS e não tem acesso ao InventoryLedgerService).
+  const onHandBySku: Record<string, number> = {};
+  const reservedBySku: Record<string, number> = {};
+
+  async function recordMovement(params: {
+    sku: string;
+    type: InventoryMovementType;
+    quantity: number;
+    onHandDelta: number;
+    reservedDelta: number;
+    referenceType: string;
+    referenceId: string;
+    reason?: string;
+    note?: string;
+    createdBy?: string | null;
+    createdAt: Date;
+  }) {
+    const variantId = variantIds.get(params.sku)!;
+    const previousOnHand = onHandBySku[params.sku] ?? 0;
+    const previousReserved = reservedBySku[params.sku] ?? 0;
+    const newOnHand = previousOnHand + params.onHandDelta;
+    const newReserved = previousReserved + params.reservedDelta;
+    onHandBySku[params.sku] = newOnHand;
+    reservedBySku[params.sku] = newReserved;
+
+    await prisma.inventoryMovement.create({
+      data: {
+        companyId: company.id,
+        variantId,
+        type: params.type,
+        quantity: params.quantity,
+        previousOnHand,
+        newOnHand,
+        previousReserved,
+        newReserved,
+        referenceType: params.referenceType,
+        referenceId: params.referenceId,
+        reason: params.reason ?? null,
+        note: params.note ?? null,
+        createdBy: params.createdBy ?? null,
+        createdAt: params.createdAt,
+      },
+    });
   }
 
   const entryA = await prisma.stockEntry.create({
@@ -579,19 +626,18 @@ async function main() {
         unitCost: latestCost.get(item.sku) ?? 0,
       },
     });
-    await prisma.inventoryMovement.create({
-      data: {
-        companyId: company.id,
-        variantId,
-        type: InventoryMovementType.PURCHASE,
-        quantity: item.quantity,
-        reference: entryA.invoiceNumber,
-        note: 'Entrada de estoque inicial',
-        createdBy: admin.id,
-        createdAt: daysAgo(50),
-      },
+    await recordMovement({
+      sku: item.sku,
+      type: InventoryMovementType.PURCHASE,
+      quantity: item.quantity,
+      onHandDelta: item.quantity,
+      reservedDelta: 0,
+      referenceType: 'stock_entry',
+      referenceId: entryA.id,
+      note: 'Entrada de estoque inicial',
+      createdBy: admin.id,
+      createdAt: daysAgo(50),
     });
-    addStock(item.sku, item.quantity);
   }
 
   const entryB = await prisma.stockEntry.create({
@@ -624,19 +670,18 @@ async function main() {
         unitCost: latestCost.get(item.sku) ?? 0,
       },
     });
-    await prisma.inventoryMovement.create({
-      data: {
-        companyId: company.id,
-        variantId,
-        type: InventoryMovementType.PURCHASE,
-        quantity: item.quantity,
-        reference: entryB.invoiceNumber,
-        note: 'Entrada de estoque inicial',
-        createdBy: admin.id,
-        createdAt: daysAgo(35),
-      },
+    await recordMovement({
+      sku: item.sku,
+      type: InventoryMovementType.PURCHASE,
+      quantity: item.quantity,
+      onHandDelta: item.quantity,
+      reservedDelta: 0,
+      referenceType: 'stock_entry',
+      referenceId: entryB.id,
+      note: 'Entrada de estoque inicial',
+      createdBy: admin.id,
+      createdAt: daysAgo(35),
     });
-    addStock(item.sku, item.quantity);
   }
 
   // -------------------------------------------------------------------
@@ -759,6 +804,14 @@ async function main() {
   ];
 
   let fiscalCounter = 1001;
+  // Status em que o pedido ainda não teve baixa efetiva — só reserva (mesma regra de
+  // apps/api/src/orders/order-state-machine.ts, replicada aqui pois o seed roda fora do Nest).
+  const PRE_SHIPMENT_STATUSES: OrderStatus[] = [
+    OrderStatus.CREATED,
+    OrderStatus.PAID,
+    OrderStatus.PROCESSING,
+    OrderStatus.READY_TO_SHIP,
+  ];
 
   for (const seed of orderSeeds) {
     const channelId = channels.get(seed.channel)!;
@@ -796,8 +849,10 @@ async function main() {
           create: items.map((i) => ({
             variantId: i.variantId,
             quantity: i.quantity,
+            productNameAtSale: productNameBySku.get(i.sku) ?? i.sku,
+            skuAtSale: i.sku,
             unitPrice: i.unitPrice,
-            discount: i.discount,
+            sellerDiscount: i.discount,
             unitCost: i.unitCost,
           })),
         },
@@ -831,22 +886,23 @@ async function main() {
       });
     }
 
-    // Movimentação de estoque (saída por venda), exceto pedidos cancelados.
+    // Estoque só é baixado de fato a partir do envio; antes disso é apenas reserva
+    // (mesma regra usada pela API — ver order-state-machine.ts). Cancelados não têm efeito.
     if (seed.status !== OrderStatus.CANCELLED) {
+      const preShipment = PRE_SHIPMENT_STATUSES.includes(seed.status);
       for (const it of items) {
-        await prisma.inventoryMovement.create({
-          data: {
-            companyId: company.id,
-            variantId: it.variantId,
-            type: InventoryMovementType.SALE,
-            quantity: -it.quantity,
-            reference: seed.externalOrderId ?? order.id,
-            note: `Venda ${seed.channel}`,
-            createdBy: seed.createdBy ?? null,
-            createdAt: daysAgo(seed.daysAgo),
-          },
+        await recordMovement({
+          sku: it.sku,
+          type: preShipment ? InventoryMovementType.RESERVATION : InventoryMovementType.SALE,
+          quantity: it.quantity,
+          onHandDelta: preShipment ? 0 : -it.quantity,
+          reservedDelta: preShipment ? it.quantity : 0,
+          referenceType: 'order',
+          referenceId: order.id,
+          note: `Venda ${seed.channel}`,
+          createdBy: seed.createdBy ?? null,
+          createdAt: daysAgo(seed.daysAgo),
         });
-        addStock(it.sku, -it.quantity);
       }
     }
 
@@ -903,12 +959,14 @@ async function main() {
           returnId: ret.id,
           orderItemId: firstItem.id,
           quantity: 1,
-          condition: 'Defeituoso',
+          condition: ReturnItemCondition.DAMAGED,
+          restockOnReturn: false,
         },
       });
       await prisma.refund.create({
         data: {
           returnId: ret.id,
+          type: RefundType.FULL,
           amount: firstItem.unitPrice,
           method: 'Estorno no cartão',
           status: RefundStatus.PENDING,
@@ -921,35 +979,29 @@ async function main() {
   // Estoque atual + ajuste/avaria de exemplo
   // -------------------------------------------------------------------
   const adjustSku = 'TAP-BOX-CZ';
-  await prisma.inventoryMovement.create({
-    data: {
-      companyId: company.id,
-      variantId: variantIds.get(adjustSku)!,
-      type: InventoryMovementType.DAMAGE,
-      quantity: -3,
-      note: 'Avaria identificada em conferência de estoque',
-      createdBy: admin.id,
-      createdAt: daysAgo(5),
-    },
+  await recordMovement({
+    sku: adjustSku,
+    type: InventoryMovementType.DAMAGE,
+    quantity: -3,
+    onHandDelta: -3,
+    reservedDelta: 0,
+    referenceType: 'manual_adjustment',
+    referenceId: variantIds.get(adjustSku)!,
+    reason: 'Avaria identificada em conferência de estoque',
+    createdBy: admin.id,
+    createdAt: daysAgo(5),
   });
-  addStock(adjustSku, -3);
 
+  // A reserva de TOA-KIT3-BR já emergiu naturalmente do pedido PROCESSING acima — aqui só
+  // persistimos o saldo final (onHand/reserved) que o ledger acumulou em memória.
   for (const [sku, variantId] of variantIds.entries()) {
-    const available = Math.max(stock[sku] ?? 0, 0);
-    const minStock = minStockBySku.get(sku) ?? 0;
-    // Reserva simulada para dar realismo (pedidos em processamento reservam estoque).
-    const reserved = available > 5 && sku === 'TOA-KIT3-BR' ? 3 : 0;
+    const onHand = Math.max(onHandBySku[sku] ?? 0, 0);
+    const reserved = Math.max(reservedBySku[sku] ?? 0, 0);
     await prisma.inventory.upsert({
       where: { variantId },
-      update: { available: Math.max(available - reserved, 0), reserved },
-      create: {
-        companyId: company.id,
-        variantId,
-        available: Math.max(available - reserved, 0),
-        reserved,
-      },
+      update: { onHand, reserved },
+      create: { companyId: company.id, variantId, onHand, reserved },
     });
-    void minStock;
   }
 
   // -------------------------------------------------------------------
@@ -986,10 +1038,37 @@ async function main() {
         description: e.description,
         amount: e.amount,
         date: daysAgo(e.daysAgo),
+        competenceDate: daysAgo(e.daysAgo),
         paymentMethod: e.method,
       },
     });
   }
+
+  // Despesa recorrente de exemplo (seção 23) — o job de recorrência (ver ExpensesModule)
+  // é quem garante, mês a mês, que exista um lançamento para esta competência.
+  await prisma.recurringExpenseTemplate.create({
+    data: {
+      companyId: company.id,
+      categoryId: expenseCategoryIds.get('Contabilidade')!,
+      description: 'Honorários contábeis - mensalidade',
+      amount: 690,
+      dayOfMonth: 5,
+      paymentMethod: 'Boleto',
+      isActive: true,
+    },
+  });
+
+  // -------------------------------------------------------------------
+  // Alíquota estimada configurável (seção 29) — nunca hardcoded no DRE.
+  // -------------------------------------------------------------------
+  await prisma.taxConfiguration.create({
+    data: {
+      companyId: company.id,
+      taxRegime: 'Simples Nacional',
+      estimatedRate: 0.06,
+      validFrom: utc('2026-01-01'),
+    },
+  });
 
   // -------------------------------------------------------------------
   // Repasse (settlement) de exemplo para o canal TikTok
@@ -1004,7 +1083,7 @@ async function main() {
       periodStart: utc('2026-07-01'),
       periodEnd: utc('2026-07-31'),
       totalAmount: tiktokOrders.reduce((acc, o) => acc + Number(o.total), 0),
-      status: SettlementStatus.CLOSED,
+      status: SettlementStatus.SETTLED,
     },
   });
   for (const o of tiktokOrders) {
@@ -1012,7 +1091,8 @@ async function main() {
       data: {
         settlementId: settlement.id,
         orderId: o.id,
-        type: 'ORDER_PAYOUT',
+        type: 'SETTLEMENT_PAYOUT',
+        rawType: 'payment',
         amount: o.total,
       },
     });

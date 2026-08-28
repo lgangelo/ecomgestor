@@ -17,7 +17,28 @@ export interface ExpenseListItem {
   description: string;
   amount: string;
   date: string;
+  competenceDate: string;
+  status: 'PENDING' | 'PAID' | 'CANCELLED';
+  isRecurring: boolean;
   paymentMethod: string | null;
+}
+
+export interface TaxConfiguration {
+  id: string;
+  taxRegime: string;
+  estimatedRate: string;
+  validFrom: string;
+  validTo: string | null;
+}
+
+export interface RecurringExpenseTemplate {
+  id: string;
+  description: string;
+  amount: string;
+  dayOfMonth: number;
+  isActive: boolean;
+  paymentMethod: string | null;
+  category: { name: string };
 }
 
 export interface FinanceOverview {
@@ -88,8 +109,15 @@ export function useExpenses(filters: { dateFrom?: string; dateTo?: string; categ
 export function useCreateExpense() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { categoryId: string; description: string; amount: number; date: string; paymentMethod?: string }) =>
-      apiFetch<ExpenseListItem>('/finance/expenses', { method: 'POST', body: data }),
+    mutationFn: (data: {
+      categoryId: string;
+      description: string;
+      amount: number;
+      date: string;
+      competenceDate?: string;
+      status?: 'PENDING' | 'PAID' | 'CANCELLED';
+      paymentMethod?: string;
+    }) => apiFetch<ExpenseListItem>('/finance/expenses', { method: 'POST', body: data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['finance-overview'] });
@@ -140,5 +168,71 @@ export function useCloseMonth() {
       toast({ title: 'Mês fechado com sucesso.' });
     },
     onError: onErrorToast('Não foi possível fechar o mês'),
+  });
+}
+
+export function useReopenClosing() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiFetch<MonthlyClosing>(`/finance/monthly-closings/${id}/reopen`, { method: 'POST', body: { reason } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['monthly-closings'] });
+      toast({ title: 'Período reaberto.' });
+    },
+    onError: onErrorToast('Não foi possível reabrir o período'),
+  });
+}
+
+export function useTaxConfigurations() {
+  return useQuery({
+    queryKey: ['tax-configurations'],
+    queryFn: () => apiFetch<TaxConfiguration[]>('/finance/tax-configurations'),
+  });
+}
+
+export function useCreateTaxConfiguration() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { taxRegime: string; estimatedRate: number; validFrom: string; validTo?: string }) =>
+      apiFetch<TaxConfiguration>('/finance/tax-configurations', { method: 'POST', body: data }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tax-configurations'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-overview'] });
+      toast({ title: 'Configuração de imposto criada.' });
+    },
+    onError: onErrorToast('Não foi possível criar a configuração'),
+  });
+}
+
+export function useRecurringExpenses() {
+  return useQuery({
+    queryKey: ['recurring-expenses'],
+    queryFn: () => apiFetch<RecurringExpenseTemplate[]>('/finance/recurring-expenses'),
+  });
+}
+
+export function useCreateRecurringExpense() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { categoryId: string; description: string; amount: number; dayOfMonth: number; paymentMethod?: string }) =>
+      apiFetch<RecurringExpenseTemplate>('/finance/recurring-expenses', { method: 'POST', body: data }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recurring-expenses'] });
+      toast({ title: 'Despesa recorrente criada.' });
+    },
+    onError: onErrorToast('Não foi possível criar a despesa recorrente'),
+  });
+}
+
+export function useSetRecurringExpenseActive() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      apiFetch(`/finance/recurring-expenses/${id}`, { method: 'PATCH', body: { isActive } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recurring-expenses'] });
+    },
+    onError: onErrorToast('Não foi possível atualizar a despesa recorrente'),
   });
 }

@@ -1,14 +1,18 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { InventoryMovementType, Prisma } from '@ecommerce-manager/database';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
 import { QueryInventoryDto } from './dto/query-inventory.dto';
 import { QueryMovementsDto } from './dto/query-movements.dto';
 import { CreateMovementDto } from './dto/create-movement.dto';
+import { InventoryLedgerService } from './ledger.service';
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ledger: InventoryLedgerService,
+  ) {}
 
   async findAll(companyId: string, query: QueryInventoryDto) {
     const where: Prisma.InventoryWhereInput = {
@@ -45,16 +49,18 @@ export class InventoryService {
 
     let items = rows.map((row) => {
       const latestCost = row.variant.costHistory[0]?.cost ?? null;
-      const belowMinimum = row.available < row.variant.minStock;
+      const available = row.onHand - row.reserved;
+      const belowMinimum = available < row.variant.minStock;
       return {
         variantId: row.variantId,
         sku: row.variant.sku,
         productName: row.variant.product.name,
-        available: row.available,
+        onHand: row.onHand,
+        available,
         reserved: row.reserved,
         minStock: row.variant.minStock,
         belowMinimum,
-        estimatedValue: latestCost ? Number(latestCost) * row.available : 0,
+        estimatedValue: latestCost ? Number(latestCost) * row.onHand : 0,
       };
     });
 
@@ -83,10 +89,11 @@ export class InventoryService {
     let belowMinimumCount = 0;
 
     for (const row of rows) {
-      totalUnits += row.available;
+      totalUnits += row.onHand;
       const latestCost = row.variant.costHistory[0]?.cost;
-      if (latestCost) estimatedValue += Number(latestCost) * row.available;
-      if (row.available < row.variant.minStock) belowMinimumCount += 1;
+      if (latestCost) estimatedValue += Number(latestCost) * row.onHand;
+      const available = row.onHand - row.reserved;
+      if (available < row.variant.minStock) belowMinimumCount += 1;
     }
 
     return {
@@ -130,7 +137,13 @@ export class InventoryService {
       productName: row.variant.product.name,
       type: row.type,
       quantity: row.quantity,
-      reference: row.reference,
+      previousOnHand: row.previousOnHand,
+      newOnHand: row.newOnHand,
+      previousReserved: row.previousReserved,
+      newReserved: row.newReserved,
+      referenceType: row.referenceType,
+      referenceId: row.referenceId,
+      reason: row.reason,
       note: row.note,
       createdAt: row.createdAt,
       createdBy: row.createdBy,
@@ -140,83 +153,35 @@ export class InventoryService {
   }
 
   async createMovement(companyId: string, userId: string, dto: CreateMovementDto) {
-    return this.prisma.client.$transaction(async (tx) => {
-      const inventory = await tx.inventory.findFirst({
-        where: { variantId: dto.variantId, companyId },
-      });
-      if (!inventory) {
-        throw new NotFoundException('Estoque da variante não encontrado');
-      }
+    const variant = await this.prisma.client.productVariant.findFirst({
+      where: { id: dto.variantId, product: { companyId } },
+    });
+    if (!variant) {
+      throw new NotFoundException('Variante não encontrada');
+    }
 
-      let availableDelta = 0;
-      let reservedDelta = 0;
-      let storedQuantity = dto.quantity;
+    return this.prisma.client.$transaction(async (tx) => {
+      const ctx = {
+        companyId,
+        variantId: dto.variantId,
+        referenceType: 'manual_adjustment',
+        referenceId: dto.variantId,
+        userId,
+        reason: dto.reason,
+        note: dto.note,
+      };
 
       switch (dto.type) {
-        case 'ADJUSTMENT': {
-          availableDelta = dto.quantity;
-          break;
-        }
+        case 'ADJUSTMENT':
+          return this.ledger.adjust(tx, ctx, dto.quantity);
         case 'DAMAGE':
-        case 'LOSS': {
-          if (dto.quantity <= 0) {
-            throw new BadRequestException('quantity deve ser positivo para este tipo de movimentação');
-          }
-          if (inventory.available - dto.quantity < 0) {
-            throw new BadRequestException('Quantidade disponível insuficiente para esta baixa');
-          }
-          availableDelta = -dto.quantity;
-          storedQuantity = -dto.quantity;
-          break;
-        }
-        case 'RESERVATION': {
-          if (dto.quantity <= 0) {
-            throw new BadRequestException('quantity deve ser positivo para este tipo de movimentação');
-          }
-          if (inventory.available - dto.quantity < 0) {
-            throw new BadRequestException('Quantidade disponível insuficiente para reservar');
-          }
-          availableDelta = -dto.quantity;
-          reservedDelta = dto.quantity;
-          break;
-        }
-        case 'RELEASE': {
-          if (dto.quantity <= 0) {
-            throw new BadRequestException('quantity deve ser positivo para este tipo de movimentação');
-          }
-          if (inventory.reserved - dto.quantity < 0) {
-            throw new BadRequestException('Quantidade reservada insuficiente para liberar');
-          }
-          availableDelta = dto.quantity;
-          reservedDelta = -dto.quantity;
-          break;
-        }
+        case 'LOSS':
+          return this.ledger.writeOff(tx, ctx, dto.quantity, dto.type);
+        case 'RESERVATION':
+          return this.ledger.reserve(tx, ctx, dto.quantity);
+        case 'RELEASE':
+          return this.ledger.release(tx, ctx, dto.quantity);
       }
-
-      if (inventory.available + availableDelta < 0) {
-        throw new BadRequestException('Esta movimentação deixaria o estoque disponível negativo');
-      }
-
-      const updatedInventory = await tx.inventory.update({
-        where: { variantId: dto.variantId },
-        data: {
-          available: inventory.available + availableDelta,
-          reserved: inventory.reserved + reservedDelta,
-        },
-      });
-
-      const movement = await tx.inventoryMovement.create({
-        data: {
-          companyId,
-          variantId: dto.variantId,
-          type: dto.type as InventoryMovementType,
-          quantity: storedQuantity,
-          note: dto.note ?? null,
-          createdBy: userId,
-        },
-      });
-
-      return { movement, inventory: updatedInventory };
     });
   }
 }

@@ -27,6 +27,7 @@ import { FinanceModule } from './finance/finance.module';
 import { FiscalModule } from './fiscal/fiscal.module';
 import { ReportsModule } from './reports/reports.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { TikTokModule } from './integrations/tiktok/tiktok.module';
 import { CompanyModule } from './company/company.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
@@ -53,6 +54,7 @@ import { RolesModule } from './roles/roles.module';
     FiscalModule,
     ReportsModule,
     IntegrationsModule,
+    TikTokModule,
     CompanyModule,
     UsersModule,
     RolesModule,

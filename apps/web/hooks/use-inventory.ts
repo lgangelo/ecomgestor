@@ -10,6 +10,7 @@ export interface InventoryRow {
   variantId: string;
   sku: string;
   productName: string;
+  onHand: number;
   available: number;
   reserved: number;
   minStock: number;
@@ -31,7 +32,13 @@ export interface InventoryMovement {
   productName: string;
   type: string;
   quantity: number;
-  reference: string | null;
+  previousOnHand: number;
+  newOnHand: number;
+  previousReserved: number;
+  newReserved: number;
+  referenceType: string | null;
+  referenceId: string | null;
+  reason: string | null;
   note: string | null;
   createdAt: string;
   createdBy: string | null;
@@ -70,7 +77,7 @@ export function useInventoryMovements(filters: {
 export function useCreateMovement() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { variantId: string; type: string; quantity: number; note?: string }) =>
+    mutationFn: (data: { variantId: string; type: string; quantity: number; reason: string; note?: string }) =>
       apiFetch('/inventory/movements', { method: 'POST', body: data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });

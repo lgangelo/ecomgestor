@@ -98,6 +98,7 @@ export function InventoryView() {
             <TableRow>
               <TableHead>Produto</TableHead>
               <TableHead>SKU</TableHead>
+              <TableHead>Estoque físico</TableHead>
               <TableHead>Disponível</TableHead>
               <TableHead>Reservado</TableHead>
               <TableHead>Estoque mínimo</TableHead>
@@ -110,6 +111,7 @@ export function InventoryView() {
               <TableRow key={row.variantId}>
                 <TableCell className="font-medium">{row.productName}</TableCell>
                 <TableCell>{row.sku}</TableCell>
+                <TableCell>{row.onHand}</TableCell>
                 <TableCell>
                   {row.available}
                   {row.belowMinimum && (

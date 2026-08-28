@@ -4,10 +4,15 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
 import { CreateStockEntryDto } from './dto/create-stock-entry.dto';
 import { QueryStockEntriesDto } from './dto/query-stock-entries.dto';
+import { InventoryLedgerService } from './ledger.service';
+import { allocateCosts } from './cost-allocation.util';
 
 @Injectable()
 export class StockEntriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ledger: InventoryLedgerService,
+  ) {}
 
   async findAll(companyId: string, query: QueryStockEntriesDto) {
     const where: Prisma.StockEntryWhereInput = {
@@ -53,6 +58,9 @@ export class StockEntriesService {
       entryDate: entry.entryDate,
       invoiceNumber: entry.invoiceNumber,
       notes: entry.notes,
+      shippingCost: entry.shippingCost,
+      otherCosts: entry.otherCosts,
+      allocationMethod: entry.allocationMethod,
       status: entry.status,
       supplier: entry.supplier,
       items: entry.items.map((item) => ({
@@ -62,12 +70,23 @@ export class StockEntriesService {
         productName: item.variant.product.name,
         quantity: item.quantity,
         unitCost: item.unitCost,
+        effectiveUnitCost: item.effectiveUnitCost,
       })),
     };
   }
 
   async create(companyId: string, userId: string, dto: CreateStockEntryDto) {
     const status = dto.status ?? 'DRAFT';
+    const allocationMethod = dto.allocationMethod ?? 'BY_VALUE';
+    const shippingCost = dto.shippingCost ?? 0;
+    const otherCosts = dto.otherCosts ?? 0;
+
+    const allocations = allocateCosts(
+      dto.items.map((item) => ({ variantId: item.variantId, quantity: item.quantity, unitCost: item.unitCost })),
+      shippingCost + otherCosts,
+      allocationMethod,
+    );
+    const effectiveCostByVariant = new Map(allocations.map((a) => [a.variantId, a.effectiveUnitCost]));
 
     const entryId = await this.prisma.client.$transaction(async (tx) => {
       const created = await tx.stockEntry.create({
@@ -77,12 +96,16 @@ export class StockEntriesService {
           entryDate: new Date(dto.entryDate),
           invoiceNumber: dto.invoiceNumber ?? null,
           notes: dto.notes ?? null,
+          shippingCost,
+          otherCosts,
+          allocationMethod,
           status: 'DRAFT',
           items: {
             create: dto.items.map((item) => ({
               variantId: item.variantId,
               quantity: item.quantity,
               unitCost: item.unitCost,
+              effectiveUnitCost: effectiveCostByVariant.get(item.variantId) ?? item.unitCost,
             })),
           },
         },
@@ -121,40 +144,34 @@ export class StockEntriesService {
     companyId: string,
     userId: string,
     stockEntryId: string,
-    items: Array<{ variantId: string; quantity: number; unitCost: Prisma.Decimal }>,
+    items: Array<{ variantId: string; quantity: number; unitCost: Prisma.Decimal; effectiveUnitCost: Prisma.Decimal | null }>,
   ) {
     const entry = await tx.stockEntry.findFirstOrThrow({ where: { id: stockEntryId } });
 
     for (const item of items) {
-      await tx.inventoryMovement.create({
-        data: {
+      await this.ledger.purchase(
+        tx,
+        {
           companyId,
           variantId: item.variantId,
-          type: 'PURCHASE',
-          quantity: item.quantity,
-          reference: entry.invoiceNumber ?? stockEntryId,
-          note: 'Confirmação de entrada de estoque',
-          createdBy: userId,
+          referenceType: 'stock_entry',
+          referenceId: stockEntryId,
+          userId,
+          note: entry.invoiceNumber ? `Confirmação de entrada — NF ${entry.invoiceNumber}` : 'Confirmação de entrada de estoque',
         },
-      });
+        item.quantity,
+      );
 
-      await tx.inventory.upsert({
-        where: { variantId: item.variantId },
-        update: { available: { increment: item.quantity } },
-        create: {
-          companyId,
-          variantId: item.variantId,
-          available: item.quantity,
-          reserved: 0,
-        },
-      });
-
+      const cost = item.effectiveUnitCost ?? item.unitCost;
       await tx.productCostHistory.create({
         data: {
           variantId: item.variantId,
-          cost: item.unitCost,
+          cost,
           effectiveDate: entry.entryDate,
-          note: 'Custo registrado a partir de entrada de estoque',
+          note:
+            item.effectiveUnitCost && Number(item.effectiveUnitCost) !== Number(item.unitCost)
+              ? `Custo com rateio de frete/despesas (entrada de estoque). Custo bruto: ${item.unitCost}`
+              : 'Custo registrado a partir de entrada de estoque',
         },
       });
     }

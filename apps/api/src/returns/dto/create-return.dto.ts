@@ -1,7 +1,10 @@
+import { ReturnItemCondition } from '@ecommerce-manager/database';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -20,8 +23,13 @@ export class ReturnItemDto {
   quantity!: number;
 
   @IsOptional()
-  @IsString()
-  condition?: string;
+  @IsEnum(ReturnItemCondition)
+  condition?: ReturnItemCondition;
+
+  // Decisão explícita — nunca inferida automaticamente (seção 18).
+  @IsOptional()
+  @IsBoolean()
+  restockOnReturn?: boolean;
 }
 
 export class CreateReturnDto {

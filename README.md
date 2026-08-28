@@ -1,9 +1,28 @@
 # E-commerce Manager
 
 Centro de controle de vendas, produtos, estoque, custos, lucratividade e documentos fiscais para uma
-operação de e-commerce. Esta é a **primeira etapa** do produto: fundação técnica, autenticação, RBAC,
-layout, navegação e todas as telas principais funcionando com dados de seed — **sem** integração real
-com TikTok Shop, Shopee ou Mercado Livre (isso fica para uma etapa futura).
+operação de e-commerce, com integração real via OAuth com a **TikTok Shop** (Shopee e Mercado Livre
+continuam "Em breve" — sem integração real).
+
+Este projeto passou por três fases:
+
+- **Fase 1 (fundação):** monorepo, autenticação, RBAC, layout, navegação e telas principais com dados
+  de seed.
+- **Fase 2 (maturidade operacional):** estoque com saldo físico/reservado/disponível e ledger completo
+  com escrita atômica (segura contra concorrência), rateio de custo na entrada, máquina de estados do
+  pedido, snapshot de venda, cancelamento/devolução/reembolso completos, financeiro centralizado no
+  backend com imposto estimado configurável e despesas recorrentes, upload real de XML fiscal com
+  exportação em lote, e mais. Detalhes completos da revisão e do que ficou para uma próxima iteração
+  em **`docs/phase2-review.md`**.
+- **Fase 3 (integração TikTok Shop):** OAuth real (state de uso único protegido contra replay,
+  credenciais criptografadas em repouso, refresh automático com lock distribuído), conector tipado
+  (`packages/integrations/src/tiktok`) que nunca vaza payload bruto da TikTok para o domínio interno,
+  importação incremental de pedidos/produtos com janela de sobreposição, webhook com verificação de
+  assinatura + idempotência + reconciliação periódica como rede de segurança, comparação/envio manual
+  de estoque (nunca automático por padrão), financeiro/settlement, devoluções sincronizadas, fila
+  nomeada `integration` com retry classificado por categoria de erro e tela de falhas. Pesquisa oficial,
+  decisões e o que ficou de fora em **`docs/integrations/tiktok.md`** e
+  **`docs/integrations/tiktok-data-mapping.md`**.
 
 ## Stack
 
@@ -164,8 +183,12 @@ Estado atual verificado nesta etapa:
 - ✅ `npm run build` de `database`, `shared`, `shared-server`, `integrations`, `ui`, `api` e `web` —
   zero erros de TypeScript.
 - ✅ `npx eslint` em `apps/api/src/**` e `apps/web/**` — zero erros/avisos.
-- ✅ Testes unitários da API (`sanitizeForLog`, `PermissionsGuard`) e testes e2e da cadeia de guards
-  (JWT + permissões + CSRF + rotas públicas) — todos passando.
+- ✅ Testes unitários da API — 52 testes (guards de permissão, sanitização de logs, rateio de custo,
+  máquina de estados do pedido, ledger de estoque sob concorrência simulada, extração de XML fiscal,
+  assinatura de API/webhook da TikTok Shop, mapper de status/financeiro, política de retry por
+  categoria de erro, importação/reconciliação/reprocessamento de pedidos externos incl. SKU sem
+  vínculo e atualização fora de ordem) — e 7 testes e2e da cadeia de guards (JWT + permissões + CSRF +
+  rotas públicas) — todos passando.
 - ✅ `prisma validate` / `prisma generate` — schema válido.
 - ⏳ `prisma migrate dev` / `prisma db seed` contra um Postgres real — **pendente**, depende de um
   ambiente com PostgreSQL acessível (ver aviso na seção "Primeiros passos").
@@ -182,7 +205,8 @@ Produtos     → Produtos · Categorias · Estoque · Entradas · Movimentaçõe
 Financeiro   → Visão geral · Receitas · Despesas · Taxas · Fechamento mensal
 Fiscal       → Documentos fiscais · Exportação de XML
 Relatórios
-Integrações  → TikTok Shop (estrutura visual, sem chamadas reais) · Shopee (Em breve) · Mercado Livre (Em breve)
+Integrações  → TikTok Shop (OAuth real: produtos, pedidos, estoque, financeiro, devoluções, falhas) ·
+               Shopee (Em breve) · Mercado Livre (Em breve)
 Configurações → Empresa · Usuários · Permissões · Auditoria
 ```
 

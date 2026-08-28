@@ -9,9 +9,11 @@ import { TableSkeleton } from '@/components/shared/table-skeleton';
 import { PaginationBar } from '@/components/shared/pagination-bar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { Button } from '@/components/ui/button';
 import { RETURN_STATUS_PRESENTATION } from '@ecommerce-manager/ui';
 import { formatDate } from '@/lib/format';
 import { useReturns } from '@/hooks/use-returns';
+import { RegisterRefundDialog } from './register-refund-dialog';
 
 export function ReturnsView() {
   const [page, setPage] = React.useState(1);
@@ -37,6 +39,7 @@ export function ReturnsView() {
               <TableHead>Cliente</TableHead>
               <TableHead>Motivo</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -53,6 +56,16 @@ export function ReturnsView() {
                 <TableCell className="max-w-xs truncate">{ret.reason ?? '—'}</TableCell>
                 <TableCell>
                   <StatusBadge status={ret.status} map={RETURN_STATUS_PRESENTATION} />
+                </TableCell>
+                <TableCell>
+                  <RegisterRefundDialog
+                    returnId={ret.id}
+                    trigger={
+                      <Button variant="ghost" size="sm">
+                        Reembolso
+                      </Button>
+                    }
+                  />
                 </TableCell>
               </TableRow>
             ))}

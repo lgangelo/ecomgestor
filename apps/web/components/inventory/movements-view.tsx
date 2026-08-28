@@ -105,6 +105,7 @@ export function MovementsView() {
               <TableHead>SKU</TableHead>
               <TableHead>Tipo</TableHead>
               <TableHead>Quantidade</TableHead>
+              <TableHead>Motivo</TableHead>
               <TableHead>Referência</TableHead>
               <TableHead>Observação</TableHead>
             </TableRow>
@@ -121,7 +122,10 @@ export function MovementsView() {
                 <TableCell className={movement.quantity < 0 ? 'text-destructive' : 'text-success'}>
                   {movement.quantity > 0 ? `+${movement.quantity}` : movement.quantity}
                 </TableCell>
-                <TableCell>{movement.reference ?? '—'}</TableCell>
+                <TableCell className="max-w-xs truncate">{movement.reason ?? '—'}</TableCell>
+                <TableCell>
+                  {movement.referenceType ? `${movement.referenceType} · ${movement.referenceId?.slice(0, 8) ?? ''}` : '—'}
+                </TableCell>
                 <TableCell className="max-w-xs truncate">{movement.note ?? '—'}</TableCell>
               </TableRow>
             ))}

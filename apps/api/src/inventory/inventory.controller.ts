@@ -37,19 +37,15 @@ export class InventoryController {
   @Post('movements')
   @RequirePermissions(PERMISSIONS.INVENTORY_ADJUST)
   async createMovement(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateMovementDto) {
-    const { movement, inventory } = await this.inventoryService.createMovement(
-      user.companyId,
-      user.userId,
-      dto,
-    );
+    const result = await this.inventoryService.createMovement(user.companyId, user.userId, dto);
     await this.auditService.log({
       companyId: user.companyId,
       userId: user.userId,
       action: 'ADJUST',
       entity: 'inventory',
-      entityId: inventory.variantId,
-      newValue: { movement, inventory },
+      entityId: dto.variantId,
+      newValue: result,
     });
-    return { movement, inventory };
+    return result;
   }
 }

@@ -24,6 +24,19 @@ export const PERMISSIONS = {
   INTEGRATION_READ: 'integration.read',
   INTEGRATION_MANAGE: 'integration.manage',
 
+  // Granulares da integração TikTok Shop (seção 52 da Fase 3) — mais finas que
+  // INTEGRATION_MANAGE porque conectar/reconectar uma loja, disparar sincronização e enviar
+  // estoque para o marketplace têm níveis de risco bem diferentes entre si.
+  INTEGRATION_TIKTOK_READ: 'integration.tiktok.read',
+  INTEGRATION_TIKTOK_CONNECT: 'integration.tiktok.connect',
+  INTEGRATION_TIKTOK_SYNC: 'integration.tiktok.sync',
+
+  INTEGRATION_INVENTORY_COMPARE: 'integration.inventory.compare',
+  INTEGRATION_INVENTORY_PUSH: 'integration.inventory.push',
+
+  INTEGRATION_JOBS_READ: 'integration.jobs.read',
+  INTEGRATION_JOBS_RETRY: 'integration.jobs.retry',
+
   REPORT_READ: 'report.read',
 
   SETTINGS_MANAGE: 'settings.manage',
@@ -58,6 +71,13 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleName, PermissionKey[]> = {
     PERMISSIONS.FISCAL_READ,
     PERMISSIONS.FISCAL_EXPORT,
     PERMISSIONS.INTEGRATION_READ,
+    PERMISSIONS.INTEGRATION_TIKTOK_READ,
+    PERMISSIONS.INTEGRATION_TIKTOK_CONNECT,
+    PERMISSIONS.INTEGRATION_TIKTOK_SYNC,
+    PERMISSIONS.INTEGRATION_INVENTORY_COMPARE,
+    PERMISSIONS.INTEGRATION_INVENTORY_PUSH,
+    PERMISSIONS.INTEGRATION_JOBS_READ,
+    PERMISSIONS.INTEGRATION_JOBS_RETRY,
     PERMISSIONS.REPORT_READ,
     PERMISSIONS.AUDIT_READ,
   ],
@@ -72,6 +92,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleName, PermissionKey[]> = {
     PERMISSIONS.INVENTORY_ADJUST,
     PERMISSIONS.FISCAL_READ,
     PERMISSIONS.REPORT_READ,
+    PERMISSIONS.INTEGRATION_TIKTOK_READ,
+    PERMISSIONS.INTEGRATION_INVENTORY_COMPARE,
+    PERMISSIONS.INTEGRATION_JOBS_READ,
   ],
   VIEWER: [
     PERMISSIONS.PRODUCT_READ,
@@ -80,6 +103,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleName, PermissionKey[]> = {
     PERMISSIONS.FINANCE_READ,
     PERMISSIONS.FISCAL_READ,
     PERMISSIONS.INTEGRATION_READ,
+    PERMISSIONS.INTEGRATION_TIKTOK_READ,
     PERMISSIONS.REPORT_READ,
   ],
 };

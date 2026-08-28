@@ -1,25 +1,22 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Package, RefreshCw, ShoppingBag, Wallet, Warehouse } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { INTEGRATION_STATUS_PRESENTATION } from '@ecommerce-manager/ui';
-import { formatDate } from '@/lib/format';
-import { useIntegration, useIntegrationAction } from '@/hooks/use-integrations';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useTikTokStatus } from '@/hooks/use-tiktok';
+import { TikTokOverviewTab } from './tiktok/tiktok-overview-tab';
+import { TikTokProductsTab } from './tiktok/tiktok-products-tab';
+import { TikTokOrdersTab } from './tiktok/tiktok-orders-tab';
+import { TikTokInventoryTab } from './tiktok/tiktok-inventory-tab';
+import { TikTokFinanceTab } from './tiktok/tiktok-finance-tab';
+import { TikTokFiscalTab } from './tiktok/tiktok-fiscal-tab';
+import { TikTokFailuresTab } from './tiktok/tiktok-failures-tab';
+import { TikTokSettingsTab } from './tiktok/tiktok-settings-tab';
 
 export function TikTokIntegrationView() {
-  const { data, isLoading } = useIntegration('TIKTOK_SHOP');
-  const action = useIntegrationAction('TIKTOK_SHOP');
-
-  if (isLoading || !data) {
-    return <Skeleton className="h-96" />;
-  }
-
-  const connected = data.status === 'CONNECTED';
+  const { data: status, isLoading } = useTikTokStatus();
 
   return (
     <div>
@@ -30,88 +27,55 @@ export function TikTokIntegrationView() {
         <ArrowLeft className="h-4 w-4" /> Voltar para integrações
       </Link>
 
-      <PageHeader
-        title="TikTok Shop"
-        description="Conecte sua loja para sincronizar pedidos, produtos, financeiro e estoque."
-        actions={
-          <div className="flex gap-2">
-            {connected ? (
-              <>
-                <Button variant="outline" onClick={() => action.mutate('sync')} disabled={action.isPending}>
-                  <RefreshCw className="h-4 w-4" />
-                  Sincronizar agora
-                </Button>
-                <Button variant="outline" onClick={() => action.mutate('reconnect')} disabled={action.isPending}>
-                  Reconectar
-                </Button>
-                <Button variant="destructive" onClick={() => action.mutate('disconnect')} disabled={action.isPending}>
-                  Desconectar
-                </Button>
-              </>
-            ) : (
-              <Button onClick={() => action.mutate('connect')} disabled={action.isPending}>
-                Conectar
-              </Button>
-            )}
-          </div>
-        }
-      />
+      <PageHeader title="TikTok Shop" description="Integração real via OAuth — pedidos, produtos, estoque, financeiro e devoluções." />
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Status</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <StatusBadge status={data.status} map={INTEGRATION_STATUS_PRESENTATION} />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Loja</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0 text-sm font-medium">{data.storeName ?? 'Não conectada'}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle>Última sincronização</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0 text-sm font-medium">
-            {data.lastSyncAt ? formatDate(data.lastSyncAt, true) : 'Nunca sincronizado'}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle>Pedidos</CardTitle>
-            <ShoppingBag className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="pt-0 text-2xl font-semibold">{data.ordersCount}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle>Produtos</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="pt-0 text-2xl font-semibold">{data.productsMappedCount}</CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle>Financeiro</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="pt-0 text-sm text-muted-foreground">Não implementado nesta etapa</CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle>Estoque</CardTitle>
-            <Warehouse className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="pt-0 text-sm text-muted-foreground">Não implementado nesta etapa</CardContent>
-        </Card>
-      </div>
+      {isLoading || !status ? (
+        <Skeleton className="h-96" />
+      ) : !status.configured ? (
+        <div className="rounded-lg border border-dashed border-border px-6 py-16 text-center">
+          <p className="text-sm font-medium">TikTok Shop não configurado</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Configure <code>TIKTOK_APP_KEY</code> e <code>TIKTOK_APP_SECRET</code> para conectar sua loja.
+          </p>
+        </div>
+      ) : (
+        <Tabs defaultValue="visao-geral">
+          <TabsList className="flex-wrap">
+            <TabsTrigger value="visao-geral">Visão geral</TabsTrigger>
+            <TabsTrigger value="produtos">Produtos</TabsTrigger>
+            <TabsTrigger value="pedidos">Pedidos</TabsTrigger>
+            <TabsTrigger value="estoque">Estoque</TabsTrigger>
+            <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
+            <TabsTrigger value="fiscal">Fiscal</TabsTrigger>
+            <TabsTrigger value="falhas">Falhas</TabsTrigger>
+            <TabsTrigger value="configuracoes">Configurações</TabsTrigger>
+          </TabsList>
+          <TabsContent value="visao-geral">
+            <TikTokOverviewTab status={status} />
+          </TabsContent>
+          <TabsContent value="produtos">
+            <TikTokProductsTab />
+          </TabsContent>
+          <TabsContent value="pedidos">
+            <TikTokOrdersTab channelId={status.channelId} />
+          </TabsContent>
+          <TabsContent value="estoque">
+            <TikTokInventoryTab />
+          </TabsContent>
+          <TabsContent value="financeiro">
+            <TikTokFinanceTab status={status} />
+          </TabsContent>
+          <TabsContent value="fiscal">
+            <TikTokFiscalTab />
+          </TabsContent>
+          <TabsContent value="falhas">
+            <TikTokFailuresTab />
+          </TabsContent>
+          <TabsContent value="configuracoes">
+            <TikTokSettingsTab status={status} />
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 }

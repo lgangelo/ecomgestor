@@ -25,41 +25,59 @@ model Company {
   legalName String?  @map("legal_name")
   cnpj      String?  @unique
   timezone  String   @default("America/Sao_Paulo")
+  // Fase 4, seção 65 — configurações gerenciais simples da empresa.
+  currency            String  @default("BRL")
+  // Permite estoque físico negativo no ledger. Default false = comportamento atual
+  // (InventoryLedgerService sempre rejeita onHand negativo); habilitar esta flag é um campo
+  // de configuração exposto na tela de Configurações, mas NÃO é lido pelo ledger nesta fase —
+  // mudar a validação de um componente crítico e já testado (concorrência, seção 56 da Fase 2)
+  // por uma opção que, por padrão, é idêntica ao comportamento atual, ficou fora de escopo desta
+  // passagem. Documentado como limitação consciente em docs/phase4-review.md.
+  allowNegativeStock  Boolean @default(false) @map("allow_negative_stock")
+  // "Estoque parado" (seção 33) — SKU com estoque > 0 e sem venda há N dias.
+  slowMovingDays      Int     @default(60) @map("slow_moving_days")
+  // Cobertura (em dias de venda média) abaixo da qual um SKU vira sugestão de reposição (seção 36).
+  restockCoverageDays Int     @default(14) @map("restock_coverage_days")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  users                  User[]
-  salesChannels          SalesChannel[]
-  integrations           Integration[]
-  products               Product[]
-  categories             Category[]
-  suppliers              Supplier[]
-  stockEntries           StockEntry[]
-  inventories            Inventory[]
-  inventoryMovements     InventoryMovement[]
-  orders                 Order[]
-  expenseCategories      ExpenseCategory[]
-  expenses               Expense[]
-  fiscalDocuments        FiscalDocument[]
-  monthlyClosings        MonthlyClosing[]
-  auditLogs              AuditLog[]
-  settlements            Settlement[]
+  users              User[]
+  salesChannels      SalesChannel[]
+  integrations       Integration[]
+  products           Product[]
+  categories         Category[]
+  suppliers          Supplier[]
+  stockEntries       StockEntry[]
+  inventories        Inventory[]
+  inventoryMovements InventoryMovement[]
+  inventoryCounts    InventoryCount[]
+  orders             Order[]
+  expenseCategories  ExpenseCategory[]
+  expenses           Expense[]
+  recurringExpenses  RecurringExpenseTemplate[]
+  taxConfigurations  TaxConfiguration[]
+  fiscalDocuments    FiscalDocument[]
+  monthlyClosings    MonthlyClosing[]
+  auditLogs          AuditLog[]
+  settlements        Settlement[]
+  notifications      Notification[]
+  stockSyncOutbox    StockSyncOutboxEntry[]
 
   @@map("companies")
 }
 
 model User {
-  id           String    @id @default(uuid())
-  companyId    String    @map("company_id")
-  name         String
-  email        String    @unique
-  passwordHash String    @map("password_hash")
-  isActive     Boolean   @default(true) @map("is_active")
-  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz
-  failedLoginAttempts Int @default(0) @map("failed_login_attempts")
-  lockedUntil  DateTime? @map("locked_until") @db.Timestamptz
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  id                  String    @id @default(uuid())
+  companyId           String    @map("company_id")
+  name                String
+  email               String    @unique
+  passwordHash        String    @map("password_hash")
+  isActive            Boolean   @default(true) @map("is_active")
+  lastLoginAt         DateTime? @map("last_login_at") @db.Timestamptz
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until") @db.Timestamptz
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz
 
   company       Company        @relation(fields: [companyId], references: [id])
   userRoles     UserRole[]
@@ -71,14 +89,14 @@ model User {
 }
 
 model RefreshToken {
-  id         String    @id @default(uuid())
-  userId     String    @map("user_id")
-  tokenHash  String    @unique @map("token_hash")
-  userAgent  String?   @map("user_agent")
-  ip         String?
-  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
-  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  userAgent String?   @map("user_agent")
+  ip        String?
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -160,12 +178,13 @@ model SalesChannel {
   isActive  Boolean     @default(true) @map("is_active")
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz
 
-  company                 Company                 @relation(fields: [companyId], references: [id])
-  integration             Integration?
-  channelProductMappings  ChannelProductMapping[]
-  orders                  Order[]
-  marketplaceFees         MarketplaceFee[]
-  settlements             Settlement[]
+  company                Company                 @relation(fields: [companyId], references: [id])
+  integration            Integration?
+  channelProductMappings ChannelProductMapping[]
+  orders                 Order[]
+  marketplaceFees        MarketplaceFee[]
+  settlements            Settlement[]
+  stockSyncOutbox        StockSyncOutboxEntry[]
 
   @@unique([companyId, type, name])
   @@map("sales_channels")
@@ -177,30 +196,44 @@ enum IntegrationProvider {
   MERCADO_LIVRE
 }
 
+/// DEGRADED e AUTH_EXPIRED (seção 8 da Fase 3) são mais específicos que ERROR: DEGRADED
+/// significa "conectado, mas com falhas recentes" (ex.: rate limit persistente); AUTH_EXPIRED
+/// significa "o refresh_token não é mais válido — reconexão manual necessária", nunca
+/// confundido com um erro transitório de rede.
 enum IntegrationStatus {
   DISCONNECTED
   CONNECTED
+  DEGRADED
+  AUTH_EXPIRED
   ERROR
   COMING_SOON
 }
 
 model Integration {
-  id            String              @id @default(uuid())
-  companyId     String              @map("company_id")
-  channelId     String?             @unique @map("channel_id")
-  provider      IntegrationProvider
-  status        IntegrationStatus   @default(DISCONNECTED)
-  storeName     String?             @map("store_name")
-  lastSyncAt    DateTime?           @map("last_sync_at") @db.Timestamptz
-  lastError     String?             @map("last_error")
-  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+  id         String              @id @default(uuid())
+  companyId  String              @map("company_id")
+  channelId  String?             @unique @map("channel_id")
+  provider   IntegrationProvider
+  status     IntegrationStatus   @default(DISCONNECTED)
+  storeName  String?             @map("store_name")
+  lastSyncAt DateTime?           @map("last_sync_at") @db.Timestamptz
+  lastError  String?             @map("last_error")
+  // Checkpoints de sincronização incremental por recurso (seção 13 da Fase 3), ex.:
+  // { "ordersSyncAt": "2026-08-28T14:00:00.000Z", "productsSyncAt": "...", "financeSyncAt": "..." }.
+  // Um JSON simples evita criar uma coluna nova a cada novo tipo de sync futuro.
+  syncCheckpoints Json?          @map("sync_checkpoints")
+  // Seção 56 da Fase 4 — toggle POR EMPRESA, separado da flag global
+  // TIKTOK_INVENTORY_PUSH_ENABLED (que precisa estar ligada no ambiente para este toggle sequer
+  // aparecer). Nunca ativado por migration/deploy — só por ação explícita de um ADMIN.
+  autoInventorySyncEnabled Boolean @default(false) @map("auto_inventory_sync_enabled")
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime            @updatedAt @map("updated_at") @db.Timestamptz
 
-  company     Company                  @relation(fields: [companyId], references: [id])
-  channel     SalesChannel?            @relation(fields: [channelId], references: [id])
-  credentials IntegrationCredential[]
+  company       Company                 @relation(fields: [companyId], references: [id])
+  channel       SalesChannel?           @relation(fields: [channelId], references: [id])
+  credentials   IntegrationCredential[]
   webhookEvents WebhookEvent[]
-  syncJobs    SyncJob[]
+  syncJobs      SyncJob[]
 
   @@unique([companyId, provider])
   @@map("integrations")
@@ -292,13 +325,15 @@ model ProductVariant {
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 
-  product              Product                 @relation(fields: [productId], references: [id])
-  costHistory          ProductCostHistory[]
-  channelMappings      ChannelProductMapping[]
-  stockEntryItems      StockEntryItem[]
-  inventory            Inventory?
-  inventoryMovements   InventoryMovement[]
-  orderItems           OrderItem[]
+  product             Product                 @relation(fields: [productId], references: [id])
+  costHistory         ProductCostHistory[]
+  channelMappings     ChannelProductMapping[]
+  stockEntryItems     StockEntryItem[]
+  inventory           Inventory?
+  inventoryMovements  InventoryMovement[]
+  inventoryCountItems InventoryCountItem[]
+  orderItems          OrderItem[]
+  stockSyncOutbox     StockSyncOutboxEntry[]
 
   @@index([productId])
   @@map("product_variants")
@@ -318,19 +353,35 @@ model ProductCostHistory {
   @@map("product_cost_history")
 }
 
-model ChannelProductMapping {
-  id               String   @id @default(uuid())
-  channelId        String   @map("channel_id")
-  variantId        String   @map("variant_id")
-  externalProductId String? @map("external_product_id")
-  externalSku      String?  @map("external_sku")
-  syncStatus       String   @default("PENDING") @map("sync_status")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+enum ChannelMappingSyncStatus {
+  PENDING
+  AUTO_MATCHED
+  CONFIRMED
+  REVIEW_REQUIRED
+  IGNORED
+}
 
-  channel SalesChannel   @relation(fields: [channelId], references: [id])
-  variant ProductVariant @relation(fields: [variantId], references: [id])
+/// Vínculo entre um SKU do canal externo e uma variante interna (seção 12). O match
+/// automático (seção 11) só pode marcar CONFIRMED quando houver exatamente um candidato —
+/// caso contrário fica REVIEW_REQUIRED e exige decisão manual do usuário.
+model ChannelProductMapping {
+  id                String                   @id @default(uuid())
+  channelId         String                   @map("channel_id")
+  // Nulo enquanto o vínculo não foi confirmado (PENDING/REVIEW_REQUIRED) ou foi explicitamente
+  // ignorado (IGNORED) — seção 10-12 da Fase 3: "ignorar" um produto externo precisa persistir
+  // a decisão sem exigir uma variante interna inexistente.
+  variantId         String?                  @map("variant_id")
+  externalProductId String?                  @map("external_product_id")
+  externalSku       String?                  @map("external_sku")
+  syncStatus        ChannelMappingSyncStatus @default(PENDING) @map("sync_status")
+  createdAt         DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+
+  channel SalesChannel    @relation(fields: [channelId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id])
 
   @@unique([channelId, variantId])
+  // Um SKU do canal nunca pode apontar para duas variantes internas da mesma empresa (seção 12).
+  @@unique([channelId, externalSku])
   @@map("channel_product_mappings")
 }
 
@@ -359,15 +410,24 @@ enum StockEntryStatus {
   CANCELLED
 }
 
+enum CostAllocationMethod {
+  BY_VALUE
+  BY_QUANTITY
+}
+
 model StockEntry {
-  id            String           @id @default(uuid())
-  companyId     String           @map("company_id")
-  supplierId    String?          @map("supplier_id")
-  entryDate     DateTime         @map("entry_date") @db.Timestamptz
-  invoiceNumber String?          @map("invoice_number")
-  notes         String?
-  status        StockEntryStatus @default(DRAFT)
-  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  id               String               @id @default(uuid())
+  companyId        String               @map("company_id")
+  supplierId       String?              @map("supplier_id")
+  entryDate        DateTime             @map("entry_date") @db.Timestamptz
+  invoiceNumber    String?              @map("invoice_number")
+  notes            String?
+  // Frete e outras despesas rateados entre os itens para compor o custo efetivo (seção 6).
+  shippingCost     Decimal              @default(0) @map("shipping_cost") @db.Decimal(14, 2)
+  otherCosts       Decimal              @default(0) @map("other_costs") @db.Decimal(14, 2)
+  allocationMethod CostAllocationMethod @default(BY_VALUE) @map("allocation_method")
+  status           StockEntryStatus     @default(DRAFT)
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz
 
   company  Company          @relation(fields: [companyId], references: [id])
   supplier Supplier?        @relation(fields: [supplierId], references: [id])
@@ -377,11 +437,14 @@ model StockEntry {
 }
 
 model StockEntryItem {
-  id           String  @id @default(uuid())
-  stockEntryId String  @map("stock_entry_id")
-  variantId    String  @map("variant_id")
-  quantity     Int
-  unitCost     Decimal @map("unit_cost") @db.Decimal(14, 2)
+  id                String   @id @default(uuid())
+  stockEntryId      String   @map("stock_entry_id")
+  variantId         String   @map("variant_id")
+  quantity          Int
+  unitCost          Decimal  @map("unit_cost") @db.Decimal(14, 2)
+  // Custo unitário após o rateio de frete/outras despesas — é este valor (não o unitCost
+  // bruto da nota) que vira ProductCostHistory quando a entrada é confirmada.
+  effectiveUnitCost Decimal? @map("effective_unit_cost") @db.Decimal(14, 2)
 
   stockEntry StockEntry     @relation(fields: [stockEntryId], references: [id], onDelete: Cascade)
   variant    ProductVariant @relation(fields: [variantId], references: [id])
@@ -389,11 +452,53 @@ model StockEntryItem {
   @@map("stock_entry_items")
 }
 
+enum InventoryCountStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+/// Inventário físico simples (seção 12) — não é um módulo de WMS completo, apenas o
+/// suficiente para contar, comparar com o saldo do sistema e gerar ajustes auditados.
+model InventoryCount {
+  id          String               @id @default(uuid())
+  companyId   String               @map("company_id")
+  status      InventoryCountStatus @default(OPEN)
+  notes       String?
+  createdBy   String?              @map("created_by")
+  startedAt   DateTime             @default(now()) @map("started_at") @db.Timestamptz
+  completedAt DateTime?            @map("completed_at") @db.Timestamptz
+
+  company Company              @relation(fields: [companyId], references: [id])
+  items   InventoryCountItem[]
+
+  @@index([companyId, status])
+  @@map("inventory_counts")
+}
+
+model InventoryCountItem {
+  id               String @id @default(uuid())
+  inventoryCountId String @map("inventory_count_id")
+  variantId        String @map("variant_id")
+  systemQuantity   Int    @map("system_quantity")
+  countedQuantity  Int?   @map("counted_quantity")
+  difference       Int?
+
+  inventoryCount InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
+  variant        ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([inventoryCountId, variantId])
+  @@map("inventory_count_items")
+}
+
 model Inventory {
   id        String   @id @default(uuid())
   companyId String   @map("company_id")
   variantId String   @unique @map("variant_id")
-  available Int      @default(0)
+  // Saldo físico total. NUNCA armazenamos "available" — ele é sempre computado como
+  // onHand - reserved na camada de aplicação (ver InventoryLedgerService), para que a
+  // invariante da seção 9 (available = on_hand - reserved) não possa divergir do banco.
+  onHand    Int      @default(0) @map("on_hand")
   reserved  Int      @default(0)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -416,21 +521,31 @@ enum InventoryMovementType {
   RELEASE
 }
 
+/// Toda alteração de saldo passa por aqui — nunca há alteração silenciosa (seção 10).
+/// O snapshot de antes/depois permite reconstruir o saldo em qualquer instante e auditar
+/// divergências sem depender de recalcular a partir do zero.
 model InventoryMovement {
-  id         String                 @id @default(uuid())
-  companyId  String                 @map("company_id")
-  variantId  String                 @map("variant_id")
-  type       InventoryMovementType
-  quantity   Int
-  reference  String?
-  note       String?
-  createdBy  String?                @map("created_by")
-  createdAt  DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  id               String                @id @default(uuid())
+  companyId        String                @map("company_id")
+  variantId        String                @map("variant_id")
+  type             InventoryMovementType
+  quantity         Int
+  previousOnHand   Int                   @map("previous_on_hand")
+  newOnHand        Int                   @map("new_on_hand")
+  previousReserved Int                   @map("previous_reserved")
+  newReserved      Int                   @map("new_reserved")
+  referenceType    String?               @map("reference_type")
+  referenceId      String?               @map("reference_id")
+  reason           String?
+  note             String?
+  createdBy        String?               @map("created_by")
+  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz
 
   company Company        @relation(fields: [companyId], references: [id])
   variant ProductVariant @relation(fields: [variantId], references: [id])
 
   @@index([companyId, variantId, createdAt])
+  @@index([referenceType, referenceId])
   @@map("inventory_movements")
 }
 
@@ -452,27 +567,43 @@ enum OrderStatus {
   PARTIALLY_REFUNDED
 }
 
-model Order {
-  id              String      @id @default(uuid())
-  companyId       String      @map("company_id")
-  channelId       String      @map("channel_id")
-  externalOrderId String?     @map("external_order_id")
-  customerName    String?     @map("customer_name")
-  customerDocument String?    @map("customer_document")
-  status          OrderStatus @default(CREATED)
-  externalStatus  String?     @map("external_status")
-  orderDate       DateTime    @map("order_date") @db.Timestamptz
-  subtotal        Decimal     @default(0) @db.Decimal(14, 2)
-  discount        Decimal     @default(0) @db.Decimal(14, 2)
-  shipping        Decimal     @default(0) @db.Decimal(14, 2)
-  total           Decimal     @default(0) @db.Decimal(14, 2)
-  paymentMethod   String?     @map("payment_method")
-  notes           String?
-  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+/// Status de INTEGRAÇÃO do pedido — nunca confundir com `OrderStatus` (a máquina de estados
+/// de fulfillment). Um pedido importado com SKU externo ainda sem vínculo interno fica
+/// REQUIRES_MAPPING (seção 15 da Fase 3): o pedido existe, mas nenhuma baixa/reserva de
+/// estoque acontece para os itens não mapeados até o usuário resolver o vínculo.
+enum OrderIntegrationSyncStatus {
+  OK
+  REQUIRES_MAPPING
+  ERROR
+}
 
-  company         Company             @relation(fields: [companyId], references: [id])
-  channel         SalesChannel        @relation(fields: [channelId], references: [id])
+model Order {
+  id                     String                     @id @default(uuid())
+  companyId              String                     @map("company_id")
+  channelId               String                     @map("channel_id")
+  externalOrderId        String?                    @map("external_order_id")
+  customerName           String?                    @map("customer_name")
+  customerDocument       String?                    @map("customer_document")
+  status                 OrderStatus                @default(CREATED)
+  externalStatus         String?                    @map("external_status")
+  // Timestamp de atualização informado pelo canal externo — usado para descartar webhooks/
+  // reconciliações fora de ordem (seção 24 da Fase 3): nunca regredir para um estado mais
+  // antigo que o já aplicado.
+  externalUpdatedAt      DateTime?                   @map("external_updated_at") @db.Timestamptz
+  integrationSyncStatus  OrderIntegrationSyncStatus  @default(OK) @map("integration_sync_status")
+  integrationIssue       String?                     @map("integration_issue")
+  orderDate              DateTime                    @map("order_date") @db.Timestamptz
+  subtotal               Decimal                     @default(0) @db.Decimal(14, 2)
+  discount               Decimal                     @default(0) @db.Decimal(14, 2)
+  shipping               Decimal                     @default(0) @db.Decimal(14, 2)
+  total                  Decimal                     @default(0) @db.Decimal(14, 2)
+  paymentMethod          String?                     @map("payment_method")
+  notes                  String?
+  createdAt              DateTime                    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt              DateTime                    @updatedAt @map("updated_at") @db.Timestamptz
+
+  company         Company                 @relation(fields: [companyId], references: [id])
+  channel         SalesChannel            @relation(fields: [channelId], references: [id])
   items           OrderItem[]
   statusHistory   OrderStatusHistory[]
   payments        Payment[]
@@ -484,20 +615,36 @@ model Order {
   @@unique([companyId, channelId, externalOrderId])
   @@index([companyId, orderDate])
   @@index([companyId, status])
+  @@index([companyId, integrationSyncStatus])
   @@map("orders")
 }
 
+/// Snapshot completo no momento da venda (seção 8). Mudanças futuras no cadastro do produto
+/// (renomear, trocar SKU, novo custo) NUNCA alteram um pedido já criado — por isso o nome e o
+/// SKU são copiados aqui, e unitCost já é o custo vigente capturado na criação do pedido.
 model OrderItem {
-  id         String  @id @default(uuid())
-  orderId    String  @map("order_id")
-  variantId  String  @map("variant_id")
-  quantity   Int
-  unitPrice  Decimal @map("unit_price") @db.Decimal(14, 2)
-  discount   Decimal @default(0) @db.Decimal(14, 2)
-  unitCost   Decimal @default(0) @map("unit_cost") @db.Decimal(14, 2)
+  id                String  @id @default(uuid())
+  orderId           String  @map("order_id")
+  // Nulo apenas quando o item veio de uma importação externa (TikTok Shop) cujo SKU ainda
+  // não tem vínculo em `channel_product_mappings` (seção 15 da Fase 3) — `externalSku` guarda
+  // o SKU bruto para que o vínculo possa ser resolvido depois e o pedido reprocessado, sem
+  // nunca descartar o pedido nem inventar uma variante. Para todo pedido manual/interno
+  // normal, variantId é sempre preenchido na criação.
+  variantId         String? @map("variant_id")
+  externalSku       String? @map("external_sku")
+  quantity          Int
+  productNameAtSale String  @map("product_name_at_sale")
+  skuAtSale         String  @map("sku_at_sale")
+  unitPrice         Decimal @map("unit_price") @db.Decimal(14, 2)
+  unitCost          Decimal @default(0) @map("unit_cost") @db.Decimal(14, 2)
+  sellerDiscount    Decimal @default(0) @map("seller_discount") @db.Decimal(14, 2)
+  platformDiscount  Decimal @default(0) @map("platform_discount") @db.Decimal(14, 2)
+  shippingRevenue   Decimal @default(0) @map("shipping_revenue") @db.Decimal(14, 2)
+  shippingCost      Decimal @default(0) @map("shipping_cost") @db.Decimal(14, 2)
+  marketplaceFee    Decimal @default(0) @map("marketplace_fee") @db.Decimal(14, 2)
 
-  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  variant     ProductVariant @relation(fields: [variantId], references: [id])
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant     ProductVariant? @relation(fields: [variantId], references: [id])
   returnItems ReturnItem[]
 
   @@index([orderId])
@@ -543,37 +690,53 @@ model Payment {
 // Repasses / Taxas de marketplace
 // ---------------------------------------------------------------------------
 
+/// Estados de liquidação financeira (seção 32 da Fase 3) — adequado ao que a Finance API de
+/// cada canal realmente fornece; para TikTok Shop, alimentado a partir de Get Statements /
+/// Get Transactions by Statement / Get Unsettled Transactions (ver docs/integrations/tiktok.md).
 enum SettlementStatus {
-  OPEN
-  CLOSED
+  PENDING
+  PARTIALLY_SETTLED
+  SETTLED
   PAID
+  ADJUSTED
 }
 
 model Settlement {
-  id          String           @id @default(uuid())
-  companyId   String           @map("company_id")
-  channelId   String           @map("channel_id")
-  periodStart DateTime         @map("period_start") @db.Timestamptz
-  periodEnd   DateTime         @map("period_end") @db.Timestamptz
-  totalAmount Decimal          @default(0) @map("total_amount") @db.Decimal(14, 2)
-  status      SettlementStatus @default(OPEN)
-  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  id                  String           @id @default(uuid())
+  companyId           String           @map("company_id")
+  channelId           String           @map("channel_id")
+  // Identificador do "statement" no canal externo — permite ingestão idempotente (nunca
+  // duplica um statement já importado).
+  externalStatementId String?          @map("external_statement_id")
+  periodStart         DateTime         @map("period_start") @db.Timestamptz
+  periodEnd           DateTime         @map("period_end") @db.Timestamptz
+  totalAmount         Decimal          @default(0) @map("total_amount") @db.Decimal(14, 2)
+  status              SettlementStatus @default(PENDING)
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz
 
   company      Company                 @relation(fields: [companyId], references: [id])
   channel      SalesChannel            @relation(fields: [channelId], references: [id])
   transactions SettlementTransaction[]
 
+  @@unique([channelId, externalStatementId])
   @@index([companyId, channelId])
   @@map("settlements")
 }
 
 model SettlementTransaction {
-  id           String   @id @default(uuid())
-  settlementId String   @map("settlement_id")
-  orderId      String?  @map("order_id")
-  type         String
-  amount       Decimal  @db.Decimal(14, 2)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  id                     String   @id @default(uuid())
+  settlementId           String   @map("settlement_id")
+  orderId                String?  @map("order_id")
+  // Preenchido quando o pedido ainda não foi importado/mapeado internamente — permite
+  // reconciliar depois sem perder a transação financeira (nunca descartada silenciosamente).
+  orderExternalId        String?  @map("order_external_id")
+  externalTransactionId  String?  @unique @map("external_transaction_id")
+  // Categoria interna normalizada pelo mapper (ver tiktok-data-mapping.md) — nunca uma
+  // categoria inventada; o valor bruto do canal é preservado em rawType.
+  type                   String
+  rawType                String?  @map("raw_type")
+  amount                 Decimal  @db.Decimal(14, 2)
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   settlement Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
   order      Order?     @relation(fields: [orderId], references: [id])
@@ -612,23 +775,40 @@ model Return {
   orderId     String       @map("order_id")
   reason      String?
   status      ReturnStatus @default(REQUESTED)
+  // Preenchido quando a devolução foi sincronizada de um canal externo (seção 35 da Fase 3) —
+  // permite upsert idempotente e nunca duplicar a mesma devolução em uma nova sincronização.
+  externalReturnId String?  @map("external_return_id")
+  // Status bruto do marketplace (ex.: "RETURNED" na TikTok) — exibido lado a lado com `status`
+  // interno na tela de devolução (seção 36); nunca sobrescreve a decisão interna de restock.
+  externalStatus   String?  @map("external_status")
   requestedAt DateTime     @default(now()) @map("requested_at") @db.Timestamptz
   resolvedAt  DateTime?    @map("resolved_at") @db.Timestamptz
 
-  order   Order        @relation(fields: [orderId], references: [id])
-  items   ReturnItem[]
-  refunds Refund[]
+  order           Order            @relation(fields: [orderId], references: [id])
+  items           ReturnItem[]
+  refunds         Refund[]
+  fiscalDocuments FiscalDocument[]
 
+  @@unique([orderId, externalReturnId])
   @@index([orderId])
   @@map("returns")
 }
 
+enum ReturnItemCondition {
+  NEW
+  USED
+  DAMAGED
+  LOST
+}
+
 model ReturnItem {
-  id          String  @id @default(uuid())
-  returnId    String  @map("return_id")
-  orderItemId String  @map("order_item_id")
-  quantity    Int
-  condition   String?
+  id              String               @id @default(uuid())
+  returnId        String               @map("return_id")
+  orderItemId     String               @map("order_item_id")
+  quantity        Int
+  condition       ReturnItemCondition?
+  // Decisão explícita por item — devolução nunca retorna estoque automaticamente (seção 18).
+  restockOnReturn Boolean              @default(false) @map("restock_on_return")
 
   return    Return    @relation(fields: [returnId], references: [id], onDelete: Cascade)
   orderItem OrderItem @relation(fields: [orderItemId], references: [id])
@@ -642,13 +822,20 @@ enum RefundStatus {
   FAILED
 }
 
+enum RefundType {
+  FULL
+  PARTIAL
+}
+
 model Refund {
-  id          String       @id @default(uuid())
-  returnId    String       @map("return_id")
-  amount      Decimal      @db.Decimal(14, 2)
-  method      String?
-  status      RefundStatus @default(PENDING)
-  processedAt DateTime?    @map("processed_at") @db.Timestamptz
+  id                String       @id @default(uuid())
+  returnId          String       @map("return_id")
+  type              RefundType   @default(FULL)
+  amount            Decimal      @db.Decimal(14, 2)
+  method            String?
+  status            RefundStatus @default(PENDING)
+  externalReference String?      @map("external_reference")
+  processedAt       DateTime?    @map("processed_at") @db.Timestamptz
 
   return Return @relation(fields: [returnId], references: [id], onDelete: Cascade)
 
@@ -665,28 +852,81 @@ model ExpenseCategory {
   name      String
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  company  Company   @relation(fields: [companyId], references: [id])
-  expenses Expense[]
+  company           Company                    @relation(fields: [companyId], references: [id])
+  expenses          Expense[]
+  recurringExpenses RecurringExpenseTemplate[]
 
   @@unique([companyId, name])
   @@map("expense_categories")
 }
 
+enum ExpenseStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
 model Expense {
+  id                  String        @id @default(uuid())
+  companyId           String        @map("company_id")
+  categoryId          String        @map("category_id")
+  description         String
+  amount              Decimal       @db.Decimal(14, 2)
+  // "date" é a data de pagamento; competenceDate é o mês/ano a que a despesa pertence
+  // gerencialmente (podem diferir — ex: conta paga em atraso).
+  date                DateTime      @db.Timestamptz
+  competenceDate      DateTime      @default(now()) @map("competence_date") @db.Date
+  status              ExpenseStatus @default(PAID)
+  paymentMethod       String?       @map("payment_method")
+  isRecurring         Boolean       @default(false) @map("is_recurring")
+  recurringTemplateId String?       @map("recurring_template_id")
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  company           Company                   @relation(fields: [companyId], references: [id])
+  category          ExpenseCategory           @relation(fields: [categoryId], references: [id])
+  recurringTemplate RecurringExpenseTemplate? @relation(fields: [recurringTemplateId], references: [id])
+
+  @@index([companyId, date])
+  @@index([companyId, competenceDate])
+  @@map("expenses")
+}
+
+/// Modelo de despesa recorrente (seção 23). Não gera lançamentos futuros antecipadamente —
+/// um job (ver ExpensesModule) garante, de forma idempotente, que exista uma Expense para o
+/// template em cada competência já alcançada.
+model RecurringExpenseTemplate {
   id            String   @id @default(uuid())
   companyId     String   @map("company_id")
   categoryId    String   @map("category_id")
   description   String
   amount        Decimal  @db.Decimal(14, 2)
-  date          DateTime @db.Timestamptz
+  dayOfMonth    Int      @default(1) @map("day_of_month")
   paymentMethod String?  @map("payment_method")
+  isActive      Boolean  @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   company  Company         @relation(fields: [companyId], references: [id])
   category ExpenseCategory @relation(fields: [categoryId], references: [id])
+  expenses Expense[]
 
-  @@index([companyId, date])
-  @@map("expenses")
+  @@map("recurring_expense_templates")
+}
+
+/// Alíquota estimada configurável com vigência (seção 29) — nunca hardcoded. O DRE usa a
+/// configuração vigente na data de referência do período calculado.
+model TaxConfiguration {
+  id            String    @id @default(uuid())
+  companyId     String    @map("company_id")
+  taxRegime     String    @map("tax_regime")
+  estimatedRate Decimal   @map("estimated_rate") @db.Decimal(6, 4)
+  validFrom     DateTime  @map("valid_from") @db.Date
+  validTo       DateTime? @map("valid_to") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId, validFrom])
+  @@map("tax_configurations")
 }
 
 // ---------------------------------------------------------------------------
@@ -707,23 +947,71 @@ enum FiscalDocumentStatus {
   ERROR
 }
 
+enum FiscalDocumentSource {
+  UPLOADED
+  GENERATED
+}
+
+/// Fase 4 — mudança conceitual (seção 1-2 do pedido): `FiscalDocument` é principalmente uma
+/// REFERÊNCIA a um documento fiscal de uma venda ou devolução, não um cofre de XML. O sistema
+/// só precisa responder "esta venda/devolução tem NF-e? qual? o XML pode ser baixado agora?" —
+/// o XML em si é obtido sob demanda via `FiscalDocumentProvider`, nunca precisa ficar
+/// permanentemente armazenado no E-commerce Manager.
 model FiscalDocument {
-  id          String               @id @default(uuid())
-  companyId   String               @map("company_id")
-  orderId     String?              @map("order_id")
-  type        FiscalDocumentType
-  number      String?
-  series      String?
-  accessKey   String?              @map("access_key")
-  xmlPath     String?              @map("xml_path")
-  status      FiscalDocumentStatus @default(PENDING)
-  issueDate   DateTime?            @map("issue_date") @db.Timestamptz
-  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  id        String             @id @default(uuid())
+  companyId String             @map("company_id")
+  orderId   String?            @map("order_id")
+  // Vínculo direto com a devolução (novo na Fase 4) — antes a NF-e de devolução só existia
+  // "pendurada" no pedido pai, sem relação própria com `Return`.
+  returnId  String?            @map("return_id")
+  type      FiscalDocumentType
+  number    String?
+  series    String?
+  accessKey String?            @map("access_key")
+
+  // --- Campos legados de armazenamento permanente (Fase 2) ---------------------------------
+  // Mantidos apenas por compatibilidade com o fluxo de upload manual em modo PERSIST
+  // (XML_STORAGE_MODE=PERSIST, nunca o default) e com testes/dados já existentes. O fluxo
+  // principal desta fase (download sob demanda por mês) não escreve nestes campos — eles ficam
+  // vazios quando o documento é criado apenas como referência (XML_STORAGE_MODE=REFERENCE_ONLY,
+  // default). Nenhuma funcionalidade nova deve ser construída em cima destes campos.
+  /// @deprecated legado — só usado quando XML_STORAGE_MODE=PERSIST
+  xmlPath             String? @map("xml_path")
+  // Hash do conteúdo do XML enviado — mantido mesmo em modo REFERENCE_ONLY para permitir
+  // detectar reenvio duplicado do mesmo XML sem precisar guardar o arquivo.
+  xmlSha256           String? @map("xml_sha256")
+  /// @deprecated legado — só usado quando XML_STORAGE_MODE=PERSIST
+  xmlOriginalFilename String? @map("xml_original_filename")
+  /// @deprecated legado — campos extraídos do XML (regex, sem validação SEFAZ completa)
+  extractedData       Json?   @map("extracted_data")
+  // -----------------------------------------------------------------------------------------
+
+  // Se o XML pode ser obtido agora via algum FiscalDocumentProvider (seção 4/17) — separado do
+  // `status` do documento em si (uma NF-e pode estar EMITIDA mas com XML indisponível
+  // temporariamente). `lastXmlCheckAt` registra quando essa disponibilidade foi verificada pela
+  // última vez, para não reconsultar a cada request.
+  xmlAvailable    Boolean               @default(false) @map("xml_available")
+  lastXmlCheckAt  DateTime?             @map("last_xml_check_at") @db.Timestamptz
+  // Identificador do documento na fonte externa (ex.: emissor/serviço fiscal futuro) — nunca
+  // preenchido nesta fase por falta de provider real, mas parte do contrato desde já.
+  externalId      String?               @map("external_id")
+  sourceType      FiscalDocumentSource  @default(GENERATED) @map("source_type")
+  status          FiscalDocumentStatus  @default(PENDING)
+  // Regra temporal da Fase 4 (seção 5): TODO fechamento/exportação fiscal por mês usa esta data,
+  // nunca a data do pedido — uma NF-e emitida em agosto pertence a agosto mesmo que a venda seja
+  // de julho.
+  issueDate       DateTime?             @map("issue_date") @db.Timestamptz
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime              @updatedAt @map("updated_at") @db.Timestamptz
 
   company Company @relation(fields: [companyId], references: [id])
   order   Order?  @relation(fields: [orderId], references: [id])
+  return  Return? @relation(fields: [returnId], references: [id])
 
+  @@unique([companyId, xmlSha256])
   @@index([companyId, orderId])
+  @@index([companyId, returnId])
+  @@index([companyId, issueDate])
   @@map("fiscal_documents")
 }
 
@@ -737,24 +1025,38 @@ enum MonthlyClosingStatus {
 }
 
 model MonthlyClosing {
-  id                String               @id @default(uuid())
-  companyId         String               @map("company_id")
-  referenceMonth    DateTime             @map("reference_month") @db.Date
-  grossRevenue      Decimal              @default(0) @map("gross_revenue") @db.Decimal(14, 2)
-  discounts         Decimal              @default(0) @db.Decimal(14, 2)
-  returnsAmount     Decimal              @default(0) @map("returns_amount") @db.Decimal(14, 2)
-  netRevenue        Decimal              @default(0) @map("net_revenue") @db.Decimal(14, 2)
-  cmv               Decimal              @default(0) @db.Decimal(14, 2)
-  grossProfit       Decimal              @default(0) @map("gross_profit") @db.Decimal(14, 2)
-  fees              Decimal              @default(0) @db.Decimal(14, 2)
-  marketing         Decimal              @default(0) @db.Decimal(14, 2)
-  packaging         Decimal              @default(0) @db.Decimal(14, 2)
-  otherExpenses     Decimal              @default(0) @map("other_expenses") @db.Decimal(14, 2)
-  estimatedTaxes    Decimal              @default(0) @map("estimated_taxes") @db.Decimal(14, 2)
-  managementResult  Decimal              @default(0) @map("management_result") @db.Decimal(14, 2)
-  status            MonthlyClosingStatus @default(OPEN)
-  closedAt          DateTime?            @map("closed_at") @db.Timestamptz
-  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  id               String               @id @default(uuid())
+  companyId        String               @map("company_id")
+  referenceMonth   DateTime             @map("reference_month") @db.Date
+  grossRevenue     Decimal              @default(0) @map("gross_revenue") @db.Decimal(14, 2)
+  discounts        Decimal              @default(0) @db.Decimal(14, 2)
+  returnsAmount    Decimal              @default(0) @map("returns_amount") @db.Decimal(14, 2)
+  netRevenue       Decimal              @default(0) @map("net_revenue") @db.Decimal(14, 2)
+  cmv              Decimal              @default(0) @db.Decimal(14, 2)
+  grossProfit      Decimal              @default(0) @map("gross_profit") @db.Decimal(14, 2)
+  fees             Decimal              @default(0) @db.Decimal(14, 2)
+  marketing        Decimal              @default(0) @db.Decimal(14, 2)
+  packaging        Decimal              @default(0) @db.Decimal(14, 2)
+  otherExpenses    Decimal              @default(0) @map("other_expenses") @db.Decimal(14, 2)
+  estimatedTaxes   Decimal              @default(0) @map("estimated_taxes") @db.Decimal(14, 2)
+  managementResult Decimal              @default(0) @map("management_result") @db.Decimal(14, 2)
+  marginPercent    Decimal              @default(0) @map("margin_percent") @db.Decimal(6, 2)
+  // Snapshot de contadores (seção 27 da Fase 4) — escalares simples, não JSON, porque o formato
+  // nunca varia. O objetivo é preservar o que foi mostrado ao fechar, não virar contabilidade
+  // imutável (o fechamento pode ser reaberto e refeito).
+  ordersCount        Int  @default(0) @map("orders_count")
+  returnsCount       Int  @default(0) @map("returns_count")
+  saleInvoiceCount   Int  @default(0) @map("sale_invoice_count")
+  returnInvoiceCount Int  @default(0) @map("return_invoice_count")
+  fiscalPendingCount Int  @default(0) @map("fiscal_pending_count")
+  // Avisos não bloqueantes exibidos no momento do fechamento (seção 22/25) — aqui sim JSON,
+  // porque a lista é de tamanho/conteúdo variável.
+  warningsSnapshot Json?                @map("warnings_snapshot")
+  status           MonthlyClosingStatus @default(OPEN)
+  closedAt         DateTime?            @map("closed_at") @db.Timestamptz
+  lastReopenedAt   DateTime?            @map("last_reopened_at") @db.Timestamptz
+  lastReopenReason String?              @map("last_reopen_reason")
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz
 
   company Company @relation(fields: [companyId], references: [id])
 
@@ -766,35 +1068,92 @@ model MonthlyClosing {
 // Integrações — eventos e jobs
 // ---------------------------------------------------------------------------
 
+/// Evento de webhook recebido de um canal externo. A idempotência (seção 21 da Fase 3) é
+/// garantida por `externalEventId` quando o canal fornece um identificador de evento — como a
+/// TikTok Shop não assina com timestamp (sem proteção de replay própria — ver
+/// docs/integrations/tiktok.md item 17), este é o mecanismo real de deduplicação.
 model WebhookEvent {
-  id            String    @id @default(uuid())
-  integrationId String    @map("integration_id")
-  eventType     String    @map("event_type")
-  payload       Json
-  receivedAt    DateTime  @default(now()) @map("received_at") @db.Timestamptz
-  processedAt   DateTime? @map("processed_at") @db.Timestamptz
-  status        String    @default("PENDING")
+  id              String    @id @default(uuid())
+  integrationId   String    @map("integration_id")
+  eventType       String    @map("event_type")
+  externalEventId String?   @map("external_event_id")
+  // Hash do corpo bruto — permite detectar duplicidade mesmo quando o canal não manda um id
+  // de evento estável, sem persistir o corpo inteiro além do necessário.
+  payloadHash     String    @map("payload_hash")
+  payload         Json
+  receivedAt      DateTime  @default(now()) @map("received_at") @db.Timestamptz
+  processedAt     DateTime? @map("processed_at") @db.Timestamptz
+  status          String    @default("PENDING")
+  attempts        Int       @default(0)
+  error           String?
 
   integration Integration @relation(fields: [integrationId], references: [id])
 
+  @@unique([integrationId, externalEventId])
   @@index([integrationId, status])
+  @@index([integrationId, payloadHash])
   @@map("webhook_events")
 }
 
+/// Job assíncrono de integração (import, refresh de token, push de estoque, reconciliação).
+/// Alimenta a tela "Falhas" (seção 27 da Fase 3): jobs que esgotaram as tentativas ficam com
+/// status FAILED e podem ser reprocessados manualmente (`retry`).
 model SyncJob {
-  id            String    @id @default(uuid())
-  integrationId String    @map("integration_id")
-  type          String
-  status        String    @default("PENDING")
-  startedAt     DateTime? @map("started_at") @db.Timestamptz
-  finishedAt    DateTime? @map("finished_at") @db.Timestamptz
-  error         String?
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  id                String    @id @default(uuid())
+  integrationId     String    @map("integration_id")
+  type              String
+  status            String    @default("PENDING")
+  // Identificador externo relacionado (ex.: id do pedido na TikTok) — exibido na coluna
+  // "Pedido" da tela de falhas.
+  relatedExternalId String?   @map("related_external_id")
+  payload           Json?
+  attempts          Int       @default(0)
+  maxAttempts       Int       @default(5) @map("max_attempts")
+  errorCategory     String?   @map("error_category")
+  nextAttemptAt     DateTime? @map("next_attempt_at") @db.Timestamptz
+  startedAt         DateTime? @map("started_at") @db.Timestamptz
+  finishedAt        DateTime? @map("finished_at") @db.Timestamptz
+  error             String?
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   integration Integration @relation(fields: [integrationId], references: [id])
 
   @@index([integrationId, status])
+  @@index([status, nextAttemptAt])
   @@map("sync_jobs")
+}
+
+enum StockSyncOutboxStatus {
+  PENDING
+  SYNCED
+  FAILED
+}
+
+/// Outbox de sincronização de estoque (seção 51 da Fase 4). Alimentado por um job periódico de
+/// reconciliação (reaproveita `TikTokInventorySyncService.compare()` — ver
+/// docs/phase4-review.md para a justificativa de não instrumentar diretamente o
+/// InventoryLedgerService), nunca pela venda em si — a venda sempre faz commit interno primeiro
+/// (seção 52). Uma nova divergência para o mesmo (variantId, channelId) atualiza o
+/// `targetAvailable` da entrada PENDING existente em vez de criar uma segunda linha
+/// (coalescing — seção 53): só o valor mais recente importa para o próximo envio.
+model StockSyncOutboxEntry {
+  id              String                 @id @default(uuid())
+  companyId       String                 @map("company_id")
+  variantId       String                 @map("variant_id")
+  channelId       String                 @map("channel_id")
+  targetAvailable Int                    @map("target_available")
+  status          StockSyncOutboxStatus  @default(PENDING)
+  attempts        Int                    @default(0)
+  lastError       String?                @map("last_error")
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  processedAt     DateTime?              @map("processed_at") @db.Timestamptz
+
+  company Company        @relation(fields: [companyId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+  channel SalesChannel   @relation(fields: [channelId], references: [id])
+
+  @@index([companyId, channelId, status])
+  @@map("stock_sync_outbox")
 }
 
 // ---------------------------------------------------------------------------
@@ -819,4 +1178,42 @@ model AuditLog {
   @@index([companyId, createdAt])
   @@index([entity, entityId])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Notificações internas (Fase 4, seção 41-44)
+// ---------------------------------------------------------------------------
+
+enum NotificationCategory {
+  ESTOQUE
+  PEDIDO
+  FISCAL
+  INTEGRACAO
+  FINANCEIRO
+  SISTEMA
+}
+
+/// Notificação interna deduplicada. Uma condição contínua (ex.: "estoque baixo do SKU X") nunca
+/// gera uma notificação nova a cada verificação — `dedupeKey` identifica a condição, e o job de
+/// reconciliação (seção 43) só atualiza a notificação existente enquanto ela persistir, e marca
+/// `resolvedAt` automaticamente quando a condição deixar de ser verdadeira.
+model Notification {
+  id         String               @id @default(uuid())
+  companyId  String               @map("company_id")
+  category   NotificationCategory
+  title      String
+  message    String
+  dedupeKey  String               @map("dedupe_key")
+  link       String?
+  readAt     DateTime?            @map("read_at") @db.Timestamptz
+  resolvedAt DateTime?            @map("resolved_at") @db.Timestamptz
+  createdAt  DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime             @updatedAt @map("updated_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, dedupeKey])
+  @@index([companyId, readAt])
+  @@index([companyId, resolvedAt])
+  @@map("notifications")
 }

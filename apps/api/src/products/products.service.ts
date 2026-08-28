@@ -37,7 +37,7 @@ export class ProductsService {
           variants: {
             select: {
               suggestedPrice: true,
-              inventory: { select: { available: true } },
+              inventory: { select: { onHand: true, reserved: true } },
             },
           },
         },
@@ -51,7 +51,7 @@ export class ProductsService {
     const items = products.map((product) => {
       const prices = product.variants.map((v) => Number(v.suggestedPrice));
       const totalAvailable = product.variants.reduce(
-        (sum, v) => sum + (v.inventory?.available ?? 0),
+        (sum, v) => sum + (v.inventory ? v.inventory.onHand - v.inventory.reserved : 0),
         0,
       );
       return {
@@ -117,7 +117,8 @@ export class ProductsService {
         status: variant.status,
         latestCost: variant.costHistory[0]?.cost ?? null,
         inventory: {
-          available: variant.inventory?.available ?? 0,
+          onHand: variant.inventory?.onHand ?? 0,
+          available: variant.inventory ? variant.inventory.onHand - variant.inventory.reserved : 0,
           reserved: variant.inventory?.reserved ?? 0,
         },
       })),
@@ -233,7 +234,7 @@ export class ProductsService {
           data: {
             companyId,
             variantId: variant.id,
-            available: 0,
+            onHand: 0,
             reserved: 0,
           },
         });
@@ -295,5 +296,109 @@ export class ProductsService {
         note: dto.note ?? null,
       },
     });
+  }
+
+  /** Aba "Resumo" (seção 4) — agrega estoque e vendas dos últimos 30 dias de todas as variantes. */
+  async getSummary(productId: string, companyId: string) {
+    const product = await this.findProductOrThrow(productId, companyId);
+    const variants = await this.prisma.client.productVariant.findMany({
+      where: { productId },
+      include: {
+        inventory: true,
+        costHistory: { orderBy: { effectiveDate: 'desc' }, take: 1 },
+      },
+    });
+    const variantIds = variants.map((v) => v.id);
+
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const recentItems = await this.prisma.client.orderItem.findMany({
+      where: {
+        variantId: { in: variantIds },
+        order: { companyId, orderDate: { gte: thirtyDaysAgo }, status: { not: 'CANCELLED' } },
+      },
+    });
+
+    const available = variants.reduce((sum, v) => sum + (v.inventory ? v.inventory.onHand - v.inventory.reserved : 0), 0);
+    const reserved = variants.reduce((sum, v) => sum + (v.inventory?.reserved ?? 0), 0);
+    const costs = variants.map((v) => Number(v.costHistory[0]?.cost ?? 0)).filter((c) => c > 0);
+    const suggestedPrices = variants.map((v) => Number(v.suggestedPrice));
+
+    const unitsSold30d = recentItems.reduce((sum, i) => sum + i.quantity, 0);
+    const revenue30d = recentItems.reduce(
+      (sum, i) => sum + Number(i.unitPrice) * i.quantity - Number(i.sellerDiscount) - Number(i.platformDiscount),
+      0,
+    );
+    const cmv30d = recentItems.reduce((sum, i) => sum + Number(i.unitCost) * i.quantity, 0);
+    const estimatedProfit30d = revenue30d - cmv30d;
+    const avgSoldPrice30d = unitsSold30d > 0 ? revenue30d / unitsSold30d : null;
+    const avgMargin30d = revenue30d > 0 ? (estimatedProfit30d / revenue30d) * 100 : null;
+
+    return {
+      productId: product.id,
+      name: product.name,
+      status: product.status,
+      available,
+      reserved,
+      currentCost: costs.length ? costs.reduce((a, b) => a + b, 0) / costs.length : null,
+      suggestedPrice: suggestedPrices.length ? suggestedPrices.reduce((a, b) => a + b, 0) / suggestedPrices.length : null,
+      avgSoldPrice30d: avgSoldPrice30d !== null ? Math.round(avgSoldPrice30d * 100) / 100 : null,
+      unitsSold30d,
+      revenue30d: Math.round(revenue30d * 100) / 100,
+      estimatedProfit30d: Math.round(estimatedProfit30d * 100) / 100,
+      avgMargin30d: avgMargin30d !== null ? Math.round(avgMargin30d * 100) / 100 : null,
+    };
+  }
+
+  /** Aba "Estoque" — ledger combinado de todas as variantes do produto. */
+  async getMovements(productId: string, companyId: string) {
+    await this.findProductOrThrow(productId, companyId);
+    const variants = await this.prisma.client.productVariant.findMany({
+      where: { productId },
+      select: { id: true },
+    });
+    return this.prisma.client.inventoryMovement.findMany({
+      where: { companyId, variantId: { in: variants.map((v) => v.id) } },
+      include: { variant: { select: { sku: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+  }
+
+  /** Aba "Custos" — timeline combinada de todas as variantes do produto. */
+  async getAllCostHistory(productId: string, companyId: string) {
+    await this.findProductOrThrow(productId, companyId);
+    const variants = await this.prisma.client.productVariant.findMany({
+      where: { productId },
+      select: { id: true, sku: true },
+    });
+    const history = await this.prisma.client.productCostHistory.findMany({
+      where: { variantId: { in: variants.map((v) => v.id) } },
+      orderBy: { effectiveDate: 'desc' },
+    });
+    const skuByVariant = new Map(variants.map((v) => [v.id, v.sku]));
+    return history.map((h) => ({ ...h, sku: skuByVariant.get(h.variantId) ?? null }));
+  }
+
+  /** Aba "Canais" — mapeamentos de todas as variantes do produto. */
+  async getChannelMappings(productId: string, companyId: string) {
+    await this.findProductOrThrow(productId, companyId);
+    const variants = await this.prisma.client.productVariant.findMany({
+      where: { productId },
+      select: { id: true, sku: true },
+    });
+    const mappings = await this.prisma.client.channelProductMapping.findMany({
+      where: { variantId: { in: variants.map((v) => v.id) } },
+      include: { channel: { select: { name: true, type: true } } },
+    });
+    const skuByVariant = new Map(variants.map((v) => [v.id, v.sku]));
+    return mappings.map((m) => ({
+      id: m.id,
+      sku: m.variantId ? (skuByVariant.get(m.variantId) ?? null) : null,
+      channelName: m.channel.name,
+      channelType: m.channel.type,
+      externalProductId: m.externalProductId,
+      externalSku: m.externalSku,
+      syncStatus: m.syncStatus,
+    }));
   }
 }

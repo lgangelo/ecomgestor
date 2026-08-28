@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { PERMISSIONS } from '@ecommerce-manager/shared';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service';
 import { ReturnsService } from './returns.service';
 import { QueryReturnsDto } from './dto/query-returns.dto';
 import { UpdateReturnStatusDto } from './dto/update-return-status.dto';
+import { CreateRefundDto } from './dto/create-refund.dto';
 
 @Controller('returns')
 export class ReturnsController {
@@ -45,5 +46,24 @@ export class ReturnsController {
       newValue: updated,
     });
     return updated;
+  }
+
+  @Post(':id/refunds')
+  @RequirePermissions(PERMISSIONS.ORDER_UPDATE)
+  async createRefund(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: CreateRefundDto,
+  ) {
+    const refund = await this.returnsService.createRefund(id, user.companyId, user.userId, dto);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'CREATE',
+      entity: 'refund',
+      entityId: refund.id,
+      newValue: refund,
+    });
+    return refund;
   }
 }

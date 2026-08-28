@@ -28,6 +28,7 @@ export class StockEntryItemDto {
 }
 
 const STOCK_ENTRY_STATUSES = ['DRAFT', 'CONFIRMED'] as const;
+const ALLOCATION_METHODS = ['BY_VALUE', 'BY_QUANTITY'] as const;
 
 export class CreateStockEntryDto {
   @IsOptional()
@@ -44,6 +45,22 @@ export class CreateStockEntryDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  shippingCost?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  otherCosts?: number;
+
+  @IsOptional()
+  @IsIn(ALLOCATION_METHODS)
+  allocationMethod?: (typeof ALLOCATION_METHODS)[number];
 
   @IsOptional()
   @IsIn(STOCK_ENTRY_STATUSES)

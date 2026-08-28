@@ -7,6 +7,19 @@ export interface AppConfig {
   jwtRefreshSecret: string;
   webAppUrl: string;
   cookieDomain?: string;
+  fiscalXmlStorageDir: string;
+  /** Seção 19 da Fase 4 — REFERENCE_ONLY (default) nunca grava o XML em disco, só a referência
+   * fiscal; PERSIST é o comportamento legado (Fase 2), mantido só por compatibilidade. */
+  xmlStorageMode: 'REFERENCE_ONLY' | 'PERSIST';
+  integrationSecretsKey: string;
+  tiktok: {
+    enabled: boolean;
+    appKey: string;
+    appSecret: string;
+    redirectUri: string;
+    inventoryPushEnabled: boolean;
+    reconcileIntervalMinutes: number;
+  };
 }
 
 export default (): AppConfig => ({
@@ -18,4 +31,21 @@ export default (): AppConfig => ({
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? '',
   webAppUrl: process.env.WEB_APP_URL ?? 'http://localhost:3000',
   cookieDomain: process.env.COOKIE_DOMAIN,
+  // Em produção (Docker) deve apontar para um volume persistente — ver docker-compose.yml.
+  fiscalXmlStorageDir: process.env.FISCAL_XML_STORAGE_DIR ?? './storage/fiscal-xml',
+  xmlStorageMode: process.env.XML_STORAGE_MODE === 'PERSIST' ? 'PERSIST' : 'REFERENCE_ONLY',
+  // Chave de derivação para criptografar credenciais de integração em repouso (seção 5 da
+  // Fase 3). Nunca reutiliza os segredos de JWT — comprometer um não deve comprometer o outro.
+  integrationSecretsKey:
+    process.env.INTEGRATION_SECRETS_KEY ?? 'CHANGE_ME_INTEGRATION_SECRETS_KEY_DEV_ONLY',
+  tiktok: {
+    enabled: Boolean(process.env.TIKTOK_APP_KEY && process.env.TIKTOK_APP_SECRET),
+    appKey: process.env.TIKTOK_APP_KEY ?? '',
+    appSecret: process.env.TIKTOK_APP_SECRET ?? '',
+    redirectUri: process.env.TIKTOK_REDIRECT_URI ?? '',
+    // Seção 38-39: por padrão NUNCA sincroniza estoque automaticamente para a TikTok —
+    // apenas compara. Habilitar exige decisão explícita do operador via variável de ambiente.
+    inventoryPushEnabled: process.env.TIKTOK_INVENTORY_PUSH_ENABLED === 'true',
+    reconcileIntervalMinutes: parseInt(process.env.TIKTOK_RECONCILE_INTERVAL_MINUTES ?? '15', 10),
+  },
 });

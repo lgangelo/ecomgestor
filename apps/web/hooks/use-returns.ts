@@ -59,15 +59,29 @@ export function useCreateReturn(orderId: string) {
   return useMutation({
     mutationFn: (data: {
       reason?: string;
-      items: Array<{ orderItemId: string; quantity: number; condition?: string }>;
+      items: Array<{ orderItemId: string; quantity: number; condition?: string; restockOnReturn?: boolean }>;
     }) => apiFetch<ReturnDetail>(`/orders/${orderId}/returns`, { method: 'POST', body: data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['returns'] });
       queryClient.invalidateQueries({ queryKey: ['orders', orderId] });
       queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
       toast({ title: 'Devolução registrada.' });
     },
     onError: onErrorToast('Não foi possível registrar a devolução'),
+  });
+}
+
+export function useCreateRefund(returnId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { type: 'FULL' | 'PARTIAL'; amount: number; method?: string; externalReference?: string }) =>
+      apiFetch(`/returns/${returnId}/refunds`, { method: 'POST', body: data }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['returns'] });
+      toast({ title: 'Reembolso registrado.' });
+    },
+    onError: onErrorToast('Não foi possível registrar o reembolso'),
   });
 }
 

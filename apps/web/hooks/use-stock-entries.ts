@@ -22,6 +22,7 @@ export interface StockEntryItem {
   productName: string;
   quantity: number;
   unitCost: string;
+  effectiveUnitCost: string | null;
 }
 
 export interface StockEntryDetail {
@@ -29,6 +30,9 @@ export interface StockEntryDetail {
   entryDate: string;
   invoiceNumber: string | null;
   notes: string | null;
+  shippingCost: string;
+  otherCosts: string;
+  allocationMethod: 'BY_VALUE' | 'BY_QUANTITY';
   status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
   supplier: { id: string; name: string } | null;
   items: StockEntryItem[];
@@ -63,6 +67,9 @@ export function useCreateStockEntry() {
       entryDate: string;
       invoiceNumber?: string;
       notes?: string;
+      shippingCost?: number;
+      otherCosts?: number;
+      allocationMethod?: 'BY_VALUE' | 'BY_QUANTITY';
       status?: 'DRAFT' | 'CONFIRMED';
       items: Array<{ variantId: string; quantity: number; unitCost: number }>;
     }) => apiFetch<StockEntryDetail>('/stock-entries', { method: 'POST', body: data }),

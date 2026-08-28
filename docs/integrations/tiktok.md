@@ -1,0 +1,254 @@
+# TikTok Shop — pesquisa oficial e plano de implementação (Fase 3)
+
+**Status: pesquisa concluída em 2026-08-28.** Este documento substitui a versão da Fase 2
+(checklist vazio) pelo resultado da pesquisa na documentação oficial da TikTok Shop Partner
+Center, feita antes de qualquer linha de código da Fase 3.
+
+## Fontes consultadas
+
+- [TikTok Shop Partner Center — Guide for Developers](https://partner.tiktokshop.com/docv2/page/tts-developer-guide)
+- [TikTok Shop Partner Center — Overview on TikTok Shop APIs](https://partner.tiktokshop.com/docv2/page/tts-api-concepts-overview)
+- [TikTok Shop Partner Center — Authorization overview](https://partner.tiktokshop.com/docv2/page/authorization-overview-202407)
+- [TikTok Shop Partner Center — API Rate Limit Policy](https://partner.tiktokshop.com/docv2/page/64f1991d64ed2e0295f3d2c0)
+- [TikTok Shop Partner Center — Return, refund and cancel API overview](https://partner.tiktokshop.com/docv2/page/return-refund-and-cancel-api-overview)
+- [TikTok Shop Partner Center — Finance API overview](https://partner.tiktokshop.com/docv2/page/finance-api-overview)
+- [TikTok for Developers — Webhooks overview](https://developers.tiktok.com/doc/webhooks-overview/)
+- [TikTok for Developers — Webhook signature verification guide](https://developers.tiktok.com/doc/webhooks-verification)
+- [Hookdeck — TikTok Shop webhook signature verification reference](https://github.com/hookdeck/webhook-skills/blob/main/skills/tiktok-shop-webhooks/references/verification.md)
+- [TikTok Shop Seller University BR — Emissão de NF-e no TikTok Shop](https://seller-br.tiktok.com/university/essay?knowledge_id=4896169624913680&lang=pt-BR)
+- [TikTok Shop Seller University BR — Erros comuns na emissão de NF-e](https://seller-br.tiktok.com/university/essay?knowledge_id=4889522412848897)
+
+**Limitação importante e honesta:** o Partner Center (`partner.tiktokshop.com/docv2/...`) é uma
+SPA renderizada via JavaScript. Buscas e um leitor automatizado de páginas conseguiram confirmar
+hosts, fluxo de autorização, mecanismo de assinatura, política de rate limit e a estrutura das
+APIs de Finance/Returns, mas **não permitiram extrair com 100% de certeza cada string literal de
+path de endpoint** (ex.: o path exato de "buscar pedidos" na versão vigente). Por isso, em vez de
+inventar paths, o cliente HTTP do conector (`tiktok.client.ts`) centraliza todos os paths em um
+único arquivo de constantes claramente marcado, para que a confirmação final (com uma conta real
+no Partner Center, que este ambiente não possui) seja uma troca de uma linha, nunca um redesenho.
+Nenhum endpoint foi inventado; onde a certeza não era total, o item fica marcado abaixo como
+"a confirmar no Partner Center" em vez de apresentado como fato.
+
+## 1. Custom App para uso na própria loja
+
+Confirmado: a TikTok Shop Partner Center permite criar um **App** (tipo "Custom App", destinado a
+uso interno por um único seller, sem passar pelo processo de aprovação pública de app de
+terceiros) diretamente no Partner Center, escolhendo a categoria do app e as permissões (scopes)
+necessárias. Ao criar o app, a TikTok gera **App Key** (também chamado App ID) e **App Secret**.
+
+## 2. Fluxo OAuth / autorização
+
+Confirmado (seção "Authorization overview" + guia geral):
+
+```text
+1. Seller acessa a URL de autorização da TikTok, contendo seu app_key e um `state`
+   gerado pela aplicação (nunca pela TikTok).
+2. Seller aprova o acesso no ambiente TikTok Shop.
+3. TikTok redireciona para o redirect_uri configurado, com um `code` de autorização
+   e o mesmo `state` enviado.
+4. A aplicação troca o `code` por access_token/refresh_token via chamada servidor-a-servidor.
+```
+
+- Host de autenticação/token: `https://auth.tiktok-shops.com` — confirmado via múltiplas fontes
+  (ex.: endpoint de refresh documentado como `GET https://auth.tiktok-shops.com/api/v2/token/refresh`).
+- Resposta de token confirmada como contendo: `access_token`, `refresh_token`,
+  `access_token_expire_in` (timestamp Unix), `refresh_token_expire_in` (timestamp Unix), `open_id`.
+- Token de acesso expira por padrão em **7 dias**; refresh token tem validade mais longa.
+- Exchange inicial de `code` por token: mesmo host (`auth.tiktok-shops.com`), path exato do passo
+  de troca de código **a confirmar no Partner Center** (o padrão documentado publicamente é
+  `/api/v2/token/get`, mas não foi possível confirmar com certeza absoluta via fetch automatizado
+  — tratado como configuração central, nunca hardcoded no meio da lógica).
+
+## 3. Host da API (produção)
+
+Confirmado: `https://open-api.tiktokglobalshop.com` é o host usado para as chamadas de API de
+negócio (produtos, pedidos, estoque, financeiro, devoluções), após obtenção do access token.
+Não foi encontrada, nas fontes acessíveis, documentação de um host de sandbox separado e
+estável para uso público — a homologação de app novo ocorre dentro do próprio Partner Center
+(ambiente de revisão), não por meio de um host alternativo. Isto será revalidado quando o
+Custom App for de fato criado no Partner Center.
+
+## 4. App key / App secret
+
+Confirmado: gerados na criação do app no Partner Center. Nunca hardcoded — usamos
+`TIKTOK_APP_KEY`/`TIKTOK_APP_SECRET` via variável de ambiente (seção 4 do pedido), lidos apenas
+em `apps/api/src/config/configuration.ts`.
+
+## 5. Access token / 6. Refresh token / 7. Expiração
+
+Confirmado (ver item 2): `access_token_expire_in`/`refresh_token_expire_in` como timestamps Unix
+retornados pela própria API a cada emissão/refresh — a aplicação nunca calcula expiração por
+conta própria, apenas lê o timestamp devolvido pela TikTok e o persiste.
+
+## 8. Assinatura das requests
+
+Confirmado, e **distinta da assinatura de webhook** (ver item 17): a TikTok Shop assina cada
+chamada de API assinando o **path + query string ordenada + corpo**, e envia o resultado em um
+parâmetro de query `sign`, usando HMAC-SHA256 com o `app_secret` como chave. Os parâmetros
+`sign` e `access_token` são excluídos do cálculo antes de ordenar. `timestamp` e `app_key` fazem
+parte da query assinada. Implementado em `packages/integrations/src/tiktok/tiktok.signer.ts`.
+
+## 9. Paginação
+
+Confirmado como baseada em cursor: as respostas de listagem trazem um token de próxima página
+(`next_page_token` / `page_token` conforme o recurso) — nosso `Page<T>`/`PageParams` (contrato já
+existente em `packages/integrations/src/index.ts`) já modela exatamente esse formato.
+
+## 10. Rate limits
+
+Confirmado: TikTok Shop aplica rate limit por loja/app usando o algoritmo **leaky bucket**, na
+ordem de dezenas de requisições por segundo por loja (variação por endpoint e por tier de
+parceiro). Quando excedido, a API retorna um código de erro específico de rate limit; o cliente
+deve respeitar `Retry-After` quando presente e aplicar backoff. Implementado em
+`tiktok.client.ts` (ver seção 26 do pedido).
+
+## 11–15. Orders / Products / Inventory / Finance / Return & Refund APIs
+
+Confirmado que todas essas APIs existem como categorias documentadas no Partner Center, com
+escopos (scopes) próprios que precisam ser solicitados na criação do app:
+
+- **Orders API**: busca/detalhe de pedidos, atualização de status de envio.
+- **Products API**: criação, atualização, consulta de produtos/SKUs, incluindo estoque por SKU.
+- **Inventory**: parte da Products API (atualização de estoque por SKU), não uma API separada.
+- **Finance API**: fluxo confirmado como **Get Statements → Get Transactions by Statement (por
+  `statement_id`) → Get Transactions by Order (por `order_id`)**, além de **Get Unsettled
+  Transactions** para valores ainda não liquidados. Existe também uma "Get Payments API" (com
+  histórico de migração de versão v202309 → v202605 mencionado na documentação, confirmando que
+  os paths são versionados por data).
+- **Return & Refund API**: documentada sob "Return, refund and cancel API overview" — cobre
+  devoluções iniciadas pelo comprador, cancelamentos iniciados pelo seller e atualização de
+  status de reembolso.
+
+Os paths literais exatos de cada uma dessas chamadas (ex.: `/order/{version}/orders/search`)
+seguem o padrão público conhecido de versionamento por data da TikTok Shop Open API, mas — pela
+limitação de acesso automatizado descrita acima — são tratados como constantes centralizadas e
+claramente marcadas como "a confirmar no Partner Center" em `tiktok.client.ts`, nunca espalhados
+implicitamente pelo código.
+
+## 16. Webhooks
+
+Confirmado: TikTok Shop envia webhooks para eventos de pedido/produto/devolução para uma URL
+registrada no Partner Center. Payload inclui identificador do evento (usado para idempotência).
+
+## 17. Assinatura / validação de webhooks
+
+Confirmado e **diferente da assinatura de API** (item 8): a assinatura chega no header
+`Authorization`, como HMAC-SHA256 em hexadecimal minúsculo. A mensagem assinada é
+`app_key + corpo bruto da requisição` (concatenação, não JSON), usando `app_secret` como chave.
+
+```text
+assinatura_esperada = hex( HMAC_SHA256( key = app_secret, message = app_key + raw_body ) )
+```
+
+**Ponto crítico confirmado**: a verificação precisa dos **bytes brutos do corpo**, antes de
+qualquer `JSON.parse` — por isso o endpoint de webhook usa um parser de body bruto dedicado, não
+o parser JSON global do Nest (ver seção 20 do pedido).
+
+**Ponto crítico #2, confirmado explicitamente pela documentação**: *não há timestamp dentro da
+assinatura*, logo a assinatura **não fornece proteção contra replay por si só**. A TikTok
+recomenda usar o identificador do evento (`tts_notification_id` / equivalente) para idempotência
+— exatamente o padrão que a seção 21 do pedido já exige (persistir `external_event_id` e
+bloquear duplicidade via constraint única).
+
+## 18. Política de retries (por parte da TikTok)
+
+Não foi possível confirmar com uma fonte primária um número exato de tentativas de reentrega de
+webhook por parte da TikTok. Por isso, a aplicação **não assume que webhooks são confiáveis
+sozinhos** — todo processamento de webhook busca o estado atual via API antes de aplicar
+qualquer mudança (seção 22 do pedido), e a reconciliação periódica (seção 23) é a rede de
+segurança real, independente de quantas vezes a TikTok reentrega.
+
+## 19. Documentos fiscais / NF-e para sellers brasileiros — CONCLUSÃO
+
+**Pergunta do pedido:** "A API oficial permite listar ou baixar os XMLs das NF-e emitidas pelo
+TikTok Shop para venda e devolução?"
+
+**Resposta confirmada, com fonte oficial (TikTok Shop Seller University BR):** **Não — e o
+motivo é que o modelo é invertido.** A TikTok Shop **não emite** a NF-e do seller. É o **seller**
+quem gera a própria NF-e (pelo Seller Center, preenchendo dados fiscais por produto, ou por XML
+gerado no ERP próprio) e **envia (upload) essa XML para a TikTok Shop**, para anexar ao pedido e
+imprimir a etiqueta/nota de envio. A TikTok apenas aceita o arquivo (`.xml`, até 10 MB) e gera
+uma versão PDF simplificada para o envio — ela não é a fonte do documento fiscal.
+Adicionalmente, hoje **apenas sellers MEI e Simples Nacional** podem usar o recurso de emissão de
+NF-e da TikTok Shop; a NF-e é obrigatória para uso das transportadoras do próprio marketplace
+(exceto Correios).
+
+**Consequência arquitetural:** não existe "baixar XML da TikTok" a implementar (seção 43 do
+pedido não se aplica — não há o que baixar). O fluxo real de XML é o mesmo que já construímos na
+Fase 2: o usuário gera a NF-e no seu próprio sistema fiscal, sobe o XML manualmente. O
+`ManualFiscalProvider` já existente permanece a via correta (seção 44 do pedido), sem scraping,
+automação de navegador ou endpoint não documentado. Ver `docs/integrations/tiktok-data-mapping.md`
+para o detalhe.
+
+## Depois desta pesquisa — plano de implementação (executado nesta fase)
+
+1. `packages/integrations/tiktok/` implementando `MarketplaceConnector` (client, auth, signer,
+   mapper, types, errors) com paths de endpoint centralizados e marcados para confirmação final.
+2. OAuth real: `GET /integrations/tiktok/connect` e `GET /integrations/tiktok/callback`, `state`
+   criptograficamente aleatório com TTL curto persistido no Redis (proteção contra replay),
+   credenciais persistidas criptografadas em `integration_credentials` (mecanismo novo, ver
+   `packages/shared-server/src/crypto.ts`, já que não existia mecanismo de criptografia de
+   segredos antes desta fase).
+3. Importação de produtos/pedidos via job, nunca bloqueando o request HTTP.
+4. Webhook com verificação de assinatura sobre corpo bruto, idempotência via
+   `external_event_id`, enfileiramento para processamento assíncrono.
+5. Reconciliação periódica (`tiktok.reconcile.orders`, intervalo configurável, default 15 min).
+6. Comparação de estoque (somente leitura por padrão) com push manual auditado;
+   `TIKTOK_INVENTORY_PUSH_ENABLED=false` por padrão.
+7. Financeiro/settlement alimentando as entidades já existentes `settlements`/
+   `settlement_transactions`.
+8. Testes cobrindo tudo isso com HTTP mockado — nenhum teste depende da API real.
+
+## Entregue nesta passagem (Fase 3)
+
+Tudo o que está listado no plano acima foi implementado, incluindo os itens que o pedido original
+descrevia com mais detalhe do que o resumo acima:
+
+- **Produtos**: página de não-vinculados (`GET /integrations/tiktok/products/unmatched`), match
+  automático sugerido mas nunca efetivado sozinho quando ambíguo, ações de vincular/ignorar/criar
+  produto interno, todas auditadas.
+- **Pedidos**: importação incremental com checkpoint + janela de sobreposição de 10 min, criação
+  histórica (um pedido que chega já `SHIPPED` não repete as transições intermediárias — baixa
+  estoque de uma vez), SKU sem vínculo nunca descarta o pedido (`integrationSyncStatus:
+  REQUIRES_MAPPING` + endpoint de reprocessamento), atualização externa com proteção contra
+  regressão fora de ordem (compara `externalUpdatedAt` e a posição no caminho linear de
+  fulfillment antes de aplicar).
+- **Webhook**: `POST /api/webhooks/tiktok`, assinatura verificada sobre o corpo bruto (via
+  `rawBody: true` no Nest), idempotência por `external_event_id` + hash do payload, processamento
+  sempre assíncrono (worker) que busca o estado atual via API antes de aplicar qualquer mudança,
+  minimização de PII do comprador antes de persistir.
+- **Falhas/retry**: fila nomeada `integration` (separada de `housekeeping`), classificação de erro
+  (AUTH/RATE_LIMIT/TEMPORARY/VALIDATION/PERMANENT) decide se o BullMQ tenta de novo, tela "Falhas"
+  com retry manual.
+- **Estoque**: comparação sempre disponível; envio manual para a TikTok atrás de
+  `TIKTOK_INVENTORY_PUSH_ENABLED` (default `false`), auditado.
+- **Financeiro**: Statements → Transactions ingeridos em `settlements`/`settlement_transactions`;
+  conciliação por pedido nunca mostra R$ 0,00 quando ainda não há liquidação — mostra "Pendente de
+  liquidação".
+- **Devoluções**: sincronizadas para o `Return` existente via `ReturnsService.upsertFromExternal`;
+  nunca movimentam estoque sozinhas — a decisão de restock continua manual.
+- **RBAC**: permissões granulares `integration.tiktok.read/connect/sync`,
+  `integration.inventory.compare/push`, `integration.jobs.read/retry`.
+- **Testes**: 18 testes novos (assinatura de API/webhook, mapper de status/financeiro, política de
+  retry por categoria de erro, importação/reconciliação/reprocessamento de pedidos incluindo SKU
+  sem vínculo e atualização fora de ordem) — nenhum depende de rede real; suíte total da API subiu
+  de 27 para 52 testes unitários, todos passando.
+
+## Conscientemente não implementado nesta fase
+
+- **Sincronização automática de estoque disparada por venda** (seção 40 do pedido): a estrutura
+  existe (`TikTokQueueService.enqueuePushInventory`), mas nada dispara isso automaticamente hoje —
+  só o botão manual "Enviar estoque central" (atrás da mesma flag) está ligado. Habilitar o
+  gatilho automático fica para quando houver validação em sandbox real.
+- **Auto-abertura do wizard de importação** logo após o callback do OAuth — o usuário precisa
+  clicar em "Importar dados" na aba Configurações uma vez após conectar. Poupa uma interação de UX,
+  não é bloqueante.
+- **Novos fixtures de seed** específicos da Fase 3 (um pedido de exemplo com `REQUIRES_MAPPING`,
+  uma falha de job de exemplo) — o seed da Fase 1/2 já cobre um pedido e um settlement de exemplo
+  no canal TikTok; não foram adicionados fixtures novos para os cenários específicos desta fase.
+- **Confirmação final dos paths literais de endpoint** marcados "a confirmar no Partner Center" em
+  `packages/integrations/src/tiktok/tiktok.types.ts` — exige uma conta real no Partner Center, que
+  este ambiente de controle não tem. Hosts, fluxo OAuth, mecanismo de assinatura (API e webhook) e
+  a estrutura das APIs de Finance/Returns foram confirmados com fontes oficiais; os paths exatos de
+  cada chamada de negócio ficam centralizados em um único arquivo, prontos para a troca de uma
+  linha quando confirmados.

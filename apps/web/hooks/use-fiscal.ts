@@ -1,7 +1,7 @@
 'use client';
 
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { apiFetch, apiUrl } from '@/lib/api-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiFetch, apiUrl, ApiError } from '@/lib/api-client';
 import { buildQueryString } from '@/lib/query-string';
 import type { Paginated } from '@/lib/types/pagination';
 import { toast } from '@/components/ui/use-toast';
@@ -15,7 +15,19 @@ export interface FiscalDocumentListItem {
   number: string | null;
   series: string | null;
   status: string;
+  sourceType: 'UPLOADED' | 'GENERATED';
   issueDate: string | null;
+}
+
+export interface FiscalPending {
+  salesWithoutInvoice: Array<{
+    orderId: string;
+    orderDate: string;
+    customerName: string | null;
+    channelName: string;
+    total: string;
+  }>;
+  returnsWithoutDocument: Array<{ id: string; orderId: string; customerName: string | null }>;
 }
 
 const CSRF_COOKIE_NAME = 'ecm_csrf_token';
@@ -73,6 +85,76 @@ export function useDownloadFiscalXml() {
       downloadBlob(apiUrl(`/fiscal/documents/${documentId}/xml`), `nfe-${documentId}.xml`),
     onError: () =>
       toast({ title: 'Não foi possível baixar o XML', variant: 'destructive' }),
+  });
+}
+
+export function useFiscalPending() {
+  return useQuery({
+    queryKey: ['fiscal-pending'],
+    queryFn: () => apiFetch<FiscalPending>('/fiscal/pending'),
+  });
+}
+
+export function useUploadFiscalDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ file, type, orderId }: { file: File; type: string; orderId?: string }) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', type);
+      if (orderId) formData.append('orderId', orderId);
+
+      const csrf = readCookie(CSRF_COOKIE_NAME);
+      const response = await fetch(apiUrl('/fiscal/documents/upload'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: csrf ? { [CSRF_HEADER_NAME]: csrf } : undefined,
+        body: formData,
+      });
+      const payload = await response.json().catch(() => undefined);
+      if (!response.ok) {
+        const message = payload && typeof payload.message === 'string' ? payload.message : 'Falha no upload';
+        throw new ApiError(message, response.status, payload);
+      }
+      return payload as { id: string; autoAssociated: boolean; orderId: string | null };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['fiscal-documents'] });
+      queryClient.invalidateQueries({ queryKey: ['fiscal-pending'] });
+      toast({
+        title: 'XML enviado com sucesso.',
+        description: result.autoAssociated
+          ? 'Associado automaticamente a um pedido.'
+          : result.orderId
+            ? undefined
+            : 'Não foi possível associar automaticamente — associe manualmente a um pedido.',
+      });
+    },
+    onError: (error) =>
+      toast({
+        title: 'Não foi possível enviar o XML',
+        description: error instanceof ApiError ? error.message : undefined,
+        variant: 'destructive',
+      }),
+  });
+}
+
+export function useAssociateFiscalDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ documentId, orderId }: { documentId: string; orderId: string }) =>
+      apiFetch(`/fiscal/documents/${documentId}/associate`, { method: 'PATCH', body: { orderId } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fiscal-documents'] });
+      queryClient.invalidateQueries({ queryKey: ['fiscal-pending'] });
+      toast({ title: 'Documento associado ao pedido.' });
+    },
+    onError: (error) =>
+      toast({
+        title: 'Não foi possível associar o documento',
+        description: error instanceof ApiError ? error.message : undefined,
+        variant: 'destructive',
+      }),
   });
 }
 

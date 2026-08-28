@@ -6,8 +6,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    "incremental": true
+    "experimentalDecorators": true
   },
   "include": ["src"]
 }

@@ -1,14 +1,19 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@ecommerce-manager/database';
+import { OrderStatus, Prisma, RefundType } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
+import { InventoryLedgerService } from '../inventory/ledger.service';
 import { QueryReturnsDto } from './dto/query-returns.dto';
 import { CreateReturnDto } from './dto/create-return.dto';
 import { UpdateReturnStatusDto } from './dto/update-return-status.dto';
+import { CreateRefundDto } from './dto/create-refund.dto';
 
 @Injectable()
 export class ReturnsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ledger: InventoryLedgerService,
+  ) {}
 
   async findAll(companyId: string, query: QueryReturnsDto) {
     const where: Prisma.ReturnWhereInput = {
@@ -44,12 +49,13 @@ export class ReturnsService {
     const ret = await this.prisma.client.return.findFirst({
       where: { id, order: { companyId } },
       include: {
-        order: { select: { id: true, customerName: true } },
+        order: { select: { id: true, customerName: true, total: true } },
         items: {
           include: {
-            orderItem: {
-              include: { variant: { select: { sku: true, product: { select: { name: true } } } } },
-            },
+            // sku/nome vêm do snapshot da venda (skuAtSale/productNameAtSale) — nunca da
+            // variante atual, que pode nem existir mais para itens importados sem vínculo
+            // (seção 15 da Fase 3).
+            orderItem: true,
           },
         },
         refunds: true,
@@ -66,11 +72,15 @@ export class ReturnsService {
     });
     if (!order) throw new NotFoundException('Pedido não encontrado');
 
-    const orderItemIds = new Set(order.items.map((i) => i.id));
+    const orderItemsById = new Map(order.items.map((i) => [i.id, i]));
     for (const item of dto.items) {
-      if (!orderItemIds.has(item.orderItemId)) {
+      const orderItem = orderItemsById.get(item.orderItemId);
+      if (!orderItem) {
+        throw new BadRequestException(`O item ${item.orderItemId} não pertence a este pedido`);
+      }
+      if (item.quantity > orderItem.quantity) {
         throw new BadRequestException(
-          `O item ${item.orderItemId} não pertence a este pedido`,
+          `Quantidade devolvida (${item.quantity}) maior que a quantidade vendida (${orderItem.quantity}) para ${orderItem.skuAtSale}`,
         );
       }
     }
@@ -85,10 +95,35 @@ export class ReturnsService {
               orderItemId: item.orderItemId,
               quantity: item.quantity,
               condition: item.condition ?? null,
+              restockOnReturn: item.restockOnReturn ?? false,
             })),
           },
         },
+        include: { items: true },
       });
+
+      // Estoque só retorna quando explicitamente marcado (seção 18) — nunca automático.
+      for (const returnItem of created.items) {
+        if (!returnItem.restockOnReturn) continue;
+        const orderItem = orderItemsById.get(returnItem.orderItemId)!;
+        if (!orderItem.variantId) {
+          throw new BadRequestException(
+            `O item ${orderItem.skuAtSale} ainda não tem um produto interno vinculado — resolva o vínculo antes de marcar retorno ao estoque.`,
+          );
+        }
+        await this.ledger.restock(
+          tx,
+          {
+            companyId,
+            variantId: orderItem.variantId,
+            referenceType: 'return',
+            referenceId: created.id,
+            userId,
+            reason: dto.reason ?? 'Devolução com retorno ao estoque',
+          },
+          returnItem.quantity,
+        );
+      }
 
       await tx.order.update({ where: { id: orderId }, data: { status: OrderStatus.RETURN_REQUESTED } });
       await tx.orderStatusHistory.create({
@@ -116,5 +151,95 @@ export class ReturnsService {
     });
 
     return { old: existing, updated };
+  }
+
+  /**
+   * Reembolso financeiro — deliberadamente separado do retorno físico da mercadoria
+   * (seção 19). Marcar um refund como processado nunca, por si só, gera InventoryMovement.
+   */
+  async createRefund(returnId: string, companyId: string, userId: string, dto: CreateRefundDto) {
+    const ret = await this.prisma.client.return.findFirst({
+      where: { id: returnId, order: { companyId } },
+      include: { order: true },
+    });
+    if (!ret) throw new NotFoundException('Devolução não encontrada');
+    if (ret.status === 'REJECTED') {
+      throw new BadRequestException('Não é possível reembolsar uma devolução rejeitada');
+    }
+
+    const orderStatus = dto.type === RefundType.FULL ? OrderStatus.REFUNDED : OrderStatus.PARTIALLY_REFUNDED;
+
+    const refund = await this.prisma.client.$transaction(async (tx) => {
+      const created = await tx.refund.create({
+        data: {
+          returnId,
+          type: dto.type,
+          amount: dto.amount,
+          method: dto.method ?? null,
+          externalReference: dto.externalReference ?? null,
+          status: 'PROCESSED',
+          processedAt: new Date(),
+        },
+      });
+
+      await tx.order.update({ where: { id: ret.orderId }, data: { status: orderStatus } });
+      await tx.orderStatusHistory.create({
+        data: { orderId: ret.orderId, status: orderStatus, changedBy: userId, note: `Reembolso ${dto.type}` },
+      });
+
+      return created;
+    });
+
+    return refund;
+  }
+
+  /**
+   * Upsert idempotente de uma devolução vinda de um canal externo (seção 34-35 da Fase 3).
+   * "RETURNED no TikTok" nunca significa automaticamente "apto ao estoque" — por isso os itens
+   * (quando o payload externo permite identificá-los com segurança) sempre entram com
+   * `condition: null` e `restockOnReturn: false`; a decisão de restock continua exigindo
+   * intervenção manual (seção 36), mesmo para devoluções sincronizadas. Quando o item não pôde
+   * ser identificado com segurança no payload externo, a devolução é criada só com o cabeçalho
+   * (sem itens) para completude manual posterior — nunca inventamos qual item foi devolvido.
+   */
+  async upsertFromExternal(
+    orderId: string,
+    external: {
+      externalReturnId: string;
+      externalStatus: string;
+      reason?: string;
+      items: Array<{ orderItemId: string; quantity: number }>;
+    },
+  ): Promise<{ returnId: string; created: boolean }> {
+    const existing = await this.prisma.client.return.findUnique({
+      where: { orderId_externalReturnId: { orderId, externalReturnId: external.externalReturnId } },
+    });
+
+    if (existing) {
+      await this.prisma.client.return.update({
+        where: { id: existing.id },
+        data: { externalStatus: external.externalStatus },
+      });
+      return { returnId: existing.id, created: false };
+    }
+
+    const created = await this.prisma.client.return.create({
+      data: {
+        orderId,
+        reason: external.reason ?? null,
+        externalReturnId: external.externalReturnId,
+        externalStatus: external.externalStatus,
+        items: {
+          create: external.items.map((item) => ({
+            orderItemId: item.orderItemId,
+            quantity: item.quantity,
+            condition: null,
+            restockOnReturn: false,
+          })),
+        },
+      },
+    });
+
+    return { returnId: created.id, created: true };
   }
 }

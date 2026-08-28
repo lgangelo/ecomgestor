@@ -12,11 +12,15 @@ import { FISCAL_DOCUMENT_STATUS_PRESENTATION, ORDER_STATUS_PRESENTATION } from '
 import { formatBRL } from '@ecommerce-manager/shared';
 import { formatDate } from '@/lib/format';
 import { useOrder } from '@/hooks/use-orders';
+import { useReprocessTikTokOrder, useTikTokOrderReconciliation } from '@/hooks/use-tiktok';
 import { UpdateStatusDialog } from './update-status-dialog';
 import { RegisterReturnDialog } from './register-return-dialog';
 
 export function OrderDetailView({ orderId }: { orderId: string }) {
   const { data: order, isLoading } = useOrder(orderId);
+  const reprocess = useReprocessTikTokOrder();
+  const isTikTok = order?.channel.type === 'TIKTOK_SHOP';
+  const { data: reconciliation } = useTikTokOrderReconciliation(orderId, isTikTok);
 
   if (isLoading || !order) {
     return <Skeleton className="h-96" />;
@@ -30,6 +34,17 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
       >
         <ArrowLeft className="h-4 w-4" /> Voltar para pedidos
       </Link>
+
+      {order.integrationSyncStatus !== 'OK' && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm">
+          <span>{order.integrationIssue ?? 'Pedido com pendência de integração.'}</span>
+          {order.integrationSyncStatus === 'REQUIRES_MAPPING' && (
+            <Button size="sm" variant="outline" disabled={reprocess.isPending} onClick={() => reprocess.mutate(orderId)}>
+              Reprocessar pedido
+            </Button>
+          )}
+        </div>
+      )}
 
       <PageHeader
         title={`Pedido ${order.externalOrderId ?? order.id.slice(0, 8)}`}
@@ -104,7 +119,9 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                       </TableCell>
                       <TableCell>{item.quantity}</TableCell>
                       <TableCell>{formatBRL(item.unitPrice)}</TableCell>
-                      <TableCell>{formatBRL(item.discount)}</TableCell>
+                      <TableCell>
+                        {formatBRL(Number(item.sellerDiscount) + Number(item.platformDiscount))}
+                      </TableCell>
                       <TableCell>{formatBRL(item.lineTotal)}</TableCell>
                     </TableRow>
                   ))}
@@ -171,6 +188,34 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
               )}
             </CardContent>
           </Card>
+
+          {isTikTok && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Conciliação TikTok Shop</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 pt-0 text-sm">
+                {!reconciliation || !reconciliation.settled ? (
+                  <p className="text-muted-foreground">Pendente de liquidação.</p>
+                ) : (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Venda bruta</span>
+                      <span>{formatBRL(reconciliation.grossSale ?? 0)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Taxas</span>
+                      <span>{formatBRL(reconciliation.fees ?? 0)}</span>
+                    </div>
+                    <div className="flex justify-between font-medium">
+                      <span>Receita líquida</span>
+                      <span>{formatBRL(reconciliation.netRevenue ?? 0)}</span>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

@@ -5,6 +5,8 @@ import { validateEnv } from './config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 import { HousekeepingWorkerService } from './queue/housekeeping.worker.service';
+import { TikTokWorkerService } from './queue/tiktok.worker.service';
+import { TikTokModule } from './integrations/tiktok/tiktok.module';
 
 /**
  * Módulo mínimo executado pelo processo/container `ecommerce-worker`.
@@ -16,7 +18,8 @@ import { HousekeepingWorkerService } from './queue/housekeeping.worker.service';
     ConfigModule.forRoot({ isGlobal: true, load: [configuration], validate: validateEnv }),
     PrismaModule,
     RedisModule,
+    TikTokModule,
   ],
-  providers: [HousekeepingWorkerService],
+  providers: [HousekeepingWorkerService, TikTokWorkerService],
 })
 export class WorkerModule {}

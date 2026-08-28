@@ -33,7 +33,13 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactNode }) 
   const [supplierId, setSupplierId] = React.useState('');
   const [entryDate, setEntryDate] = React.useState(toDateInputValue(new Date()));
   const [invoiceNumber, setInvoiceNumber] = React.useState('');
+  const [shippingCost, setShippingCost] = React.useState('0');
+  const [otherCosts, setOtherCosts] = React.useState('0');
+  const [allocationMethod, setAllocationMethod] = React.useState<'BY_VALUE' | 'BY_QUANTITY'>('BY_VALUE');
   const [rows, setRows] = React.useState<Row[]>([]);
+
+  const itemsValue = rows.reduce((sum, r) => sum + Number(r.quantity || 0) * Number(r.unitCost || 0), 0);
+  const extraCosts = Number(shippingCost || 0) + Number(otherCosts || 0);
 
   function addRow(variant: PickedVariant) {
     setRows((r) => [...r, { ...variant, quantity: '1', unitCost: String(variant.suggestedPrice) }]);
@@ -53,6 +59,9 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactNode }) 
       supplierId: supplierId || undefined,
       entryDate,
       invoiceNumber: invoiceNumber || undefined,
+      shippingCost: Number(shippingCost || 0),
+      otherCosts: Number(otherCosts || 0),
+      allocationMethod,
       status,
       items: rows.map((r) => ({
         variantId: r.variantId,
@@ -63,6 +72,8 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactNode }) 
     setOpen(false);
     setRows([]);
     setInvoiceNumber('');
+    setShippingCost('0');
+    setOtherCosts('0');
   }
 
   return (
@@ -96,6 +107,40 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactNode }) 
             <div className="space-y-1.5">
               <Label htmlFor="invoiceNumber">Nota fiscal</Label>
               <Input id="invoiceNumber" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="shippingCost">Frete (R$)</Label>
+              <Input
+                id="shippingCost"
+                type="number"
+                min="0"
+                step="0.01"
+                value={shippingCost}
+                onChange={(e) => setShippingCost(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="otherCosts">Outras despesas (R$)</Label>
+              <Input
+                id="otherCosts"
+                type="number"
+                min="0"
+                step="0.01"
+                value={otherCosts}
+                onChange={(e) => setOtherCosts(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Método de rateio</Label>
+              <Select value={allocationMethod} onValueChange={(v) => setAllocationMethod(v as 'BY_VALUE' | 'BY_QUANTITY')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BY_VALUE">Por valor dos itens</SelectItem>
+                  <SelectItem value="BY_QUANTITY">Por quantidade</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -147,12 +192,11 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactNode }) 
                     </Button>
                   </div>
                 ))}
-                <p className="text-right text-sm text-muted-foreground">
-                  Total:{' '}
-                  {formatBRL(
-                    rows.reduce((sum, r) => sum + Number(r.quantity || 0) * Number(r.unitCost || 0), 0),
-                  )}
-                </p>
+                <div className="space-y-1 text-right text-sm text-muted-foreground">
+                  <p>Valor dos itens: {formatBRL(itemsValue)}</p>
+                  {extraCosts > 0 && <p>Frete + outras despesas a ratear: {formatBRL(extraCosts)}</p>}
+                  <p className="font-medium text-foreground">Custo total da entrada: {formatBRL(itemsValue + extraCosts)}</p>
+                </div>
               </div>
             )}
           </div>

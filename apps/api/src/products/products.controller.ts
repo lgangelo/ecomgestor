@@ -31,6 +31,30 @@ export class ProductsController {
     return this.productsService.findOne(id, user.companyId);
   }
 
+  @Get(':id/summary')
+  @RequirePermissions(PERMISSIONS.PRODUCT_READ)
+  getSummary(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.productsService.getSummary(id, user.companyId);
+  }
+
+  @Get(':id/movements')
+  @RequirePermissions(PERMISSIONS.PRODUCT_READ)
+  getMovements(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.productsService.getMovements(id, user.companyId);
+  }
+
+  @Get(':id/cost-history')
+  @RequirePermissions(PERMISSIONS.PRODUCT_READ)
+  getAllCostHistory(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.productsService.getAllCostHistory(id, user.companyId);
+  }
+
+  @Get(':id/channels')
+  @RequirePermissions(PERMISSIONS.PRODUCT_READ)
+  getChannelMappings(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.productsService.getChannelMappings(id, user.companyId);
+  }
+
   @Post()
   @RequirePermissions(PERMISSIONS.PRODUCT_CREATE)
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateProductDto) {

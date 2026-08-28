@@ -42,9 +42,18 @@ export function StockEntryDetailView({ id }: { id: string }) {
         }
       />
 
-      <div className="mb-6 flex items-center gap-4">
+      <div className="mb-6 flex flex-wrap items-center gap-4">
         <StatusBadge status={entry.status} map={STOCK_ENTRY_STATUS_PRESENTATION} />
         {entry.invoiceNumber && <span className="text-sm text-muted-foreground">NF: {entry.invoiceNumber}</span>}
+        {Number(entry.shippingCost) > 0 && (
+          <span className="text-sm text-muted-foreground">Frete: {formatBRL(entry.shippingCost)}</span>
+        )}
+        {Number(entry.otherCosts) > 0 && (
+          <span className="text-sm text-muted-foreground">Outras despesas: {formatBRL(entry.otherCosts)}</span>
+        )}
+        <span className="text-sm text-muted-foreground">
+          Rateio: {entry.allocationMethod === 'BY_VALUE' ? 'por valor dos itens' : 'por quantidade'}
+        </span>
       </div>
 
       <Card>
@@ -59,6 +68,7 @@ export function StockEntryDetailView({ id }: { id: string }) {
                 <TableHead>Produto</TableHead>
                 <TableHead>Quantidade</TableHead>
                 <TableHead>Custo unitário</TableHead>
+                <TableHead>Custo efetivo (com rateio)</TableHead>
                 <TableHead>Subtotal</TableHead>
               </TableRow>
             </TableHeader>
@@ -69,7 +79,10 @@ export function StockEntryDetailView({ id }: { id: string }) {
                   <TableCell>{item.productName}</TableCell>
                   <TableCell>{item.quantity}</TableCell>
                   <TableCell>{formatBRL(item.unitCost)}</TableCell>
-                  <TableCell>{formatBRL(Number(item.unitCost) * item.quantity)}</TableCell>
+                  <TableCell>{item.effectiveUnitCost ? formatBRL(item.effectiveUnitCost) : '—'}</TableCell>
+                  <TableCell>
+                    {formatBRL(Number(item.effectiveUnitCost ?? item.unitCost) * item.quantity)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
