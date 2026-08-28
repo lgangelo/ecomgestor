@@ -1,0 +1,11 @@
+# Middlewares dinâmicos do Traefik (cabeçalhos de segurança na camada de proxy).
+http:
+  middlewares:
+    security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: 'strict-origin-when-cross-origin'

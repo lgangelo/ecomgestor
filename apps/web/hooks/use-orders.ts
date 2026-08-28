@@ -1,0 +1,122 @@
+'use client';
+
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiFetch, ApiError } from '@/lib/api-client';
+import { buildQueryString } from '@/lib/query-string';
+import type { Paginated } from '@/lib/types/pagination';
+import { toast } from '@/components/ui/use-toast';
+
+export interface OrderListItem {
+  id: string;
+  orderDate: string;
+  externalOrderId: string | null;
+  channelName: string;
+  customerName: string | null;
+  total: string;
+  status: string;
+}
+
+export interface OrderItemDetail {
+  id: string;
+  variantId: string;
+  sku: string;
+  productName: string;
+  quantity: number;
+  unitPrice: string;
+  discount: string;
+  unitCost: string;
+  lineTotal: number;
+}
+
+export interface OrderDetail {
+  id: string;
+  channel: { id: string; name: string; type: string };
+  externalOrderId: string | null;
+  externalStatus: string | null;
+  customerName: string | null;
+  customerDocument: string | null;
+  status: string;
+  orderDate: string;
+  subtotal: string;
+  discount: string;
+  shipping: string;
+  total: string;
+  paymentMethod: string | null;
+  notes: string | null;
+  items: OrderItemDetail[];
+  payments: Array<{ id: string; method: string; amount: string; status: string; paidAt: string | null }>;
+  statusHistory: Array<{ id: string; status: string; changedAt: string; changedBy: string | null; note: string | null }>;
+  fiscalDocuments: Array<{ id: string; type: string; number: string | null; status: string }>;
+  cmv: number;
+  marketplaceFeesTotal: number;
+  estimatedProfit: number;
+  marginPercent: number;
+}
+
+export interface OrderFilters {
+  page?: number;
+  pageSize?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  channelId?: string;
+  status?: string;
+  productId?: string;
+  customerName?: string;
+  hasFiscalDocument?: boolean;
+}
+
+export function useOrders(filters: OrderFilters) {
+  const query = buildQueryString({ page: filters.page ?? 1, pageSize: filters.pageSize ?? 20, ...filters });
+  return useQuery({
+    queryKey: ['orders', filters],
+    queryFn: () => apiFetch<Paginated<OrderListItem>>(`/orders${query}`),
+  });
+}
+
+export function useOrder(id: string | undefined) {
+  return useQuery({
+    queryKey: ['orders', id],
+    queryFn: () => apiFetch<OrderDetail>(`/orders/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+function onErrorToast(title: string) {
+  return (error: unknown) =>
+    toast({ title, description: error instanceof ApiError ? error.message : undefined, variant: 'destructive' });
+}
+
+export function useUpdateOrderStatus(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { status: string; note?: string }) =>
+      apiFetch(`/orders/${id}/status`, { method: 'PATCH', body: data }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      toast({ title: 'Status do pedido atualizado.' });
+    },
+    onError: onErrorToast('Não foi possível atualizar o status'),
+  });
+}
+
+export function useCreateManualOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      channelType: string;
+      customerName: string;
+      orderDate: string;
+      items: Array<{ variantId: string; quantity: number; unitPrice: number; discount?: number }>;
+      shipping?: number;
+      paymentMethod?: string;
+      status?: string;
+      notes?: string;
+    }) => apiFetch<OrderDetail>('/orders/manual', { method: 'POST', body: data }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      toast({ title: 'Venda registrada com sucesso.' });
+    },
+    onError: onErrorToast('Não foi possível registrar a venda'),
+  });
+}

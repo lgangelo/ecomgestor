@@ -1,0 +1,125 @@
+name: ecommerce-manager
+
+networks:
+  ecommerce-network:
+    name: ecommerce-network
+
+volumes:
+  redis-data:
+  traefik-certs:
+
+services:
+  traefik:
+    image: traefik:v3.1
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./infra/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./infra/traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik-certs:/letsencrypt
+    networks:
+      - ecommerce-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: ecommerce-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redis-data:/data
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ecommerce-api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    image: ecommerce-manager/api:latest
+    container_name: ecommerce-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+    # Permite que o container alcance o PostgreSQL instalado diretamente na VM host
+    # (fora do Docker) via host.docker.internal, como recomendado no Docker >= 20.10 no Linux.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('http').get('http://localhost:3001/api/health/live', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.ecommerce-api.rule=Host(`${API_DOMAIN}`)'
+      - 'traefik.http.routers.ecommerce-api.entrypoints=websecure'
+      - 'traefik.http.routers.ecommerce-api.tls.certresolver=letsencrypt'
+      - 'traefik.http.routers.ecommerce-api.middlewares=security-headers@file'
+      - 'traefik.http.services.ecommerce-api.loadbalancer.server.port=3001'
+
+  ecommerce-worker:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    image: ecommerce-manager/api:latest
+    container_name: ecommerce-worker
+    restart: unless-stopped
+    command: ['node', 'apps/api/dist/worker.js']
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+
+  ecommerce-web:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    image: ecommerce-manager/web:latest
+    container_name: ecommerce-web
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - ecommerce-api
+    networks:
+      - ecommerce-network
+    healthcheck:
+      test: ['CMD', 'node', '-e', "require('http').get('http://localhost:3000', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.ecommerce-web.rule=Host(`${WEB_DOMAIN}`)'
+      - 'traefik.http.routers.ecommerce-web.entrypoints=websecure'
+      - 'traefik.http.routers.ecommerce-web.tls.certresolver=letsencrypt'
+      - 'traefik.http.routers.ecommerce-web.middlewares=security-headers@file'
+      - 'traefik.http.services.ecommerce-web.loadbalancer.server.port=3000'

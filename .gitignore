@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+*.log
+.env
+.env.local
+.env.*.local
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+/packages/database/generated/
+/infra/traefik/acme.json
+.turbo/

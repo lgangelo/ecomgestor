@@ -1,0 +1,822 @@
+// Ecommerce Manager — schema principal
+// Convenções:
+// - Todas as PKs são UUID gerados pela aplicação (uuid v4), nunca IDs externos de marketplace.
+// - Valores monetários usam Decimal(14,2), nunca float.
+// - Timestamps são armazenados em UTC (timestamptz); timezone de exibição vem de Company.timezone.
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../generated/client"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Empresa / Identidade / RBAC
+// ---------------------------------------------------------------------------
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  legalName String?  @map("legal_name")
+  cnpj      String?  @unique
+  timezone  String   @default("America/Sao_Paulo")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  users                  User[]
+  salesChannels          SalesChannel[]
+  integrations           Integration[]
+  products               Product[]
+  categories             Category[]
+  suppliers              Supplier[]
+  stockEntries           StockEntry[]
+  inventories            Inventory[]
+  inventoryMovements     InventoryMovement[]
+  orders                 Order[]
+  expenseCategories      ExpenseCategory[]
+  expenses               Expense[]
+  fiscalDocuments        FiscalDocument[]
+  monthlyClosings        MonthlyClosing[]
+  auditLogs              AuditLog[]
+  settlements            Settlement[]
+
+  @@map("companies")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  companyId    String    @map("company_id")
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz
+  failedLoginAttempts Int @default(0) @map("failed_login_attempts")
+  lockedUntil  DateTime? @map("locked_until") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  company       Company        @relation(fields: [companyId], references: [id])
+  userRoles     UserRole[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+
+  @@index([companyId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  userAgent  String?   @map("user_agent")
+  ip         String?
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+enum RoleName {
+  ADMIN
+  MANAGER
+  OPERATOR
+  VIEWER
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        RoleName @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(uuid())
+  key         String  @unique
+  description String?
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  userId String @map("user_id")
+  roleId String @map("role_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ---------------------------------------------------------------------------
+// Canais de venda / Integrações
+// ---------------------------------------------------------------------------
+
+enum ChannelType {
+  TIKTOK_SHOP
+  SHOPEE
+  MERCADO_LIVRE
+  INSTAGRAM
+  WHATSAPP
+  LOJA_FISICA
+  OUTRO
+}
+
+model SalesChannel {
+  id        String      @id @default(uuid())
+  companyId String      @map("company_id")
+  name      String
+  type      ChannelType
+  isManual  Boolean     @default(false) @map("is_manual")
+  isActive  Boolean     @default(true) @map("is_active")
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  company                 Company                 @relation(fields: [companyId], references: [id])
+  integration             Integration?
+  channelProductMappings  ChannelProductMapping[]
+  orders                  Order[]
+  marketplaceFees         MarketplaceFee[]
+  settlements             Settlement[]
+
+  @@unique([companyId, type, name])
+  @@map("sales_channels")
+}
+
+enum IntegrationProvider {
+  TIKTOK_SHOP
+  SHOPEE
+  MERCADO_LIVRE
+}
+
+enum IntegrationStatus {
+  DISCONNECTED
+  CONNECTED
+  ERROR
+  COMING_SOON
+}
+
+model Integration {
+  id            String              @id @default(uuid())
+  companyId     String              @map("company_id")
+  channelId     String?             @unique @map("channel_id")
+  provider      IntegrationProvider
+  status        IntegrationStatus   @default(DISCONNECTED)
+  storeName     String?             @map("store_name")
+  lastSyncAt    DateTime?           @map("last_sync_at") @db.Timestamptz
+  lastError     String?             @map("last_error")
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz
+
+  company     Company                  @relation(fields: [companyId], references: [id])
+  channel     SalesChannel?            @relation(fields: [channelId], references: [id])
+  credentials IntegrationCredential[]
+  webhookEvents WebhookEvent[]
+  syncJobs    SyncJob[]
+
+  @@unique([companyId, provider])
+  @@map("integrations")
+}
+
+// Credenciais nunca são expostas em logs ou respostas de API; armazenadas para uso futuro
+// pelos conectores reais (etapa de integrações), fora desta primeira etapa.
+model IntegrationCredential {
+  id            String    @id @default(uuid())
+  integrationId String    @map("integration_id")
+  key           String
+  value         String
+  expiresAt     DateTime? @map("expires_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, key])
+  @@map("integration_credentials")
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo / Produtos
+// ---------------------------------------------------------------------------
+
+model Category {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String
+  parentId  String?  @map("parent_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company  Company    @relation(fields: [companyId], references: [id])
+  parent   Category?  @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryToCategory")
+  products Product[]
+
+  @@unique([companyId, name])
+  @@map("categories")
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DRAFT
+}
+
+model Product {
+  id          String        @id @default(uuid())
+  companyId   String        @map("company_id")
+  name        String
+  description String?
+  categoryId  String?       @map("category_id")
+  brand       String?
+  status      ProductStatus @default(DRAFT)
+  baseSku     String        @map("base_sku")
+  imageUrl    String?       @map("image_url")
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  company  Company          @relation(fields: [companyId], references: [id])
+  category Category?        @relation(fields: [categoryId], references: [id])
+  variants ProductVariant[]
+
+  @@unique([companyId, baseSku])
+  @@index([companyId, status])
+  @@map("products")
+}
+
+enum VariantStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model ProductVariant {
+  id             String        @id @default(uuid())
+  productId      String        @map("product_id")
+  sku            String        @unique
+  barcode        String?
+  color          String?
+  size           String?
+  weight         Decimal?      @db.Decimal(10, 3)
+  length         Decimal?      @db.Decimal(10, 2)
+  width          Decimal?      @db.Decimal(10, 2)
+  height         Decimal?      @db.Decimal(10, 2)
+  suggestedPrice Decimal       @default(0) @map("suggested_price") @db.Decimal(14, 2)
+  minStock       Int           @default(0) @map("min_stock")
+  status         VariantStatus @default(ACTIVE)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  product              Product                 @relation(fields: [productId], references: [id])
+  costHistory          ProductCostHistory[]
+  channelMappings      ChannelProductMapping[]
+  stockEntryItems      StockEntryItem[]
+  inventory            Inventory?
+  inventoryMovements   InventoryMovement[]
+  orderItems           OrderItem[]
+
+  @@index([productId])
+  @@map("product_variants")
+}
+
+model ProductCostHistory {
+  id            String   @id @default(uuid())
+  variantId     String   @map("variant_id")
+  cost          Decimal  @db.Decimal(14, 2)
+  effectiveDate DateTime @map("effective_date") @db.Timestamptz
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([variantId, effectiveDate])
+  @@map("product_cost_history")
+}
+
+model ChannelProductMapping {
+  id               String   @id @default(uuid())
+  channelId        String   @map("channel_id")
+  variantId        String   @map("variant_id")
+  externalProductId String? @map("external_product_id")
+  externalSku      String?  @map("external_sku")
+  syncStatus       String   @default("PENDING") @map("sync_status")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  channel SalesChannel   @relation(fields: [channelId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([channelId, variantId])
+  @@map("channel_product_mappings")
+}
+
+// ---------------------------------------------------------------------------
+// Fornecedores / Entradas / Estoque
+// ---------------------------------------------------------------------------
+
+model Supplier {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String
+  document  String?
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company      Company      @relation(fields: [companyId], references: [id])
+  stockEntries StockEntry[]
+
+  @@map("suppliers")
+}
+
+enum StockEntryStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+model StockEntry {
+  id            String           @id @default(uuid())
+  companyId     String           @map("company_id")
+  supplierId    String?          @map("supplier_id")
+  entryDate     DateTime         @map("entry_date") @db.Timestamptz
+  invoiceNumber String?          @map("invoice_number")
+  notes         String?
+  status        StockEntryStatus @default(DRAFT)
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  company  Company          @relation(fields: [companyId], references: [id])
+  supplier Supplier?        @relation(fields: [supplierId], references: [id])
+  items    StockEntryItem[]
+
+  @@map("stock_entries")
+}
+
+model StockEntryItem {
+  id           String  @id @default(uuid())
+  stockEntryId String  @map("stock_entry_id")
+  variantId    String  @map("variant_id")
+  quantity     Int
+  unitCost     Decimal @map("unit_cost") @db.Decimal(14, 2)
+
+  stockEntry StockEntry     @relation(fields: [stockEntryId], references: [id], onDelete: Cascade)
+  variant    ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@map("stock_entry_items")
+}
+
+model Inventory {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  variantId String   @unique @map("variant_id")
+  available Int      @default(0)
+  reserved  Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  company Company        @relation(fields: [companyId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([companyId])
+  @@map("inventories")
+}
+
+enum InventoryMovementType {
+  PURCHASE
+  SALE
+  RETURN
+  CANCELLATION
+  ADJUSTMENT
+  DAMAGE
+  LOSS
+  RESERVATION
+  RELEASE
+}
+
+model InventoryMovement {
+  id         String                 @id @default(uuid())
+  companyId  String                 @map("company_id")
+  variantId  String                 @map("variant_id")
+  type       InventoryMovementType
+  quantity   Int
+  reference  String?
+  note       String?
+  createdBy  String?                @map("created_by")
+  createdAt  DateTime               @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company        @relation(fields: [companyId], references: [id])
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([companyId, variantId, createdAt])
+  @@map("inventory_movements")
+}
+
+// ---------------------------------------------------------------------------
+// Pedidos / Vendas
+// ---------------------------------------------------------------------------
+
+enum OrderStatus {
+  CREATED
+  PAID
+  PROCESSING
+  READY_TO_SHIP
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURN_REQUESTED
+  RETURNED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  companyId       String      @map("company_id")
+  channelId       String      @map("channel_id")
+  externalOrderId String?     @map("external_order_id")
+  customerName    String?     @map("customer_name")
+  customerDocument String?    @map("customer_document")
+  status          OrderStatus @default(CREATED)
+  externalStatus  String?     @map("external_status")
+  orderDate       DateTime    @map("order_date") @db.Timestamptz
+  subtotal        Decimal     @default(0) @db.Decimal(14, 2)
+  discount        Decimal     @default(0) @db.Decimal(14, 2)
+  shipping        Decimal     @default(0) @db.Decimal(14, 2)
+  total           Decimal     @default(0) @db.Decimal(14, 2)
+  paymentMethod   String?     @map("payment_method")
+  notes           String?
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+
+  company         Company             @relation(fields: [companyId], references: [id])
+  channel         SalesChannel        @relation(fields: [channelId], references: [id])
+  items           OrderItem[]
+  statusHistory   OrderStatusHistory[]
+  payments        Payment[]
+  fiscalDocuments FiscalDocument[]
+  returns         Return[]
+  settlementTx    SettlementTransaction[]
+  marketplaceFees MarketplaceFee[]
+
+  @@unique([companyId, channelId, externalOrderId])
+  @@index([companyId, orderDate])
+  @@index([companyId, status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  orderId    String  @map("order_id")
+  variantId  String  @map("variant_id")
+  quantity   Int
+  unitPrice  Decimal @map("unit_price") @db.Decimal(14, 2)
+  discount   Decimal @default(0) @db.Decimal(14, 2)
+  unitCost   Decimal @default(0) @map("unit_cost") @db.Decimal(14, 2)
+
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant     ProductVariant @relation(fields: [variantId], references: [id])
+  returnItems ReturnItem[]
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(uuid())
+  orderId   String      @map("order_id")
+  status    OrderStatus
+  changedAt DateTime    @default(now()) @map("changed_at") @db.Timestamptz
+  changedBy String?     @map("changed_by")
+  note      String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("order_status_history")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id      String        @id @default(uuid())
+  orderId String        @map("order_id")
+  method  String
+  amount  Decimal       @db.Decimal(14, 2)
+  status  PaymentStatus @default(PENDING)
+  paidAt  DateTime?     @map("paid_at") @db.Timestamptz
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------------
+// Repasses / Taxas de marketplace
+// ---------------------------------------------------------------------------
+
+enum SettlementStatus {
+  OPEN
+  CLOSED
+  PAID
+}
+
+model Settlement {
+  id          String           @id @default(uuid())
+  companyId   String           @map("company_id")
+  channelId   String           @map("channel_id")
+  periodStart DateTime         @map("period_start") @db.Timestamptz
+  periodEnd   DateTime         @map("period_end") @db.Timestamptz
+  totalAmount Decimal          @default(0) @map("total_amount") @db.Decimal(14, 2)
+  status      SettlementStatus @default(OPEN)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  company      Company                 @relation(fields: [companyId], references: [id])
+  channel      SalesChannel            @relation(fields: [channelId], references: [id])
+  transactions SettlementTransaction[]
+
+  @@index([companyId, channelId])
+  @@map("settlements")
+}
+
+model SettlementTransaction {
+  id           String   @id @default(uuid())
+  settlementId String   @map("settlement_id")
+  orderId      String?  @map("order_id")
+  type         String
+  amount       Decimal  @db.Decimal(14, 2)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  settlement Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  order      Order?     @relation(fields: [orderId], references: [id])
+
+  @@map("settlement_transactions")
+}
+
+model MarketplaceFee {
+  id        String   @id @default(uuid())
+  channelId String   @map("channel_id")
+  orderId   String?  @map("order_id")
+  feeType   String   @map("fee_type")
+  amount    Decimal  @db.Decimal(14, 2)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  channel SalesChannel @relation(fields: [channelId], references: [id])
+  order   Order?       @relation(fields: [orderId], references: [id])
+
+  @@map("marketplace_fees")
+}
+
+// ---------------------------------------------------------------------------
+// Devoluções / Reembolsos
+// ---------------------------------------------------------------------------
+
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  RECEIVED
+  COMPLETED
+}
+
+model Return {
+  id          String       @id @default(uuid())
+  orderId     String       @map("order_id")
+  reason      String?
+  status      ReturnStatus @default(REQUESTED)
+  requestedAt DateTime     @default(now()) @map("requested_at") @db.Timestamptz
+  resolvedAt  DateTime?    @map("resolved_at") @db.Timestamptz
+
+  order   Order        @relation(fields: [orderId], references: [id])
+  items   ReturnItem[]
+  refunds Refund[]
+
+  @@index([orderId])
+  @@map("returns")
+}
+
+model ReturnItem {
+  id          String  @id @default(uuid())
+  returnId    String  @map("return_id")
+  orderItemId String  @map("order_item_id")
+  quantity    Int
+  condition   String?
+
+  return    Return    @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id])
+
+  @@map("return_items")
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+model Refund {
+  id          String       @id @default(uuid())
+  returnId    String       @map("return_id")
+  amount      Decimal      @db.Decimal(14, 2)
+  method      String?
+  status      RefundStatus @default(PENDING)
+  processedAt DateTime?    @map("processed_at") @db.Timestamptz
+
+  return Return @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@map("refunds")
+}
+
+// ---------------------------------------------------------------------------
+// Financeiro
+// ---------------------------------------------------------------------------
+
+model ExpenseCategory {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company  Company   @relation(fields: [companyId], references: [id])
+  expenses Expense[]
+
+  @@unique([companyId, name])
+  @@map("expense_categories")
+}
+
+model Expense {
+  id            String   @id @default(uuid())
+  companyId     String   @map("company_id")
+  categoryId    String   @map("category_id")
+  description   String
+  amount        Decimal  @db.Decimal(14, 2)
+  date          DateTime @db.Timestamptz
+  paymentMethod String?  @map("payment_method")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company  Company         @relation(fields: [companyId], references: [id])
+  category ExpenseCategory @relation(fields: [categoryId], references: [id])
+
+  @@index([companyId, date])
+  @@map("expenses")
+}
+
+// ---------------------------------------------------------------------------
+// Fiscal
+// ---------------------------------------------------------------------------
+
+enum FiscalDocumentType {
+  SALE_INVOICE
+  RETURN_INVOICE
+  CANCELLATION
+  OTHER
+}
+
+enum FiscalDocumentStatus {
+  PENDING
+  ISSUED
+  CANCELLED
+  ERROR
+}
+
+model FiscalDocument {
+  id          String               @id @default(uuid())
+  companyId   String               @map("company_id")
+  orderId     String?              @map("order_id")
+  type        FiscalDocumentType
+  number      String?
+  series      String?
+  accessKey   String?              @map("access_key")
+  xmlPath     String?              @map("xml_path")
+  status      FiscalDocumentStatus @default(PENDING)
+  issueDate   DateTime?            @map("issue_date") @db.Timestamptz
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id])
+  order   Order?  @relation(fields: [orderId], references: [id])
+
+  @@index([companyId, orderId])
+  @@map("fiscal_documents")
+}
+
+// ---------------------------------------------------------------------------
+// Fechamento mensal
+// ---------------------------------------------------------------------------
+
+enum MonthlyClosingStatus {
+  OPEN
+  CLOSED
+}
+
+model MonthlyClosing {
+  id                String               @id @default(uuid())
+  companyId         String               @map("company_id")
+  referenceMonth    DateTime             @map("reference_month") @db.Date
+  grossRevenue      Decimal              @default(0) @map("gross_revenue") @db.Decimal(14, 2)
+  discounts         Decimal              @default(0) @db.Decimal(14, 2)
+  returnsAmount     Decimal              @default(0) @map("returns_amount") @db.Decimal(14, 2)
+  netRevenue        Decimal              @default(0) @map("net_revenue") @db.Decimal(14, 2)
+  cmv               Decimal              @default(0) @db.Decimal(14, 2)
+  grossProfit       Decimal              @default(0) @map("gross_profit") @db.Decimal(14, 2)
+  fees              Decimal              @default(0) @db.Decimal(14, 2)
+  marketing         Decimal              @default(0) @db.Decimal(14, 2)
+  packaging         Decimal              @default(0) @db.Decimal(14, 2)
+  otherExpenses     Decimal              @default(0) @map("other_expenses") @db.Decimal(14, 2)
+  estimatedTaxes    Decimal              @default(0) @map("estimated_taxes") @db.Decimal(14, 2)
+  managementResult  Decimal              @default(0) @map("management_result") @db.Decimal(14, 2)
+  status            MonthlyClosingStatus @default(OPEN)
+  closedAt          DateTime?            @map("closed_at") @db.Timestamptz
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, referenceMonth])
+  @@map("monthly_closings")
+}
+
+// ---------------------------------------------------------------------------
+// Integrações — eventos e jobs
+// ---------------------------------------------------------------------------
+
+model WebhookEvent {
+  id            String    @id @default(uuid())
+  integrationId String    @map("integration_id")
+  eventType     String    @map("event_type")
+  payload       Json
+  receivedAt    DateTime  @default(now()) @map("received_at") @db.Timestamptz
+  processedAt   DateTime? @map("processed_at") @db.Timestamptz
+  status        String    @default("PENDING")
+
+  integration Integration @relation(fields: [integrationId], references: [id])
+
+  @@index([integrationId, status])
+  @@map("webhook_events")
+}
+
+model SyncJob {
+  id            String    @id @default(uuid())
+  integrationId String    @map("integration_id")
+  type          String
+  status        String    @default("PENDING")
+  startedAt     DateTime? @map("started_at") @db.Timestamptz
+  finishedAt    DateTime? @map("finished_at") @db.Timestamptz
+  error         String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  integration Integration @relation(fields: [integrationId], references: [id])
+
+  @@index([integrationId, status])
+  @@map("sync_jobs")
+}
+
+// ---------------------------------------------------------------------------
+// Auditoria
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  companyId String?  @map("company_id")
+  userId    String?  @map("user_id")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  oldValue  Json?    @map("old_value")
+  newValue  Json?    @map("new_value")
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  company Company? @relation(fields: [companyId], references: [id])
+  user    User?    @relation(fields: [userId], references: [id])
+
+  @@index([companyId, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}

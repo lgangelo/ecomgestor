@@ -1,0 +1,32 @@
+{
+  "name": "@ecommerce-manager/database",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:validate": "prisma validate",
+    "prisma:format": "prisma format",
+    "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
+    "lint": "eslint \"src/**/*.ts\" \"prisma/**/*.ts\"",
+    "test": "echo \"no tests\" && exit 0"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.19.1",
+    "@ecommerce-manager/shared": "*",
+    "@ecommerce-manager/shared-server": "*"
+  },
+  "devDependencies": {
+    "prisma": "^5.19.1",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.5.4"
+  },
+  "prisma": {
+    "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"
+  }
+}

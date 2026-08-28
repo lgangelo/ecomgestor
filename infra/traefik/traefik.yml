@@ -1,0 +1,39 @@
+# Configuração estática do Traefik.
+# Cloudflare fica na frente deste Traefik (proxy/CDN). Os certificados TLS abaixo usam
+# desafio HTTP-01; se a Cloudflare estiver em modo "Proxied", ajuste para o desafio DNS-01
+# com o provider da Cloudflare (requer CF_API_EMAIL/CF_DNS_API_TOKEN) ou utilize um
+# certificado de origem da própria Cloudflare.
+
+log:
+  level: INFO
+
+entryPoints:
+  web:
+    address: ':80'
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ':443'
+
+providers:
+  docker:
+    exposedByDefault: false
+    network: ecommerce-network
+  file:
+    directory: '/etc/traefik/dynamic'
+    watch: true
+
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: 'ops@example.com'
+      storage: '/letsencrypt/acme.json'
+      httpChallenge:
+        entryPoint: web
+
+api:
+  dashboard: false
+  insecure: false

@@ -1,0 +1,100 @@
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@ecommerce-manager/database';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { CreateCategoryDto } from './dto/create-category.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
+import { QueryCategoryDto } from './dto/query-category.dto';
+
+@Injectable()
+export class CategoriesService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async findAll(companyId: string, query: QueryCategoryDto) {
+    const where: Prisma.CategoryWhereInput = {
+      companyId,
+      ...(query.search
+        ? { name: { contains: query.search, mode: 'insensitive' as const } }
+        : {}),
+    };
+
+    const categories = await this.prisma.client.category.findMany({
+      where,
+      include: { _count: { select: { products: true } } },
+      orderBy: { name: 'asc' },
+    });
+
+    return categories.map((category) => ({
+      id: category.id,
+      name: category.name,
+      parentId: category.parentId,
+      productCount: category._count.products,
+    }));
+  }
+
+  async findByIdOrThrow(id: string, companyId: string) {
+    const category = await this.prisma.client.category.findFirst({
+      where: { id, companyId },
+    });
+    if (!category) {
+      throw new NotFoundException('Categoria não encontrada');
+    }
+    return category;
+  }
+
+  private async assertParentBelongsToCompany(parentId: string, companyId: string) {
+    const parent = await this.prisma.client.category.findFirst({
+      where: { id: parentId, companyId },
+    });
+    if (!parent) {
+      throw new NotFoundException('Categoria pai não encontrada');
+    }
+  }
+
+  async create(companyId: string, dto: CreateCategoryDto) {
+    if (dto.parentId) {
+      await this.assertParentBelongsToCompany(dto.parentId, companyId);
+    }
+
+    try {
+      return await this.prisma.client.category.create({
+        data: {
+          companyId,
+          name: dto.name,
+          parentId: dto.parentId ?? null,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Já existe uma categoria com esse nome');
+      }
+      throw error;
+    }
+  }
+
+  async update(id: string, companyId: string, dto: UpdateCategoryDto) {
+    const existing = await this.findByIdOrThrow(id, companyId);
+
+    if (dto.parentId) {
+      if (dto.parentId === id) {
+        throw new ConflictException('Uma categoria não pode ser pai de si mesma');
+      }
+      await this.assertParentBelongsToCompany(dto.parentId, companyId);
+    }
+
+    try {
+      const updated = await this.prisma.client.category.update({
+        where: { id },
+        data: {
+          ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(dto.parentId !== undefined ? { parentId: dto.parentId } : {}),
+        },
+      });
+      return { old: existing, updated };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Já existe uma categoria com esse nome');
+      }
+      throw error;
+    }
+  }
+}

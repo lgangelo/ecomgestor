@@ -1,0 +1,136 @@
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { PERMISSIONS } from '@ecommerce-manager/shared';
+import { RequirePermissions } from '../common/decorators/permissions.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { AuditService } from '../audit/audit.service';
+import { ProductsService } from './products.service';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
+import { QueryProductDto } from './dto/query-product.dto';
+import { CreateVariantDto } from './dto/create-variant.dto';
+import { UpdateVariantDto } from './dto/update-variant.dto';
+import { CreateCostHistoryDto } from './dto/create-cost-history.dto';
+
+@Controller('products')
+export class ProductsController {
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly auditService: AuditService,
+  ) {}
+
+  @Get()
+  @RequirePermissions(PERMISSIONS.PRODUCT_READ)
+  findAll(@CurrentUser() user: AuthenticatedUser, @Query() query: QueryProductDto) {
+    return this.productsService.findAll(user.companyId, query);
+  }
+
+  @Get(':id')
+  @RequirePermissions(PERMISSIONS.PRODUCT_READ)
+  findOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.productsService.findOne(id, user.companyId);
+  }
+
+  @Post()
+  @RequirePermissions(PERMISSIONS.PRODUCT_CREATE)
+  async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateProductDto) {
+    const product = await this.productsService.create(user.companyId, dto);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'CREATE',
+      entity: 'product',
+      entityId: product.id,
+      newValue: product,
+    });
+    return product;
+  }
+
+  @Patch(':id')
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  async update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateProductDto,
+  ) {
+    const { old: oldValue, updated } = await this.productsService.update(id, user.companyId, dto);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'UPDATE',
+      entity: 'product',
+      entityId: updated.id,
+      oldValue,
+      newValue: updated,
+    });
+    return updated;
+  }
+
+  @Post(':id/variants')
+  @RequirePermissions(PERMISSIONS.PRODUCT_CREATE)
+  async createVariant(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') productId: string,
+    @Body() dto: CreateVariantDto,
+  ) {
+    const variant = await this.productsService.createVariant(productId, user.companyId, dto);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'CREATE',
+      entity: 'product_variant',
+      entityId: variant.id,
+      newValue: variant,
+    });
+    return variant;
+  }
+
+  @Patch('variants/:variantId')
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  async updateVariant(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('variantId') variantId: string,
+    @Body() dto: UpdateVariantDto,
+  ) {
+    const { old: oldValue, updated } = await this.productsService.updateVariant(
+      variantId,
+      user.companyId,
+      dto,
+    );
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'UPDATE',
+      entity: 'product_variant',
+      entityId: updated.id,
+      oldValue,
+      newValue: updated,
+    });
+    return updated;
+  }
+
+  @Get('variants/:variantId/cost-history')
+  @RequirePermissions(PERMISSIONS.PRODUCT_READ)
+  getCostHistory(@CurrentUser() user: AuthenticatedUser, @Param('variantId') variantId: string) {
+    return this.productsService.getCostHistory(variantId, user.companyId);
+  }
+
+  @Post('variants/:variantId/cost-history')
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  async createCostHistory(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('variantId') variantId: string,
+    @Body() dto: CreateCostHistoryDto,
+  ) {
+    const entry = await this.productsService.createCostHistory(variantId, user.companyId, dto);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'CREATE',
+      entity: 'product_cost_history',
+      entityId: entry.id,
+      newValue: entry,
+    });
+    return entry;
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "ecommerce-manager",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=@ecommerce-manager/web",
+    "dev:api": "npm run dev --workspace=@ecommerce-manager/api",
+    "build": "npm run prisma:generate && npm run build --workspace=@ecommerce-manager/shared && npm run build --workspace=@ecommerce-manager/shared-server && npm run build --workspace=@ecommerce-manager/database && npm run build --workspace=@ecommerce-manager/integrations && npm run build --workspace=@ecommerce-manager/ui && npm run build --workspace=@ecommerce-manager/api && npm run build --workspace=@ecommerce-manager/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md}\" --ignore-path .gitignore",
+    "prisma:generate": "npm run prisma:generate --workspace=@ecommerce-manager/database",
+    "prisma:migrate": "npm run prisma:migrate --workspace=@ecommerce-manager/database",
+    "prisma:seed": "npm run seed --workspace=@ecommerce-manager/database",
+    "create-admin": "npm run create-admin --workspace=@ecommerce-manager/api"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

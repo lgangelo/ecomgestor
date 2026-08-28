@@ -1,0 +1,175 @@
+'use client';
+
+import * as React from 'react';
+import Link from 'next/link';
+import { ShoppingBag } from 'lucide-react';
+import { PageHeader } from '@/components/shared/page-header';
+import { EmptyState } from '@/components/shared/empty-state';
+import { TableSkeleton } from '@/components/shared/table-skeleton';
+import { PaginationBar } from '@/components/shared/pagination-bar';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { ORDER_STATUS_PRESENTATION } from '@ecommerce-manager/ui';
+import { formatBRL } from '@ecommerce-manager/shared';
+import { formatDate } from '@/lib/format';
+import { useOrders } from '@/hooks/use-orders';
+import { useChannels } from '@/hooks/use-channels';
+
+const ORDER_STATUSES = Object.keys(ORDER_STATUS_PRESENTATION);
+
+export function OrdersView() {
+  const [page, setPage] = React.useState(1);
+  const [customerName, setCustomerName] = React.useState('');
+  const [channelId, setChannelId] = React.useState<string | undefined>();
+  const [status, setStatus] = React.useState<string | undefined>();
+  const [dateFrom, setDateFrom] = React.useState('');
+  const [dateTo, setDateTo] = React.useState('');
+
+  const { data: channels } = useChannels();
+  const { data, isLoading } = useOrders({
+    page,
+    pageSize: 20,
+    customerName,
+    channelId,
+    status,
+    dateFrom,
+    dateTo,
+  });
+
+  return (
+    <div>
+      <PageHeader title="Pedidos" description="Todos os pedidos, de todos os canais." />
+
+      <div className="mb-4 flex flex-wrap items-end gap-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="customerName">Cliente</Label>
+          <Input
+            id="customerName"
+            className="w-48"
+            value={customerName}
+            onChange={(e) => {
+              setCustomerName(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Canal</Label>
+          <Select
+            value={channelId ?? 'all'}
+            onValueChange={(v) => {
+              setChannelId(v === 'all' ? undefined : v);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Todos" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os canais</SelectItem>
+              {channels?.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Status</Label>
+          <Select
+            value={status ?? 'all'}
+            onValueChange={(v) => {
+              setStatus(v === 'all' ? undefined : v);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Todos" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os status</SelectItem>
+              {ORDER_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {ORDER_STATUS_PRESENTATION[s].label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="dateFrom">De</Label>
+          <Input
+            id="dateFrom"
+            type="date"
+            className="w-40"
+            value={dateFrom}
+            onChange={(e) => {
+              setDateFrom(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="dateTo">Até</Label>
+          <Input
+            id="dateTo"
+            type="date"
+            className="w-40"
+            value={dateTo}
+            onChange={(e) => {
+              setDateTo(e.target.value);
+              setPage(1);
+            }}
+          />
+        </div>
+      </div>
+
+      {isLoading || !data ? (
+        <div className="rounded-lg border border-border">
+          <TableSkeleton />
+        </div>
+      ) : data.items.length === 0 ? (
+        <EmptyState icon={ShoppingBag} title="Nenhum pedido encontrado" description="Ajuste os filtros aplicados." />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Data</TableHead>
+              <TableHead>Pedido</TableHead>
+              <TableHead>Canal</TableHead>
+              <TableHead>Cliente</TableHead>
+              <TableHead>Valor</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.items.map((order) => (
+              <TableRow key={order.id}>
+                <TableCell>{formatDate(order.orderDate)}</TableCell>
+                <TableCell>
+                  <Link href={`/vendas/pedidos/${order.id}`} className="font-medium hover:underline">
+                    {order.externalOrderId ?? order.id.slice(0, 8)}
+                  </Link>
+                </TableCell>
+                <TableCell>{order.channelName}</TableCell>
+                <TableCell>{order.customerName ?? '—'}</TableCell>
+                <TableCell>{formatBRL(order.total)}</TableCell>
+                <TableCell>
+                  <StatusBadge status={order.status} map={ORDER_STATUS_PRESENTATION} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+
+      {data && data.totalPages > 1 && (
+        <PaginationBar page={data.page} totalPages={data.totalPages} total={data.total} onPageChange={setPage} />
+      )}
+    </div>
+  );
+}
