@@ -114,6 +114,9 @@ services:
       # (que também respeita a env var PORT) herdava esse valor e escutava na porta errada,
       # quebrando o healthcheck e o roteamento do Traefik (ambos esperam a porta 3000).
       PORT: 3000
+      # Fetch servidor-a-servidor via nome do serviço Docker — nunca depende do domínio
+      # público (que pode não ter DNS/TLS prontos, ou sofrer bloqueio de hairpin NAT).
+      API_INTERNAL_URL: http://ecommerce-api:3001/api
     depends_on:
       - ecommerce-api
     networks:

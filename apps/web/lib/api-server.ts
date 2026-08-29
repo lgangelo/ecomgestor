@@ -1,6 +1,11 @@
 import { cookies } from 'next/headers';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+// Fetch de servidor-para-servidor (dentro da rede Docker) — nunca deve depender do domínio
+// público (NEXT_PUBLIC_API_URL, usado pelo navegador): DNS/TLS podem não estar prontos ainda,
+// e muitos provedores bloqueiam "hairpin NAT" (o próprio servidor não consegue se auto-acessar
+// pelo domínio público). API_INTERNAL_URL aponta para o nome do serviço no docker-compose.yml
+// (resolução interna do Docker), com fallback para NEXT_PUBLIC_API_URL fora de containers.
+const API_BASE_URL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
 /**
  * Fetch para uso em Server Components/Route Handlers: encaminha os cookies da
