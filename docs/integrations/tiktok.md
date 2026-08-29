@@ -67,6 +67,13 @@ servem como `service_id`).
   `/api/v2/token/get`, mas não foi possível confirmar com certeza absoluta via fetch automatizado
   — tratado como configuração central, nunca hardcoded no meio da lógica).
 
+**Confirmado em produção (conexão real com a loja Venticelli Bolsas)**: os endpoints de busca
+(`products/search`, `orders/search`, `returns/search`) são **POST**, não GET — usar GET faz a
+TikTok responder "Invalid method. The HTTP method used is not supported by this endpoint.".
+Paginação (`page_size`/`page_token`) vai na query string; filtros (janela de tempo, status) vão
+no corpo JSON da requisição, mesmo que vazio (`{}`). `orders`/`{id}` (detalhe de um pedido) e os
+endpoints de finance (`statements`, `.../statement_transactions`) continuam GET.
+
 ## 3. Host da API (produção)
 
 Confirmado: `https://open-api.tiktokglobalshop.com` é o host usado para as chamadas de API de

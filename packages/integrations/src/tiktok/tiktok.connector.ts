@@ -48,7 +48,10 @@ export class TikTokConnector implements MarketplaceConnector {
   async healthCheck(companyId: string): Promise<IntegrationHealth> {
     void companyId;
     try {
-      await this.client.request('GET', TIKTOK_PATHS.productsSearch, { query: { page_size: '1' } });
+      await this.client.request('POST', TIKTOK_PATHS.productsSearch, {
+        query: { page_size: '1' },
+        body: {},
+      });
       return { provider: this.provider, connected: true, storeName: this.storeName, lastSyncAt: new Date() };
     } catch (error) {
       return {
@@ -62,8 +65,11 @@ export class TikTokConnector implements MarketplaceConnector {
 
   async getProducts(companyId: string, params: ProductSyncParams): Promise<ExternalProductPage> {
     void companyId;
-    const raw = await this.client.request<RawPage>('GET', TIKTOK_PATHS.productsSearch, {
+    // "Search Products" é POST — paginação (page_size/page_token) vai na query string, filtros
+    // (ex.: janela de atualização) vão no corpo JSON. Ver docs/integrations/tiktok.md, seção 2.
+    const raw = await this.client.request<RawPage>('POST', TIKTOK_PATHS.productsSearch, {
       query: buildPageQuery(params),
+      body: params.updatedAfter ? { update_time_ge: toUnixSeconds(params.updatedAfter) } : {},
     });
     const items = raw.products ?? raw.items ?? [];
     return { items: items.map(normalizeProduct), nextPageToken: raw.data?.next_page_token };
@@ -71,10 +77,10 @@ export class TikTokConnector implements MarketplaceConnector {
 
   async getOrders(companyId: string, params: OrderSyncParams): Promise<ExternalOrderPage> {
     void companyId;
-    const raw = await this.client.request<RawPage>('GET', TIKTOK_PATHS.ordersSearch, {
-      query: {
-        ...buildPageQuery(params),
-        ...(params.updatedAfter ? { update_time_ge: String(Math.floor(params.updatedAfter.getTime() / 1000)) } : {}),
+    const raw = await this.client.request<RawPage>('POST', TIKTOK_PATHS.ordersSearch, {
+      query: buildPageQuery(params),
+      body: {
+        ...(params.updatedAfter ? { update_time_ge: toUnixSeconds(params.updatedAfter) } : {}),
         ...(params.status ? { order_status: params.status } : {}),
       },
     });
@@ -91,11 +97,9 @@ export class TikTokConnector implements MarketplaceConnector {
 
   async getInventory(companyId: string, params: InventorySyncParams): Promise<ExternalInventory[]> {
     void companyId;
-    const raw = await this.client.request<RawPage>('GET', TIKTOK_PATHS.productsSearch, {
-      query: {
-        ...buildPageQuery(params),
-        ...(params.externalSkus?.length ? { sku_ids: params.externalSkus.join(',') } : {}),
-      },
+    const raw = await this.client.request<RawPage>('POST', TIKTOK_PATHS.productsSearch, {
+      query: buildPageQuery(params),
+      body: params.externalSkus?.length ? { seller_skus: params.externalSkus } : {},
     });
     const items = raw.products ?? raw.items ?? [];
     return items.map(normalizeProduct).map((product) => ({ externalSku: product.externalSku, available: product.stock }));
@@ -110,8 +114,9 @@ export class TikTokConnector implements MarketplaceConnector {
 
   async getReturns(companyId: string, params: ReturnSyncParams): Promise<ExternalReturnPage> {
     void companyId;
-    const raw = await this.client.request<RawPage>('GET', TIKTOK_PATHS.returnsSearch, {
+    const raw = await this.client.request<RawPage>('POST', TIKTOK_PATHS.returnsSearch, {
       query: buildPageQuery(params),
+      body: params.updatedAfter ? { update_time_ge: toUnixSeconds(params.updatedAfter) } : {},
     });
     const items = raw.returns ?? raw.items ?? [];
     return { items: items.map(normalizeReturn), nextPageToken: raw.data?.next_page_token };
@@ -147,6 +152,10 @@ function buildPageQuery(params: PageParams): Record<string, string> {
   if (params.pageSize) query.page_size = String(params.pageSize);
   if (params.pageToken) query.page_token = params.pageToken;
   return query;
+}
+
+function toUnixSeconds(date: Date): string {
+  return String(Math.floor(date.getTime() / 1000));
 }
 
 /** Página vazia — usado quando ainda não há credenciais/loja conectada. */
