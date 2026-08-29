@@ -93,12 +93,12 @@ export class AuthController {
   }
 
   private setSessionCookies(res: Response, session: IssuedSession) {
-    const isProd = this.configService.get<string>('nodeEnv') === 'production';
+    const secure = this.configService.get<boolean>('cookieSecure');
     const domain = this.configService.get<string>('cookieDomain');
 
     res.cookie(AUTH_COOKIE_NAME, session.accessToken, {
       httpOnly: true,
-      secure: isProd,
+      secure,
       sameSite: 'strict',
       domain,
       path: '/',
@@ -106,7 +106,7 @@ export class AuthController {
     });
     res.cookie(REFRESH_COOKIE_NAME, session.refreshToken, {
       httpOnly: true,
-      secure: isProd,
+      secure,
       sameSite: 'strict',
       domain,
       path: '/auth',
@@ -115,7 +115,7 @@ export class AuthController {
     // Cookie legível por JS de propósito: usado no padrão double-submit contra CSRF.
     res.cookie(CSRF_COOKIE_NAME, session.csrfToken, {
       httpOnly: false,
-      secure: isProd,
+      secure,
       sameSite: 'strict',
       domain,
       path: '/',

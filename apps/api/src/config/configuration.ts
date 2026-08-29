@@ -7,6 +7,7 @@ export interface AppConfig {
   jwtRefreshSecret: string;
   webAppUrl: string;
   cookieDomain?: string;
+  cookieSecure: boolean;
   fiscalXmlStorageDir: string;
   /** Seção 19 da Fase 4 — REFERENCE_ONLY (default) nunca grava o XML em disco, só a referência
    * fiscal; PERSIST é o comportamento legado (Fase 2), mantido só por compatibilidade. */
@@ -31,6 +32,10 @@ export default (): AppConfig => ({
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET ?? '',
   webAppUrl: process.env.WEB_APP_URL ?? 'http://localhost:3000',
   cookieDomain: process.env.COOKIE_DOMAIN,
+  // Default: Secure sempre que NODE_ENV=production (comportamento de sempre). COOKIE_SECURE=false
+  // só existe para testar em HTTP puro sem TLS (ex.: acesso direto por IP, sem Traefik/domínio
+  // ainda) — nunca usar isso com tráfego real saindo para a internet.
+  cookieSecure: process.env.COOKIE_SECURE === 'false' ? false : process.env.NODE_ENV === 'production',
   // Em produção (Docker) deve apontar para um volume persistente — ver docker-compose.yml.
   fiscalXmlStorageDir: process.env.FISCAL_XML_STORAGE_DIR ?? './storage/fiscal-xml',
   xmlStorageMode: process.env.XML_STORAGE_MODE === 'PERSIST' ? 'PERSIST' : 'REFERENCE_ONLY',

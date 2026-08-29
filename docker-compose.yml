@@ -57,6 +57,11 @@ services:
     # (fora do Docker) via host.docker.internal, como recomendado no Docker >= 20.10 no Linux.
     extra_hosts:
       - 'host.docker.internal:host-gateway'
+    # TEMPORÁRIO — só para testar sem domínio/TLS reais (acesso direto por IP, sem Traefik).
+    # Remova esta seção (e a de ecommerce-web) assim que houver domínio configurado: expor a
+    # porta direto pula o TLS e os security headers que o Traefik aplica.
+    ports:
+      - '3001:3001'
     volumes:
       - fiscal-xml-storage:/data/fiscal-xml
     depends_on:
@@ -117,6 +122,9 @@ services:
       # Fetch servidor-a-servidor via nome do serviço Docker — nunca depende do domínio
       # público (que pode não ter DNS/TLS prontos, ou sofrer bloqueio de hairpin NAT).
       API_INTERNAL_URL: http://ecommerce-api:3001/api
+    # TEMPORÁRIO — ver comentário equivalente em ecommerce-api.
+    ports:
+      - '3000:3000'
     depends_on:
       - ecommerce-api
     networks:

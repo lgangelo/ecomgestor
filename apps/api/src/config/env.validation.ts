@@ -29,6 +29,13 @@ class EnvironmentVariables {
   @IsString()
   COOKIE_DOMAIN?: string;
 
+  // Só para testar em HTTP puro sem TLS (ex.: acesso direto por IP) — nunca usar 'false' com
+  // tráfego real. Ausente ou qualquer valor diferente de 'false' mantém o padrão (Secure em
+  // produção).
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  COOKIE_SECURE?: string;
+
   @IsOptional()
   @IsString()
   @MinLength(16, { message: 'INTEGRATION_SECRETS_KEY deve ter ao menos 16 caracteres' })
