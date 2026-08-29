@@ -41,7 +41,11 @@ export class TikTokClient {
     try {
       response = await fetch(url, {
         method,
-        headers: { 'content-type': 'application/json' },
+        // A TikTok Shop exige o access_token também (na verdade, principalmente) neste header —
+        // confirmado contra o exemplo de cURL gerado pela própria "Ferramenta de teste de API"
+        // do Partner Center. Mandar só na query string ("access_token=...") faz a API responder
+        // "Invalid credentials. The 'x-tts-access-token' header is invalid.".
+        headers: { 'content-type': 'application/json', 'x-tts-access-token': this.config.accessToken },
         body: method === 'GET' ? undefined : bodyStr,
       });
     } catch (error) {
