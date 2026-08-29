@@ -105,7 +105,7 @@ export class TikTokOAuthService {
     } catch (error) {
       this.logger.warn('tiktok_get_active_shop_list_failed', {
         operation: 'oauth_callback',
-        message: (error as Error).message,
+        errorMessage: (error as Error).message,
       });
     }
 

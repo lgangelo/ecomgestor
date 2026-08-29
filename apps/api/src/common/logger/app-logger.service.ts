@@ -48,8 +48,11 @@ export class AppLoggerService implements LoggerService {
       request_id: fields.requestId,
       user_id: fields.userId,
       operation: fields.operation,
+      ...omit(fields, ['requestId', 'userId', 'operation', 'message']),
+      // Sempre por último: nenhum campo extra do chamador (ex.: um `message` de detalhe dentro
+      // de `fields`) pode sobrescrever o texto do evento — isso já aconteceu e escondeu um erro
+      // real de um grep de log (ver tiktok-oauth.service.ts).
       message: typeof message === 'string' ? message : JSON.stringify(message),
-      ...omit(fields, ['requestId', 'userId', 'operation']),
     });
     const line = JSON.stringify(entry);
     if (level === 'error') console.error(line);

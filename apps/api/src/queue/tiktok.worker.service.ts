@@ -57,7 +57,7 @@ export class TikTokWorkerService implements OnModuleInit, OnModuleDestroy {
 
     this.worker.on('completed', (job) => this.logger.log('job_completed', { operation: job.name }));
     this.worker.on('failed', (job, err) =>
-      this.logger.error('job_failed', { operation: job?.name, message: err.message }),
+      this.logger.error('job_failed', { operation: job?.name, errorMessage: err.message }),
     );
   }
 
