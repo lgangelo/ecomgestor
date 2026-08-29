@@ -67,17 +67,30 @@ servem como `service_id`).
   `/api/v2/token/get`, mas não foi possível confirmar com certeza absoluta via fetch automatizado
   — tratado como configuração central, nunca hardcoded no meio da lógica).
 
-**Erro real encontrado em produção**: o token OAuth **nunca inclui `shop_id`/`shop_cipher`**
-utilizáveis diretamente — é preciso chamar `GET /authorization/{version}/shops` ("Get Authorized
-Shops") logo após a troca do código para obter o `shop_cipher` (campo `cipher` da resposta),
-exigido como parâmetro `shop_cipher` em quase toda chamada de negócio (produtos, pedidos,
-devoluções). Sem isso, a API responde "Missing identifier. The 'shop_cipher' query parameter is
-required to identify the target shop.". Implementado em `handleCallback`
-(`apps/api/src/integrations/tiktok/tiktok-oauth.service.ts`) via `getAuthorizedShops`
-(`packages/integrations/src/tiktok/tiktok.connector.ts`). Assume-se um único shop por token — a
-única topologia possível para um Custom App (uso interno de um único seller). **Integrações
-conectadas antes desta correção precisam reconectar a loja** (botão "Conectar" de novo) para que
-o `shop_cipher` seja obtido e salvo — o refresh de token sozinho não o busca retroativamente.
+**Payload real confirmado em produção (Custom App, loja Venticelli Bolsas — logado uma vez via
+debug temporário, já removido)**: `access_token`, `access_token_expire_in`, `refresh_token`,
+`refresh_token_expire_in`, `open_id`, `seller_name`, `seller_base_region`, `user_type`,
+`granted_scopes` (array, ex.: `["seller.product.basic", "seller.order.info", ...]`). **Não inclui
+`shop_id` nem `shop_cipher`** — só a chamada separada abaixo os fornece.
+
+**Erro real encontrado em produção**: `shop_cipher` é exigido como parâmetro em quase toda
+chamada de negócio (produtos, pedidos, devoluções) — sem ele a API responde "Missing identifier.
+The 'shop_cipher' query parameter is required to identify the target shop.". A primeira tentativa
+de buscá-lo via `GET /authorization/{version}/shops` ("Get Authorized Shops") **falhou** com
+"Access denied. This app has not been granted any access scope..." — confirmado no Partner
+Center (tentar testar esse endpoint com a chave do Custom App real dá o erro "A chave do
+aplicativo não pode testar a API que você selecionou"; só funciona com a chave genérica de teste
+da plataforma, que devolve dados de sandbox fake). Esse endpoint é só para Public Apps
+multi-shop. **O que funciona para Custom Apps** é `GET /seller/{version}/shops` ("Get Active
+Shop List") — mesmo formato de resposta (`data.shops[].id`/`.cipher`/`.name`/`.region`), chamado
+uma vez logo após a troca do código. Implementado em `handleCallback`
+(`apps/api/src/integrations/tiktok/tiktok-oauth.service.ts`) via `getActiveShopList`
+(`packages/integrations/src/tiktok/tiktok.connector.ts`), best-effort — uma falha aqui não
+derruba a conexão, só deixa `shop_cipher` vazio (bloqueando as chamadas de negócio até resolver).
+Assume-se um único shop por token — a única topologia possível para um Custom App (uso interno
+de um único seller). **Integrações conectadas antes desta correção precisam reconectar a loja**
+(botão "Conectar" de novo) para que o `shop_cipher` seja obtido e salvo — o refresh de token
+sozinho não o busca retroativamente.
 
 **Confirmado em produção (conexão real com a loja Venticelli Bolsas)**: os endpoints de busca
 (`products/search`, `orders/search`, `returns/search`) são **POST**, não GET — usar GET faz a

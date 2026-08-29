@@ -158,14 +158,14 @@ function toUnixSeconds(date: Date): string {
   return String(Math.floor(date.getTime() / 1000));
 }
 
-export interface TikTokAuthorizedShop {
+export interface TikTokActiveShop {
   shopId: string;
   shopCipher: string;
   shopName?: string;
   region?: string;
 }
 
-interface RawAuthorizedShops {
+interface RawActiveShopList {
   shops?: Array<{ id?: string; cipher?: string; name?: string; region?: string }>;
 }
 
@@ -173,9 +173,12 @@ interface RawAuthorizedShops {
  * Chamado uma vez logo após a troca do `code` OAuth por token (nunca vem no próprio token) —
  * é o único jeito de descobrir o `shop_cipher` exigido por quase toda chamada de negócio.
  * Recebe um `TikTokClient` sem `shopCipher` configurado (esta chamada não aceita/precisa dele).
+ * Usa "Get Active Shop List" (`/seller/{version}/shops`), não "Get Authorized Shops"
+ * (`/authorization/{version}/shops`) — este último é só para Public Apps multi-shop e
+ * responde "Access denied" para Custom Apps (confirmado no Partner Center).
  */
-export async function getAuthorizedShops(client: TikTokClient): Promise<TikTokAuthorizedShop[]> {
-  const raw = await client.request<RawAuthorizedShops>('GET', TIKTOK_PATHS.authorizedShops);
+export async function getActiveShopList(client: TikTokClient): Promise<TikTokActiveShop[]> {
+  const raw = await client.request<RawActiveShopList>('GET', TIKTOK_PATHS.activeShopList);
   return (raw.shops ?? [])
     .filter((shop): shop is { id: string; cipher: string; name?: string; region?: string } =>
       Boolean(shop.id && shop.cipher),

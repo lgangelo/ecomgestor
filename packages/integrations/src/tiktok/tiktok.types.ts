@@ -19,9 +19,15 @@ export const TIKTOK_PATHS = {
   tokenRefresh: '/api/v2/token/refresh',
   /** A confirmar no Partner Center — padrão público conhecido, não extraído com certeza. */
   tokenExchange: '/api/v2/token/get',
-  /** Confirmado em produção — retorna a(s) loja(s) autorizadas para o access_token (id/cipher/
-   * region), único jeito de obter o shop_cipher exigido pelos demais endpoints de negócio. */
+  /** "Get Authorized Shops" — confirmado em produção que NÃO funciona para Custom Apps (só
+   * Public Apps multi-shop; o Partner Center recusa até testar com a chave de um Custom App).
+   * Mantido só de referência — usar `activeShopList` abaixo. */
   authorizedShops: `/authorization/${API_VERSION}/shops`,
+  /** "Get Active Shop List" — confirmado em produção como o equivalente que FUNCIONA para
+   * Custom Apps: retorna a(s) loja(s) ativas para o access_token atual (id/cipher/region),
+   * único jeito de obter o shop_cipher exigido pelos demais endpoints de negócio (o token OAuth
+   * em si nunca inclui shop_id/shop_cipher — só seller_name/seller_base_region/open_id). */
+  activeShopList: `/seller/${API_VERSION}/shops`,
   /** A confirmar no Partner Center. */
   productsSearch: `/product/${API_VERSION}/products/search`,
   /** A confirmar no Partner Center. */
