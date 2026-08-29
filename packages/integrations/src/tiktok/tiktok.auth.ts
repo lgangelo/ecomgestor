@@ -8,8 +8,14 @@ import { TikTokApiError } from './tiktok.errors';
  * (apps/api/src/integrations/tiktok), não deste pacote — este arquivo não conhece Redis nem
  * banco de dados.
  */
-export function buildAuthorizeUrl(appKey: string, state: string): string {
-  const params = new URLSearchParams({ service_id: appKey, state });
+/**
+ * `serviceId` NÃO é o App Key — é um identificador separado, exibido logo abaixo do nome do
+ * app na página "App & Service" do Partner Center. Usar o App Key aqui faz a TikTok responder
+ * "This service does not exist" na tela de autorização, mesmo com um App Key válido (ele
+ * funciona normalmente nas chamadas de API, só não serve como service_id).
+ */
+export function buildAuthorizeUrl(serviceId: string, state: string): string {
+  const params = new URLSearchParams({ service_id: serviceId, state });
   return `https://services.tiktokshop.com/open/authorize?${params.toString()}`;
 }
 

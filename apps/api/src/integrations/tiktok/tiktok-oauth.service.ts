@@ -51,15 +51,21 @@ export class TikTokOAuthService {
         'TikTok Shop não configurado. Configure TIKTOK_APP_KEY e TIKTOK_APP_SECRET para conectar sua loja.',
       );
     }
+    if (!this.configService.get<string>('tiktok.serviceId', { infer: true })) {
+      throw new BadRequestException(
+        'TikTok Shop não configurado. Configure TIKTOK_SERVICE_ID (Partner Center → App & Service, ' +
+          'não é o mesmo valor do App Key) para conectar sua loja.',
+      );
+    }
   }
 
   async buildConnectUrl(companyId: string, userId: string): Promise<string> {
     this.requireConfigured();
-    const appKey = this.configService.get<string>('tiktok.appKey', { infer: true }) as string;
+    const serviceId = this.configService.get<string>('tiktok.serviceId', { infer: true }) as string;
     const state = randomBytes(32).toString('hex');
     const payload: OAuthStatePayload = { companyId, userId };
     await this.redis.client.set(`tiktok:oauth-state:${state}`, JSON.stringify(payload), 'EX', STATE_TTL_SECONDS);
-    return buildAuthorizeUrl(appKey, state);
+    return buildAuthorizeUrl(serviceId, state);
   }
 
   async handleCallback(state: string | undefined, code: string | undefined, ip?: string): Promise<{ webAppUrl: string }> {

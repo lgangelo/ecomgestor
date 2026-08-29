@@ -17,6 +17,8 @@ export interface AppConfig {
     enabled: boolean;
     appKey: string;
     appSecret: string;
+    /** Identificador separado do App Key — ver comentário em buildAuthorizeUrl. */
+    serviceId: string;
     redirectUri: string;
     inventoryPushEnabled: boolean;
     reconcileIntervalMinutes: number;
@@ -47,6 +49,7 @@ export default (): AppConfig => ({
     enabled: Boolean(process.env.TIKTOK_APP_KEY && process.env.TIKTOK_APP_SECRET),
     appKey: process.env.TIKTOK_APP_KEY ?? '',
     appSecret: process.env.TIKTOK_APP_SECRET ?? '',
+    serviceId: process.env.TIKTOK_SERVICE_ID ?? '',
     redirectUri: process.env.TIKTOK_REDIRECT_URI ?? '',
     // Seção 38-39: por padrão NUNCA sincroniza estoque automaticamente para a TikTok —
     // apenas compara. Habilitar exige decisão explícita do operador via variável de ambiente.

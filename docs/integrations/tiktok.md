@@ -41,13 +41,21 @@ necessárias. Ao criar o app, a TikTok gera **App Key** (também chamado App ID)
 Confirmado (seção "Authorization overview" + guia geral):
 
 ```text
-1. Seller acessa a URL de autorização da TikTok, contendo seu app_key e um `state`
-   gerado pela aplicação (nunca pela TikTok).
+1. Seller acessa a URL de autorização da TikTok (`https://services.tiktokshop.com/open/authorize`),
+   contendo o `service_id` do app e um `state` gerado pela aplicação (nunca pela TikTok).
 2. Seller aprova o acesso no ambiente TikTok Shop.
 3. TikTok redireciona para o redirect_uri configurado, com um `code` de autorização
    e o mesmo `state` enviado.
-4. A aplicação troca o `code` por access_token/refresh_token via chamada servidor-a-servidor.
+4. A aplicação troca o `code` por access_token/refresh_token via chamada servidor-a-servidor
+   (usando App Key/App Secret, não o service_id).
 ```
+
+**Erro real encontrado em produção**: o parâmetro `service_id` da URL de autorização **não é o
+App Key** — é um identificador separado, exibido logo abaixo do nome do app na página "App &
+Service" do Partner Center (variável `TIKTOK_SERVICE_ID`, distinta de `TIKTOK_APP_KEY`). Usar o
+App Key ali faz a TikTok responder "This service does not exist" na tela de autorização, mesmo
+com App Key/Secret válidos (eles continuam funcionando normalmente nas chamadas de API — só não
+servem como `service_id`).
 
 - Host de autenticação/token: `https://auth.tiktok-shops.com` — confirmado via múltiplas fontes
   (ex.: endpoint de refresh documentado como `GET https://auth.tiktok-shops.com/api/v2/token/refresh`).

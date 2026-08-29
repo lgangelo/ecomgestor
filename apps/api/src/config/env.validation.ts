@@ -53,6 +53,10 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  TIKTOK_SERVICE_ID?: string;
+
+  @IsOptional()
+  @IsString()
   TIKTOK_REDIRECT_URI?: string;
 
   @IsOptional()
