@@ -12,20 +12,26 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useUpdateVariant } from '@/hooks/use-products';
+import { useUpdateProduct, useUpdateVariant } from '@/hooks/use-products';
 import type { ProductVariantDetail } from '@/hooks/use-products';
 
 export function VariantEditDialog({
   productId,
   variant,
+  /** Produto com uma única variação: o SKU base do produto é o mesmo desta variação (é como a
+   * criação a partir da TikTok Shop grava os dois) — editar aqui atualiza os dois juntos, senão
+   * ficam dessincronizados. */
+  syncBaseSku,
   trigger,
 }: {
   productId: string;
   variant: ProductVariantDetail;
+  syncBaseSku?: boolean;
   trigger: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(false);
   const updateVariant = useUpdateVariant(productId, variant.id);
+  const updateProduct = useUpdateProduct(productId);
 
   const [form, setForm] = React.useState({
     sku: variant.sku,
@@ -59,6 +65,9 @@ export function VariantEditDialog({
       suggestedPrice: Number(form.suggestedPrice),
       minStock: Number(form.minStock),
     });
+    if (syncBaseSku && form.sku !== variant.sku) {
+      await updateProduct.mutateAsync({ baseSku: form.sku });
+    }
     setOpen(false);
   }
 

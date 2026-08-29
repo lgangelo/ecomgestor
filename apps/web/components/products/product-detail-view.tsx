@@ -173,6 +173,7 @@ function ResumoTab({
                       <VariantEditDialog
                         productId={productId}
                         variant={variant}
+                        syncBaseSku={product.variants.length === 1}
                         trigger={
                           <Button variant="ghost" size="sm">
                             <Pencil className="h-4 w-4" />
