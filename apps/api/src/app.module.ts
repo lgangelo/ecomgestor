@@ -11,7 +11,7 @@ import { RequestContextMiddleware } from './common/middleware/request-context.mi
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { CsrfGuard } from './common/guards/csrf.guard';
-import { AppLoggerService } from './common/logger/app-logger.service';
+import { AppLoggerModule } from './common/logger/app-logger.module';
 import { AuthModule } from './auth/auth.module';
 import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
@@ -39,6 +39,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration], validate: validateEnv }),
+    AppLoggerModule,
     JwtModule.register({}),
     ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 120 }] }),
     PrismaModule,
@@ -68,7 +69,6 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     OnboardingModule,
   ],
   providers: [
-    AppLoggerService,
     // Ordem importa: rate limit -> autenticação (popula req.user) -> autorização por
     // permissão -> CSRF (para métodos que alteram estado).
     { provide: APP_GUARD, useClass: ThrottlerGuard },
