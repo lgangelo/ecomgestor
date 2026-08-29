@@ -125,6 +125,11 @@ services:
       # (que também respeita a env var PORT) herdava esse valor e escutava na porta errada,
       # quebrando o healthcheck e o roteamento do Traefik (ambos esperam a porta 3000).
       PORT: 3000
+      # O Docker injeta HOSTNAME=<id do container> automaticamente, e o server.js do modo
+      # standalone do Next.js usa essa env var como endereço de bind — sem este override, ele
+      # escuta só no IP da rede do container, não em loopback, e o healthcheck (que testa
+      # http://localhost:3000 de dentro do próprio container) falha com connection refused.
+      HOSTNAME: '0.0.0.0'
       # Fetch servidor-a-servidor via nome do serviço Docker — nunca depende do domínio
       # público (que pode não ter DNS/TLS prontos, ou sofrer bloqueio de hairpin NAT).
       API_INTERNAL_URL: http://ecommerce-api:3001/api
