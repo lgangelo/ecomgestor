@@ -59,8 +59,13 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     FinanceModule,
     FiscalModule,
     ReportsModule,
-    IntegrationsModule,
+    // TikTokModule ANTES de IntegrationsModule: as duas rotas colidem no mesmo path literal
+    // (ex.: POST /integrations/tiktok/disconnect também bate no stub genérico
+    // POST /integrations/:provider/disconnect) — o Nest despacha para quem registrou primeiro,
+    // então o controller específico do TikTok precisa vir antes do stub genérico (que nem
+    // reconheceria "tiktok" como valor do enum IntegrationProvider, só "TIKTOK_SHOP").
     TikTokModule,
+    IntegrationsModule,
     TikTokStockOutboxSchedulerModule,
     CompanyModule,
     UsersModule,
