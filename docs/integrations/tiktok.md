@@ -67,6 +67,18 @@ servem como `service_id`).
   `/api/v2/token/get`, mas não foi possível confirmar com certeza absoluta via fetch automatizado
   — tratado como configuração central, nunca hardcoded no meio da lógica).
 
+**Erro real encontrado em produção**: o token OAuth **nunca inclui `shop_id`/`shop_cipher`**
+utilizáveis diretamente — é preciso chamar `GET /authorization/{version}/shops` ("Get Authorized
+Shops") logo após a troca do código para obter o `shop_cipher` (campo `cipher` da resposta),
+exigido como parâmetro `shop_cipher` em quase toda chamada de negócio (produtos, pedidos,
+devoluções). Sem isso, a API responde "Missing identifier. The 'shop_cipher' query parameter is
+required to identify the target shop.". Implementado em `handleCallback`
+(`apps/api/src/integrations/tiktok/tiktok-oauth.service.ts`) via `getAuthorizedShops`
+(`packages/integrations/src/tiktok/tiktok.connector.ts`). Assume-se um único shop por token — a
+única topologia possível para um Custom App (uso interno de um único seller). **Integrações
+conectadas antes desta correção precisam reconectar a loja** (botão "Conectar" de novo) para que
+o `shop_cipher` seja obtido e salvo — o refresh de token sozinho não o busca retroativamente.
+
 **Confirmado em produção (conexão real com a loja Venticelli Bolsas)**: os endpoints de busca
 (`products/search`, `orders/search`, `returns/search`) são **POST**, não GET — usar GET faz a
 TikTok responder "Invalid method. The HTTP method used is not supported by this endpoint.".

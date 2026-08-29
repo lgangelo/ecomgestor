@@ -19,6 +19,9 @@ export const TIKTOK_PATHS = {
   tokenRefresh: '/api/v2/token/refresh',
   /** A confirmar no Partner Center — padrão público conhecido, não extraído com certeza. */
   tokenExchange: '/api/v2/token/get',
+  /** Confirmado em produção — retorna a(s) loja(s) autorizadas para o access_token (id/cipher/
+   * region), único jeito de obter o shop_cipher exigido pelos demais endpoints de negócio. */
+  authorizedShops: `/authorization/${API_VERSION}/shops`,
   /** A confirmar no Partner Center. */
   productsSearch: `/product/${API_VERSION}/products/search`,
   /** A confirmar no Partner Center. */
@@ -38,6 +41,9 @@ export const TIKTOK_PATHS = {
 
 export interface TikTokCredentials {
   shopId?: string;
+  /** Exigido como `shop_cipher` em quase toda chamada de negócio — distinto do shopId, só é
+   * obtido via "Get Authorized Shops" (TIKTOK_PATHS.authorizedShops), nunca vem no token OAuth. */
+  shopCipher?: string;
   sellerName?: string;
   accessToken: string;
   refreshToken: string;

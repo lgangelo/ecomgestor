@@ -7,6 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 
 const CREDENTIAL_KEYS = [
   'shop_id',
+  'shop_cipher',
   'seller_name',
   'access_token',
   'refresh_token',
@@ -48,6 +49,7 @@ export class TikTokCredentialsService {
   async saveCredentials(integrationId: string, credentials: TikTokCredentials): Promise<void> {
     const values: Record<string, string> = {
       shop_id: credentials.shopId ?? '',
+      shop_cipher: credentials.shopCipher ?? '',
       seller_name: credentials.sellerName ?? '',
       access_token: credentials.accessToken,
       refresh_token: credentials.refreshToken,
@@ -89,6 +91,7 @@ export class TikTokCredentialsService {
 
     return {
       shopId: decrypted.get('shop_id') || undefined,
+      shopCipher: decrypted.get('shop_cipher') || undefined,
       sellerName: decrypted.get('seller_name') || undefined,
       accessToken,
       refreshToken,

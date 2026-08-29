@@ -158,6 +158,31 @@ function toUnixSeconds(date: Date): string {
   return String(Math.floor(date.getTime() / 1000));
 }
 
+export interface TikTokAuthorizedShop {
+  shopId: string;
+  shopCipher: string;
+  shopName?: string;
+  region?: string;
+}
+
+interface RawAuthorizedShops {
+  shops?: Array<{ id?: string; cipher?: string; name?: string; region?: string }>;
+}
+
+/**
+ * Chamado uma vez logo após a troca do `code` OAuth por token (nunca vem no próprio token) —
+ * é o único jeito de descobrir o `shop_cipher` exigido por quase toda chamada de negócio.
+ * Recebe um `TikTokClient` sem `shopCipher` configurado (esta chamada não aceita/precisa dele).
+ */
+export async function getAuthorizedShops(client: TikTokClient): Promise<TikTokAuthorizedShop[]> {
+  const raw = await client.request<RawAuthorizedShops>('GET', TIKTOK_PATHS.authorizedShops);
+  return (raw.shops ?? [])
+    .filter((shop): shop is { id: string; cipher: string; name?: string; region?: string } =>
+      Boolean(shop.id && shop.cipher),
+    )
+    .map((shop) => ({ shopId: shop.id, shopCipher: shop.cipher, shopName: shop.name, region: shop.region }));
+}
+
 /** Página vazia — usado quando ainda não há credenciais/loja conectada. */
 export function emptyPage<T>(): Page<T> {
   return { items: [] };

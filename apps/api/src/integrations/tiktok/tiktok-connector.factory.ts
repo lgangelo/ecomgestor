@@ -30,7 +30,7 @@ export class TikTokConnectorFactory {
       appKey,
       appSecret,
       accessToken,
-      shopCipher: credentials?.shopId,
+      shopCipher: credentials?.shopCipher,
     });
 
     return {

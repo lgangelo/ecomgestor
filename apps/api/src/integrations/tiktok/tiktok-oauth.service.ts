@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType, IntegrationProvider, IntegrationStatus } from '@ecommerce-manager/database';
-import { buildAuthorizeUrl, exchangeAuthorizationCode } from '@ecommerce-manager/integrations';
+import { buildAuthorizeUrl, exchangeAuthorizationCode, getAuthorizedShops, TikTokClient } from '@ecommerce-manager/integrations';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { AuditService } from '../../audit/audit.service';
@@ -92,14 +92,24 @@ export class TikTokOAuthService {
 
     const token = await exchangeAuthorizationCode(appKey, appSecret, code);
 
+    // shop_id/shop_cipher nunca vêm no token OAuth — só "Get Authorized Shops" os retorna, e o
+    // shop_cipher é exigido em quase toda chamada de negócio (ver tiktok-connector.factory.ts).
+    // Assume-se um único shop autorizado por token: é a única topologia possível para um Custom
+    // App do Partner Center (uso interno de um único seller), diferente de um Public App.
+    const shopsClient = new TikTokClient({ appKey, appSecret, accessToken: token.accessToken });
+    const shops = await getAuthorizedShops(shopsClient);
+    const shop = shops[0];
+
     const integration = await this.credentialsService.getOrCreateIntegration(companyId);
     await this.credentialsService.saveCredentials(integration.id, {
-      shopId: token.shopId,
-      sellerName: token.sellerName,
+      shopId: shop?.shopId ?? token.shopId,
+      shopCipher: shop?.shopCipher,
+      sellerName: shop?.shopName ?? token.sellerName,
       accessToken: token.accessToken,
       refreshToken: token.refreshToken,
       accessTokenExpiresAt: token.accessTokenExpiresAt,
       refreshTokenExpiresAt: token.refreshTokenExpiresAt,
+      region: shop?.region,
     });
 
     const channel = await this.prisma.client.salesChannel.upsert({
@@ -114,7 +124,7 @@ export class TikTokOAuthService {
         channelId: channel.id,
         provider: IntegrationProvider.TIKTOK_SHOP,
         status: IntegrationStatus.CONNECTED,
-        storeName: token.sellerName ?? null,
+        storeName: shop?.shopName ?? token.sellerName ?? null,
         lastError: null,
       },
     });
@@ -128,7 +138,7 @@ export class TikTokOAuthService {
       action: 'INTEGRATION_TIKTOK_CONNECTED',
       entity: 'integration',
       entityId: integration.id,
-      newValue: { storeName: token.sellerName, shopId: token.shopId },
+      newValue: { storeName: shop?.shopName ?? token.sellerName, shopId: shop?.shopId ?? token.shopId },
       ip,
     });
     this.logger.log('tiktok_connected', { operation: 'oauth_callback', userId });
