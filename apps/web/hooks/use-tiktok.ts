@@ -30,6 +30,7 @@ export interface UnmatchedTikTokProduct {
   externalSku: string;
   sellerSku?: string;
   name: string;
+  price: string;
   stock: number;
   suggestedVariantId?: string;
   suggestedSku?: string;

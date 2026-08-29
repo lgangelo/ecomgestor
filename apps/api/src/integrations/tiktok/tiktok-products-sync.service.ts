@@ -13,6 +13,7 @@ export interface UnmatchedTikTokProduct {
   externalSku: string;
   sellerSku?: string;
   name: string;
+  price: string;
   stock: number;
   suggestedVariantId?: string;
   suggestedSku?: string;
@@ -68,6 +69,7 @@ export class TikTokProductsSyncService {
           externalSku: product.externalSku,
           sellerSku,
           name: product.name,
+          price: product.price,
           stock: product.stock,
           suggestedVariantId: candidates.length === 1 ? candidates[0] : undefined,
           suggestedSku: candidates.length === 1 ? sellerSku : undefined,

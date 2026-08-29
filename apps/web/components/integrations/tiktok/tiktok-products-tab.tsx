@@ -10,11 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useTikTokUnmatchedProducts, useIgnoreTikTokProduct } from '@/hooks/use-tiktok';
 import type { UnmatchedTikTokProduct } from '@/hooks/use-tiktok';
 import { TikTokLinkProductDialog } from './tiktok-link-product-dialog';
+import { TikTokCreateProductDialog } from './tiktok-create-product-dialog';
 
 export function TikTokProductsTab() {
   const { data, isLoading } = useTikTokUnmatchedProducts(true);
   const ignore = useIgnoreTikTokProduct();
   const [linking, setLinking] = React.useState<UnmatchedTikTokProduct | null>(null);
+  const [creating, setCreating] = React.useState<UnmatchedTikTokProduct | null>(null);
 
   return (
     <div>
@@ -62,6 +64,9 @@ export function TikTokProductsTab() {
                     <Button size="sm" variant="outline" onClick={() => setLinking(product)}>
                       Vincular
                     </Button>
+                    <Button size="sm" variant="outline" onClick={() => setCreating(product)}>
+                      Criar
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -82,6 +87,9 @@ export function TikTokProductsTab() {
 
       {linking && (
         <TikTokLinkProductDialog product={linking} open={Boolean(linking)} onOpenChange={(open) => !open && setLinking(null)} />
+      )}
+      {creating && (
+        <TikTokCreateProductDialog product={creating} open={Boolean(creating)} onOpenChange={(open) => !open && setCreating(null)} />
       )}
     </div>
   );
