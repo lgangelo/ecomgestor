@@ -9,16 +9,19 @@ COPY package.json package-lock.json* ./
 COPY apps/api/package.json apps/api/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/shared/package.json packages/shared/package.json
+COPY packages/shared-server/package.json packages/shared-server/package.json
 COPY packages/integrations/package.json packages/integrations/package.json
-COPY packages/ui/package.json packages/ui/package.json
 RUN npm install --workspaces --include-workspace-root
 
 FROM deps AS build
 COPY . .
-RUN npm run build --workspace=@ecommerce-manager/database
-RUN npm run build --workspace=@ecommerce-manager/shared
-RUN npm run build --workspace=@ecommerce-manager/integrations
+# prisma generate PRECISA rodar antes do build de `database`: packages/database/src/index.ts
+# importa o client gerado (../generated/client), então `tsc` falha se o client ainda não existir.
 RUN npx prisma generate --schema packages/database/prisma/schema.prisma
+RUN npm run build --workspace=@ecommerce-manager/shared
+RUN npm run build --workspace=@ecommerce-manager/shared-server
+RUN npm run build --workspace=@ecommerce-manager/database
+RUN npm run build --workspace=@ecommerce-manager/integrations
 RUN npm run build --workspace=@ecommerce-manager/api
 
 FROM base AS runtime
