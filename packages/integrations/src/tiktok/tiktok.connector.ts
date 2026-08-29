@@ -180,8 +180,6 @@ interface RawAuthorizedShops {
  */
 export async function getAuthorizedShops(client: TikTokClient): Promise<TikTokAuthorizedShop[]> {
   const raw = await client.request<RawAuthorizedShops>('GET', TIKTOK_PATHS.authorizedShops);
-  // TEMPORÁRIO — remover depois de confirmar que a resposta real inclui `cipher` desta vez.
-  console.log('[tiktok-authorized-shops-debug]', JSON.stringify(raw));
   return (raw.shops ?? [])
     .filter((shop): shop is { id: string; cipher: string; name?: string; region?: string } =>
       Boolean(shop.id && shop.cipher),
