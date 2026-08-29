@@ -4,6 +4,7 @@ import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
+import { AppLoggerModule } from './common/logger/app-logger.module';
 import { HousekeepingWorkerService } from './queue/housekeeping.worker.service';
 import { TikTokWorkerService } from './queue/tiktok.worker.service';
 import { TikTokModule } from './integrations/tiktok/tiktok.module';
@@ -16,6 +17,7 @@ import { TikTokModule } from './integrations/tiktok/tiktok.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration], validate: validateEnv }),
+    AppLoggerModule,
     PrismaModule,
     RedisModule,
     TikTokModule,
