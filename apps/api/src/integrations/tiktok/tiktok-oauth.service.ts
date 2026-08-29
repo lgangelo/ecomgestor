@@ -72,20 +72,45 @@ export class TikTokOAuthService {
     this.requireConfigured();
     const webAppUrl = this.configService.get<string>('webAppUrl')!;
 
-    if (!state || !code) {
-      throw new BadRequestException('Callback OAuth da TikTok Shop sem state ou code.');
+    if (!code) {
+      throw new BadRequestException('Callback OAuth da TikTok Shop sem code.');
     }
 
-    const stateKey = `tiktok:oauth-state:${state}`;
-    const raw = await this.redis.client.get(stateKey);
-    // Uso único: apaga imediatamente, antes de qualquer chamada de rede — uma segunda
-    // requisição com o mesmo state (replay) nunca mais encontra o valor.
-    await this.redis.client.del(stateKey);
+    let companyId: string;
+    let userId: string | null;
 
-    if (!raw) {
-      throw new BadRequestException('State OAuth inválido, expirado ou já utilizado.');
+    if (state) {
+      const stateKey = `tiktok:oauth-state:${state}`;
+      const raw = await this.redis.client.get(stateKey);
+      // Uso único: apaga imediatamente, antes de qualquer chamada de rede — uma segunda
+      // requisição com o mesmo state (replay) nunca mais encontra o valor.
+      await this.redis.client.del(stateKey);
+
+      if (!raw) {
+        throw new BadRequestException('State OAuth inválido, expirado ou já utilizado.');
+      }
+      ({ companyId, userId } = JSON.parse(raw) as OAuthStatePayload);
+    } else {
+      // Sem `state`: TikTok manda o vendedor direto pro nosso callback quando ele clica em
+      // "Autorizar" no Seller Center (ex.: depois de o operador adicionar um escopo novo no
+      // Partner Center — a própria TikTok instrui reautorizar assim, não pelo nosso botão
+      // "Conectar"). Não passa por /connect, então não existe state pra validar. Só é seguro
+      // aceitar isso porque hoje há UMA única empresa usando a integração TikTok Shop nesta
+      // instância — reidentificamos pela integração já existente. Se um dia isto virar
+      // multi-tenant de verdade, essa suposição deixa de valer e precisa de outro mecanismo
+      // (ex.: um identificador da loja no próprio redirect) para saber a qual empresa pertence.
+      const existing = await this.prisma.client.integration.findFirst({
+        where: { provider: IntegrationProvider.TIKTOK_SHOP },
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (!existing) {
+        throw new BadRequestException(
+          'Callback OAuth da TikTok Shop sem state e sem conexão prévia para reidentificar a empresa.',
+        );
+      }
+      companyId = existing.companyId;
+      userId = null;
     }
-    const { companyId, userId } = JSON.parse(raw) as OAuthStatePayload;
 
     const appKey = this.configService.get<string>('tiktok.appKey', { infer: true }) as string;
     const appSecret = this.configService.get<string>('tiktok.appSecret', { infer: true }) as string;
@@ -150,7 +175,7 @@ export class TikTokOAuthService {
       newValue: { storeName: shop?.shopName ?? token.sellerName, shopId: shop?.shopId ?? token.shopId },
       ip,
     });
-    this.logger.log('tiktok_connected', { operation: 'oauth_callback', userId });
+    this.logger.log('tiktok_connected', { operation: 'oauth_callback', userId: userId ?? undefined });
 
     return { webAppUrl };
   }

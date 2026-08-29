@@ -92,6 +92,18 @@ de um único seller). **Integrações conectadas antes desta correção precisam
 (botão "Conectar" de novo) para que o `shop_cipher` seja obtido e salvo — o refresh de token
 sozinho não o busca retroativamente.
 
+**Reautorização depois de adicionar um escopo novo**: confirmado no próprio Partner Center
+("Gerenciar API" do app) — depois de ativar um escopo novo (ex.: "Informações globais da loja",
+`seller.shop.info`, necessário para `Get Active Shop List` acima), é preciso pedir para o
+vendedor **reautorizar direto pelo Seller Center** (botão "Autorizar" na linha do app em "Meus
+aplicativos"), não pelo nosso botão "Conectar" — reconectar pelo nosso fluxo normal não repropaga
+o escopo novo para o token. Esse "Autorizar" do Seller Center redireciona para o nosso callback
+(`/api/integrations/tiktok/callback`) com um `code` válido, mas **sem `state`** (não passou pelo
+nosso `/connect`, que é quem gera o state). `handleCallback` trata esse caso: sem `state`, mas com
+`code`, reidentifica a empresa pela integração TikTok Shop já existente — só seguro porque hoje há
+uma única empresa usando essa integração nesta instância; deixará de ser seguro se isto virar
+multi-tenant de verdade (precisaria de outro mecanismo para saber a qual empresa pertence).
+
 **Confirmado em produção (conexão real com a loja Venticelli Bolsas)**: os endpoints de busca
 (`products/search`, `orders/search`, `returns/search`) são **POST**, não GET — usar GET faz a
 TikTok responder "Invalid method. The HTTP method used is not supported by this endpoint.".
