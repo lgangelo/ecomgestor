@@ -179,6 +179,9 @@ interface RawActiveShopList {
  */
 export async function getActiveShopList(client: TikTokClient): Promise<TikTokActiveShop[]> {
   const raw = await client.request<RawActiveShopList>('GET', TIKTOK_PATHS.activeShopList);
+  // TEMPORÁRIO — remover depois de confirmar os nomes de campo reais (shop_id/shop_cipher
+  // vieram vazios mesmo sem erro, então ou a resposta veio vazia ou os campos têm outro nome).
+  console.log('[tiktok-active-shop-list-debug]', JSON.stringify(raw));
   return (raw.shops ?? [])
     .filter((shop): shop is { id: string; cipher: string; name?: string; region?: string } =>
       Boolean(shop.id && shop.cipher),
