@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus, Users as UsersIcon } from 'lucide-react';
+import { Pencil, Plus, Users as UsersIcon } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TableSkeleton } from '@/components/shared/table-skeleton';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatDate } from '@/lib/format';
 import { useUpdateUser, useUsers, type UserListItem } from '@/hooks/use-users';
 import { UserFormDialog } from './user-form-dialog';
+import { UserEditDialog } from './user-edit-dialog';
 
 function UserRow({ user }: { user: UserListItem }) {
   const updateUser = useUpdateUser(user.id);
@@ -30,6 +31,16 @@ function UserRow({ user }: { user: UserListItem }) {
       <TableCell>{formatDate(user.lastLoginAt, true)}</TableCell>
       <TableCell>
         <Switch checked={user.isActive} onCheckedChange={(v) => updateUser.mutate({ isActive: v })} />
+      </TableCell>
+      <TableCell>
+        <UserEditDialog
+          user={user}
+          trigger={
+            <Button variant="ghost" size="icon" aria-label="Editar usuário">
+              <Pencil className="h-4 w-4" />
+            </Button>
+          }
+        />
       </TableCell>
     </TableRow>
   );
@@ -70,6 +81,7 @@ export function UsersView() {
               <TableHead>Perfis</TableHead>
               <TableHead>Último acesso</TableHead>
               <TableHead>Ativo</TableHead>
+              <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
