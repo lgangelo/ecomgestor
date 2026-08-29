@@ -244,8 +244,9 @@ docker compose ps      # todos devem ficar "healthy"/"running"
 
 Serviços:
 
-- `traefik` — proxy reverso/roteamento, TLS via Let's Encrypt (HTTP-01 por padrão; ajuste para
-  DNS-01 se a Cloudflare estiver em modo "Proxied" — ver comentários em `infra/traefik/traefik.yml`)
+- `traefik` — proxy reverso/roteamento, só em loopback (`127.0.0.1:80`/`127.0.0.1:443`) — a única
+  entrada é o `cloudflared` rodando na própria VM (ver seção "Domínio real via Cloudflare Tunnel"
+  abaixo)
 - `ecommerce-web` — Next.js (porta interna 3000)
 - `ecommerce-api` — NestJS (porta interna 3001), expõe `/api/**`
 - `ecommerce-worker` — mesma imagem da API, executando `dist/worker.js` (processa filas do Redis)
@@ -254,6 +255,50 @@ Serviços:
 O PostgreSQL **não** está no `docker-compose.yml` de propósito. Os containers `ecommerce-api` e
 `ecommerce-worker` alcançam o Postgres da VM via `host.docker.internal` (mapeado com
 `extra_hosts: host.docker.internal:host-gateway`, necessário no Linux com Docker ≥ 20.10).
+
+### Domínio real via Cloudflare Tunnel
+
+Topologia usada em produção: um domínio só (`WEB_DOMAIN=API_DOMAIN`, roteado por caminho — `/api/*`
+vai para a API, o resto para o site), sem porta pública exposta na VM, usando Cloudflare Tunnel
+(`cloudflared`) para a entrada de tráfego. A Cloudflare fica em modo **"Completo (estrito)"** em
+SSL/TLS, o que exige HTTPS válido também entre o túnel e este Traefik (não só entre o navegador e a
+Cloudflare) — por isso o Traefik apresenta um **certificado de origem da Cloudflare (Origin CA)**,
+confiável só pela própria Cloudflare, nunca visto pelo navegador do usuário final.
+
+1. No DNS da Cloudflare, crie o domínio/subdomínio apontando para o túnel (`cloudflared tunnel
+   route dns <nome-do-túnel> <hostname>` na VM, usando o **ID** do túnel, não o nome, se houver
+   ambiguidade com outros túneis já configurados na conta).
+2. No dashboard da Cloudflare: **SSL/TLS → Visão geral**, confirme modo "Completo (estrito)".
+   **SSL/TLS → Certificados de origem → Criar certificado** — gere um certificado (Cloudflare
+   assina, validade longa, ex. 15 anos) e copie o certificado (PEM) e a chave privada.
+3. Na VM, salve os dois arquivos (fora do git — já ignorados em `.gitignore`):
+   ```bash
+   mkdir -p infra/traefik/certs
+   # cole o certificado em infra/traefik/certs/origin.pem
+   # cole a chave privada em infra/traefik/certs/origin.key
+   chmod 600 infra/traefik/certs/origin.key
+   ```
+   `infra/traefik/dynamic/tls.yml` já aponta para esses dois arquivos como certificado estático do
+   Traefik (sem `certresolver`/ACME — não é Let's Encrypt).
+4. Configure o `cloudflared` para falar HTTPS com o Traefik (não HTTP) em
+   `/etc/cloudflared/config.yml`:
+   ```yaml
+   tunnel: <tunnel-id>
+   credentials-file: /etc/cloudflared/<tunnel-id>.json
+   ingress:
+     - hostname: <seu-dominio>
+       service: https://localhost:443
+       originRequest:
+         noTLSVerify: true   # o Origin CA não é assinado por uma CA pública; a Cloudflare já
+                              # valida esse cert de outra forma (é o par do certificado que ela
+                              # mesma emitiu) — noTLSVerify aqui só afeta a checada do cloudflared.
+     - service: http_status:404
+   ```
+5. `docker compose up -d` (recria o Traefik com o volume dos certs) e
+   `sudo systemctl restart cloudflared`.
+6. Teste: `curl -I https://<seu-dominio>` deve responder sem redirecionamento (nem loop, nem
+   `ERR_TOO_MANY_REDIRECTS`) e o navegador deve mostrar o cadeado normal (o cadeado do navegador
+   vem do certificado de borda da própria Cloudflare, não do Origin CA).
 
 ### Testar sem domínio/TLS (acesso direto por IP)
 
@@ -264,9 +309,10 @@ real saindo para a internet** (sem TLS, sem os security headers que o Traefik ap
    `COOKIE_DOMAIN=` (vazio — o atributo `Domain` do cookie não é válido para hosts que são IP
    puro; o navegador rejeita o cookie inteiro se vier definido), `COOKIE_SECURE=false` (cookies
    `Secure` são recusados pelo navegador fora de HTTPS).
-2. `ecommerce-api`/`ecommerce-web` já expõem as portas 3001/3000 diretamente no
-   `docker-compose.yml` para esse cenário (comentado como temporário — remova quando configurar
-   domínio real).
+2. Adicione temporariamente `ports: ['3001:3001']` (ecommerce-api) e `ports: ['3000:3000']`
+   (ecommerce-web) no `docker-compose.yml` — por padrão essas portas não são publicadas
+   diretamente (só o Traefik em loopback, para uso com Cloudflare Tunnel); reverta antes de
+   configurar o domínio real.
 3. `docker compose build && docker compose up -d` (rebuild necessário: `NEXT_PUBLIC_API_URL` é
    embutido no bundle do navegador em tempo de build, não lido em tempo de execução).
 4. Acesse `http://SEU_IP:3000`.

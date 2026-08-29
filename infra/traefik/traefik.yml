@@ -1,14 +1,17 @@
 # Configuração estática do Traefik.
 #
 # Topologia atual: Cloudflare Tunnel (cloudflared) roda na VM e conecta de SAÍDA para a borda da
-# Cloudflare — não há porta pública exposta na VM, e a Cloudflare termina o HTTPS. O túnel
-# encaminha para este Traefik via HTTP puro (entrypoint `web`, porta 80); por isso NÃO há
-# redirect automático para HTTPS aqui (isso já acontece na borda da Cloudflare, antes de chegar
-# na VM) e os roteadores em docker-compose.yml usam `entrypoints=web`, sem `tls.certresolver`.
+# Cloudflare — não há porta pública exposta na VM. SSL/TLS da Cloudflare está em modo "Full
+# (strict)": a borda da Cloudflare termina o HTTPS do navegador, mas exige HTTPS válido também
+# entre o túnel e este Traefik. Por isso o túnel encaminha para `https://localhost:443`
+# (entrypoint `websecure`) e este Traefik apresenta um certificado de origem da Cloudflare
+# (Origin CA), configurado como certificado estático em infra/traefik/dynamic/tls.yml — os
+# roteadores em docker-compose.yml usam `entrypoints=websecure` + `tls=true`, sem
+# `tls.certresolver` (não é ACME/Let's Encrypt, é um arquivo estático).
 #
-# `websecure`/certificatesResolvers ficam definidos mas sem nenhum roteador os referenciando —
-# preservados para o caso de um dia trocar para exposição direta (sem Cloudflare) ou desafio
-# DNS-01; não fazem nada sozinhos.
+# `certificatesResolvers.letsencrypt` fica definido mas sem nenhum roteador o referenciando —
+# preservado para o caso de um dia trocar para exposição direta (sem Cloudflare) com desafio
+# HTTP-01/DNS-01; não faz nada sozinho.
 
 log:
   level: INFO

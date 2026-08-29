@@ -13,4 +13,8 @@ Thumbs.db
 *.tsbuildinfo
 /packages/database/generated/
 /infra/traefik/acme.json
+# Certificado de origem da Cloudflare (chave privada) — nunca commitar, gerado uma vez no
+# dashboard da Cloudflare e colocado direto na VM. Ver README.md.
+/infra/traefik/certs/*.pem
+/infra/traefik/certs/*.key
 .turbo/

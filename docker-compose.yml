@@ -17,9 +17,10 @@ services:
     security_opt:
       - no-new-privileges:true
     # Só em loopback: com Cloudflare Tunnel, a única forma de entrada é o `cloudflared` rodando
-    # na própria VM encaminhando para http://localhost:80 — nunca precisa expor essas portas na
-    # interface pública da VM. Ajuste para '80:80'/'443:443' (todas as interfaces) só se um dia
-    # trocar para exposição direta sem Cloudflare.
+    # na própria VM encaminhando para https://localhost:443 (Full/strict — ver comentário em
+    # infra/traefik/traefik.yml) — nunca precisa expor essas portas na interface pública da VM.
+    # Ajuste para '80:80'/'443:443' (todas as interfaces) só se um dia trocar para exposição
+    # direta sem Cloudflare.
     ports:
       - '127.0.0.1:80:80'
       - '127.0.0.1:443:443'
@@ -27,6 +28,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./infra/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./infra/traefik/dynamic:/etc/traefik/dynamic:ro
+      - ./infra/traefik/certs:/etc/traefik/certs:ro
       - traefik-certs:/letsencrypt
     networks:
       - ecommerce-network
@@ -78,9 +80,11 @@ services:
       # Mesmo domínio do ecommerce-web (API_DOMAIN=WEB_DOMAIN) — PathPrefix é o que diferencia
       # as duas rotas; sem ele, os dois roteadores empatariam em qualquer request para o domínio.
       - 'traefik.http.routers.ecommerce-api.rule=Host(`${API_DOMAIN}`) && PathPrefix(`/api`)'
-      # `web` (HTTP puro), não `websecure`: a Cloudflare termina o HTTPS na borda (Cloudflare
-      # Tunnel) — o Traefik nunca vê a conexão TLS real, só o HTTP encaminhado pelo túnel.
-      - 'traefik.http.routers.ecommerce-api.entrypoints=web'
+      # `websecure` com certificado de origem da Cloudflare (Full/strict): o túnel fala HTTPS
+      # com este Traefik, que apresenta o cert estático definido em infra/traefik/dynamic/tls.yml
+      # (sem certresolver — não é ACME/Let's Encrypt).
+      - 'traefik.http.routers.ecommerce-api.entrypoints=websecure'
+      - 'traefik.http.routers.ecommerce-api.tls=true'
       - 'traefik.http.routers.ecommerce-api.middlewares=security-headers@file'
       - 'traefik.http.services.ecommerce-api.loadbalancer.server.port=3001'
 
@@ -138,6 +142,7 @@ services:
       # Sem PathPrefix — pega tudo que não bater com a regra mais específica (com PathPrefix)
       # do ecommerce-api acima; a prioridade automática do Traefik favorece a regra mais longa.
       - 'traefik.http.routers.ecommerce-web.rule=Host(`${WEB_DOMAIN}`)'
-      - 'traefik.http.routers.ecommerce-web.entrypoints=web'
+      - 'traefik.http.routers.ecommerce-web.entrypoints=websecure'
+      - 'traefik.http.routers.ecommerce-web.tls=true'
       - 'traefik.http.routers.ecommerce-web.middlewares=security-headers@file'
       - 'traefik.http.services.ecommerce-web.loadbalancer.server.port=3000'
