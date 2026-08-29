@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, History, Plus } from 'lucide-react';
+import { ArrowLeft, History, Pencil, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import { useOrders } from '@/hooks/use-orders';
 import { useAuditLogs } from '@/hooks/use-audit';
 import { StatCard } from '@/components/shared/stat-card';
 import { VariantFormDialog } from './variant-form-dialog';
+import { VariantEditDialog } from './variant-edit-dialog';
 import { CostHistoryDialog } from './cost-history-dialog';
 
 export function ProductDetailView({ productId }: { productId: string }) {
@@ -168,17 +169,29 @@ function ResumoTab({
                     <StatusBadge status={variant.status} map={VARIANT_STATUS_PRESENTATION} />
                   </TableCell>
                   <TableCell>
-                    <CostHistoryDialog
-                      productId={productId}
-                      variantId={variant.id}
-                      sku={variant.sku}
-                      trigger={
-                        <Button variant="ghost" size="sm">
-                          <History className="h-4 w-4" />
-                          Custos
-                        </Button>
-                      }
-                    />
+                    <div className="flex justify-end gap-2">
+                      <VariantEditDialog
+                        productId={productId}
+                        variant={variant}
+                        trigger={
+                          <Button variant="ghost" size="sm">
+                            <Pencil className="h-4 w-4" />
+                            Editar
+                          </Button>
+                        }
+                      />
+                      <CostHistoryDialog
+                        productId={productId}
+                        variantId={variant.id}
+                        sku={variant.sku}
+                        trigger={
+                          <Button variant="ghost" size="sm">
+                            <History className="h-4 w-4" />
+                            Custos
+                          </Button>
+                        }
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
