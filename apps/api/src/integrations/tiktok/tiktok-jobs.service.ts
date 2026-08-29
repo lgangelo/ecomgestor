@@ -2,6 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { IntegrationProvider, Prisma } from '@ecommerce-manager/database';
 import { TikTokApiError, isRetryableCategory } from '@ecommerce-manager/integrations';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { TikTokQueueService } from '../../queue/tiktok-queue.service';
+import type { AuthenticatedUser } from '../../auth/types/authenticated-user';
 
 interface AttemptParams {
   integrationId: string;
@@ -20,7 +22,10 @@ interface AttemptParams {
  */
 @Injectable()
 export class TikTokJobsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly queue: TikTokQueueService,
+  ) {}
 
   /**
    * Executa `fn` rastreando tentativa/sucesso/falha. Relança o erro apenas quando a categoria
@@ -125,5 +130,48 @@ export class TikTokJobsService {
     });
 
     return job;
+  }
+
+  /**
+   * Reprocessa um job manualmente (seção 27 da Fase 3 / seção 48 da Fase 4) — usado tanto pela
+   * aba de falhas da integração TikTok quanto pelo painel geral de Jobs (seção 48), já que hoje
+   * todo `SyncJob` é um job TikTok. Centralizado aqui para nunca duplicar o dispatch por tipo.
+   */
+  async retryAndRequeue(jobId: string, user: AuthenticatedUser): Promise<void> {
+    const job = await this.prepareRetry(jobId, user.companyId);
+    await this.requeue(user, job.type, job.payload);
+  }
+
+  private async requeue(user: AuthenticatedUser, type: string, payload: unknown) {
+    switch (type) {
+      case 'tiktok-import-orders':
+        await this.queue.enqueueImportOrders({ companyId: user.companyId, userId: user.userId });
+        return;
+      case 'tiktok-import-products':
+        await this.queue.enqueueImportProducts({ companyId: user.companyId });
+        return;
+      case 'tiktok-sync-finance':
+        await this.queue.enqueueSyncFinance({ companyId: user.companyId });
+        return;
+      case 'tiktok-sync-returns':
+        await this.queue.enqueueSyncReturns({ companyId: user.companyId });
+        return;
+      case 'tiktok-push-inventory': {
+        const data = payload as { variantId?: string } | null;
+        if (data?.variantId) {
+          await this.queue.enqueuePushInventory({ companyId: user.companyId, userId: user.userId, variantId: data.variantId });
+        }
+        return;
+      }
+      case 'tiktok-process-webhook': {
+        const data = payload as { webhookEventId?: string } | null;
+        if (data?.webhookEventId) {
+          await this.queue.enqueueProcessWebhook({ webhookEventId: data.webhookEventId });
+        }
+        return;
+      }
+      default:
+        return;
+    }
   }
 }

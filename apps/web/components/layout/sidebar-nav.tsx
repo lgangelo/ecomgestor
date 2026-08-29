@@ -12,6 +12,18 @@ function hasPermission(permissions: string[], required?: string): boolean {
   return permissions.includes(required);
 }
 
+/**
+ * Um grupo aparece se o usuário tem a permissão do próprio grupo OU a de pelo menos um item
+ * dentro dele — nunca esconder um item cuja permissão o usuário JÁ tem só porque o grupo como um
+ * todo também exige outra permissão mais ampla (bug encontrado ao adicionar "Jobs" em
+ * Configurações, seção 61 da Fase 4: um MANAGER com `integration.jobs.read`/`audit.read` mas sem
+ * `settings.manage` nunca via "Auditoria" nem veria "Jobs").
+ */
+function isGroupVisible(group: NavGroup, permissions: string[]): boolean {
+  if (hasPermission(permissions, group.permission)) return true;
+  return (group.items ?? []).some((item) => hasPermission(permissions, item.permission));
+}
+
 function GroupLink({ group, active }: { group: NavGroup; active: boolean }) {
   return (
     <Link
@@ -96,7 +108,7 @@ export function SidebarNav({ permissions }: { permissions: string[] }) {
 
   return (
     <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-4">
-      {NAV_GROUPS.filter((g) => hasPermission(permissions, g.permission)).map((group) =>
+      {NAV_GROUPS.filter((g) => isGroupVisible(g, permissions)).map((group) =>
         group.href ? (
           <GroupLink key={group.label} group={group} active={pathname === group.href} />
         ) : (

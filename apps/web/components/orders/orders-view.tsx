@@ -1,6 +1,5 @@
 'use client';
 
-import * as React from 'react';
 import Link from 'next/link';
 import { ShoppingBag } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
@@ -17,26 +16,41 @@ import { formatBRL } from '@ecommerce-manager/shared';
 import { formatDate } from '@/lib/format';
 import { useOrders } from '@/hooks/use-orders';
 import { useChannels } from '@/hooks/use-channels';
+import { useUrlFilters } from '@/hooks/use-url-filters';
 
 const ORDER_STATUSES = Object.keys(ORDER_STATUS_PRESENTATION);
 
+const SYNC_STATUS_LABELS: Record<string, string> = {
+  OK: 'Sincronizado',
+  REQUIRES_MAPPING: 'Precisa de vínculo',
+  ERROR: 'Erro de sincronização',
+};
+
+// Filtros e paginação persistem na URL (seção 57 da Fase 4) — atualizar a página ou compartilhar
+// o link preserva o que foi filtrado.
+const DEFAULT_FILTERS = {
+  page: 1,
+  customerName: '',
+  channelId: '',
+  status: '',
+  syncStatus: '',
+  dateFrom: '',
+  dateTo: '',
+};
+
 export function OrdersView() {
-  const [page, setPage] = React.useState(1);
-  const [customerName, setCustomerName] = React.useState('');
-  const [channelId, setChannelId] = React.useState<string | undefined>();
-  const [status, setStatus] = React.useState<string | undefined>();
-  const [dateFrom, setDateFrom] = React.useState('');
-  const [dateTo, setDateTo] = React.useState('');
+  const [filters, setFilters] = useUrlFilters(DEFAULT_FILTERS);
 
   const { data: channels } = useChannels();
   const { data, isLoading } = useOrders({
-    page,
+    page: filters.page,
     pageSize: 20,
-    customerName,
-    channelId,
-    status,
-    dateFrom,
-    dateTo,
+    customerName: filters.customerName || undefined,
+    channelId: filters.channelId || undefined,
+    status: filters.status || undefined,
+    syncStatus: filters.syncStatus || undefined,
+    dateFrom: filters.dateFrom || undefined,
+    dateTo: filters.dateTo || undefined,
   });
 
   return (
@@ -49,21 +63,15 @@ export function OrdersView() {
           <Input
             id="customerName"
             className="w-48"
-            value={customerName}
-            onChange={(e) => {
-              setCustomerName(e.target.value);
-              setPage(1);
-            }}
+            value={filters.customerName}
+            onChange={(e) => setFilters({ customerName: e.target.value, page: 1 })}
           />
         </div>
         <div className="space-y-1.5">
           <Label>Canal</Label>
           <Select
-            value={channelId ?? 'all'}
-            onValueChange={(v) => {
-              setChannelId(v === 'all' ? undefined : v);
-              setPage(1);
-            }}
+            value={filters.channelId || 'all'}
+            onValueChange={(v) => setFilters({ channelId: v === 'all' ? undefined : v, page: 1 })}
           >
             <SelectTrigger className="w-44">
               <SelectValue placeholder="Todos" />
@@ -81,11 +89,8 @@ export function OrdersView() {
         <div className="space-y-1.5">
           <Label>Status</Label>
           <Select
-            value={status ?? 'all'}
-            onValueChange={(v) => {
-              setStatus(v === 'all' ? undefined : v);
-              setPage(1);
-            }}
+            value={filters.status || 'all'}
+            onValueChange={(v) => setFilters({ status: v === 'all' ? undefined : v, page: 1 })}
           >
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Todos" />
@@ -101,16 +106,32 @@ export function OrdersView() {
           </Select>
         </div>
         <div className="space-y-1.5">
+          <Label>Sincronização</Label>
+          <Select
+            value={filters.syncStatus || 'all'}
+            onValueChange={(v) => setFilters({ syncStatus: v === 'all' ? undefined : v, page: 1 })}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Todas" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas</SelectItem>
+              {Object.entries(SYNC_STATUS_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
           <Label htmlFor="dateFrom">De</Label>
           <Input
             id="dateFrom"
             type="date"
             className="w-40"
-            value={dateFrom}
-            onChange={(e) => {
-              setDateFrom(e.target.value);
-              setPage(1);
-            }}
+            value={filters.dateFrom}
+            onChange={(e) => setFilters({ dateFrom: e.target.value, page: 1 })}
           />
         </div>
         <div className="space-y-1.5">
@@ -119,11 +140,8 @@ export function OrdersView() {
             id="dateTo"
             type="date"
             className="w-40"
-            value={dateTo}
-            onChange={(e) => {
-              setDateTo(e.target.value);
-              setPage(1);
-            }}
+            value={filters.dateTo}
+            onChange={(e) => setFilters({ dateTo: e.target.value, page: 1 })}
           />
         </div>
       </div>
@@ -168,7 +186,12 @@ export function OrdersView() {
       )}
 
       {data && data.totalPages > 1 && (
-        <PaginationBar page={data.page} totalPages={data.totalPages} total={data.total} onPageChange={setPage} />
+        <PaginationBar
+          page={data.page}
+          totalPages={data.totalPages}
+          total={data.total}
+          onPageChange={(page) => setFilters({ page })}
+        />
       )}
     </div>
   );

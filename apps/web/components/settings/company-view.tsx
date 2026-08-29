@@ -2,10 +2,11 @@
 
 import * as React from 'react';
 import { PageHeader } from '@/components/shared/page-header';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCompany, useUpdateCompany } from '@/hooks/use-company';
@@ -16,7 +17,16 @@ export function CompanyView() {
   const { data: company, isLoading } = useCompany();
   const updateCompany = useUpdateCompany();
 
-  const [form, setForm] = React.useState({ name: '', legalName: '', cnpj: '', timezone: 'America/Sao_Paulo' });
+  const [form, setForm] = React.useState({
+    name: '',
+    legalName: '',
+    cnpj: '',
+    timezone: 'America/Sao_Paulo',
+    currency: 'BRL',
+    slowMovingDays: 60,
+    restockCoverageDays: 14,
+    inventoryAutoSyncEnabled: false,
+  });
 
   React.useEffect(() => {
     if (company) {
@@ -25,6 +35,10 @@ export function CompanyView() {
         legalName: company.legalName ?? '',
         cnpj: company.cnpj ?? '',
         timezone: company.timezone,
+        currency: company.currency,
+        slowMovingDays: company.slowMovingDays,
+        restockCoverageDays: company.restockCoverageDays,
+        inventoryAutoSyncEnabled: company.inventoryAutoSyncEnabled,
       });
     }
   }, [company]);
@@ -36,15 +50,23 @@ export function CompanyView() {
       legalName: form.legalName || undefined,
       cnpj: form.cnpj || undefined,
       timezone: form.timezone,
+      currency: form.currency,
+      slowMovingDays: form.slowMovingDays,
+      restockCoverageDays: form.restockCoverageDays,
     });
+  }
+
+  function handleToggleAutoSync(checked: boolean) {
+    setForm((f) => ({ ...f, inventoryAutoSyncEnabled: checked }));
+    updateCompany.mutate({ inventoryAutoSyncEnabled: checked });
   }
 
   if (isLoading || !company) return <Skeleton className="h-96" />;
 
   return (
     <div>
-      <PageHeader title="Empresa" description="Dados cadastrais da empresa." />
-      <Card>
+      <PageHeader title="Empresa" description="Dados cadastrais e configurações gerenciais da empresa." />
+      <Card className="mb-6">
         <CardContent className="p-6">
           <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -78,12 +100,60 @@ export function CompanyView() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="currency">Moeda</Label>
+              <Input
+                id="currency"
+                maxLength={8}
+                value={form.currency}
+                onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value.toUpperCase() }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="slowMovingDays">Dias para estoque parado</Label>
+              <Input
+                id="slowMovingDays"
+                type="number"
+                min={1}
+                max={365}
+                value={form.slowMovingDays}
+                onChange={(e) => setForm((f) => ({ ...f, slowMovingDays: Number(e.target.value) }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="restockCoverageDays">Limite de cobertura para reposição (dias)</Label>
+              <Input
+                id="restockCoverageDays"
+                type="number"
+                min={1}
+                max={365}
+                value={form.restockCoverageDays}
+                onChange={(e) => setForm((f) => ({ ...f, restockCoverageDays: Number(e.target.value) }))}
+              />
+            </div>
             <div className="col-span-full flex justify-end">
               <Button type="submit" disabled={updateCompany.isPending}>
                 {updateCompany.isPending ? 'Salvando...' : 'Salvar alterações'}
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Sincronização automática de estoque</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
+          <div className="flex items-center gap-3">
+            <Switch checked={form.inventoryAutoSyncEnabled} onCheckedChange={handleToggleAutoSync} />
+            <span className="text-sm font-medium">{form.inventoryAutoSyncEnabled ? 'Ativada' : 'Desativada'}</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Quando ativado, alterações no estoque central serão enviadas automaticamente para a TikTok Shop. Depende
+            também da configuração do servidor (<code>TIKTOK_INVENTORY_PUSH_ENABLED</code>) — com qualquer um dos
+            dois desligado, a sincronização continua manual.
+          </p>
         </CardContent>
       </Card>
     </div>

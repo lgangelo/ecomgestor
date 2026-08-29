@@ -1,6 +1,5 @@
 'use client';
 
-import * as React from 'react';
 import Link from 'next/link';
 import { Package, Plus, Search } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
@@ -16,16 +15,23 @@ import { PRODUCT_STATUS_PRESENTATION } from '@ecommerce-manager/ui';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { useProducts } from '@/hooks/use-products';
 import { useCategories } from '@/hooks/use-categories';
+import { useUrlFilters } from '@/hooks/use-url-filters';
 import { ProductFormDialog } from './product-form-dialog';
 
+// Filtros e paginação persistem na URL (seção 57 da Fase 4).
+const DEFAULT_FILTERS = { page: 1, search: '', categoryId: '', status: '' };
+
 export function ProductsView() {
-  const [page, setPage] = React.useState(1);
-  const [search, setSearch] = React.useState('');
-  const [categoryId, setCategoryId] = React.useState<string | undefined>();
-  const [status, setStatus] = React.useState<string | undefined>();
+  const [filters, setFilters] = useUrlFilters(DEFAULT_FILTERS);
 
   const { data: categories } = useCategories();
-  const { data, isLoading } = useProducts({ page, pageSize: 20, search, categoryId, status });
+  const { data, isLoading } = useProducts({
+    page: filters.page,
+    pageSize: 20,
+    search: filters.search || undefined,
+    categoryId: filters.categoryId || undefined,
+    status: filters.status || undefined,
+  });
 
   return (
     <div>
@@ -50,19 +56,13 @@ export function ProductsView() {
           <Input
             placeholder="Buscar por nome ou SKU..."
             className="pl-8"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
+            value={filters.search}
+            onChange={(e) => setFilters({ search: e.target.value, page: 1 })}
           />
         </div>
         <Select
-          value={categoryId ?? 'all'}
-          onValueChange={(v) => {
-            setCategoryId(v === 'all' ? undefined : v);
-            setPage(1);
-          }}
+          value={filters.categoryId || 'all'}
+          onValueChange={(v) => setFilters({ categoryId: v === 'all' ? undefined : v, page: 1 })}
         >
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Categoria" />
@@ -77,11 +77,8 @@ export function ProductsView() {
           </SelectContent>
         </Select>
         <Select
-          value={status ?? 'all'}
-          onValueChange={(v) => {
-            setStatus(v === 'all' ? undefined : v);
-            setPage(1);
-          }}
+          value={filters.status || 'all'}
+          onValueChange={(v) => setFilters({ status: v === 'all' ? undefined : v, page: 1 })}
         >
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Status" />
@@ -148,7 +145,12 @@ export function ProductsView() {
       )}
 
       {data && data.totalPages > 1 && (
-        <PaginationBar page={data.page} totalPages={data.totalPages} total={data.total} onPageChange={setPage} />
+        <PaginationBar
+          page={data.page}
+          totalPages={data.totalPages}
+          total={data.total}
+          onPageChange={(page) => setFilters({ page })}
+        />
       )}
     </div>
   );

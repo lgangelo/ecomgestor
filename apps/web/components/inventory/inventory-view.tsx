@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { useInventory, useInventorySummary } from '@/hooks/use-inventory';
 import { MovementFormDialog } from './movement-form-dialog';
+import { InventoryInsightsSection } from './inventory-insights';
 
 export function InventoryView() {
   const [page, setPage] = React.useState(1);
@@ -143,6 +144,10 @@ export function InventoryView() {
       {data && data.totalPages > 1 && (
         <PaginationBar page={data.page} totalPages={data.totalPages} total={data.total} onPageChange={setPage} />
       )}
+
+      <div className="mt-8">
+        <InventoryInsightsSection />
+      </div>
     </div>
   );
 }

@@ -23,6 +23,15 @@ Este projeto passou por três fases:
   nomeada `integration` com retry classificado por categoria de erro e tela de falhas. Pesquisa oficial,
   decisões e o que ficou de fora em **`docs/integrations/tiktok.md`** e
   **`docs/integrations/tiktok-data-mapping.md`**.
+- **Fase 4 (simplificação fiscal + maturidade gerencial e operacional):** `FiscalDocument` tratado
+  como referência (XML sob demanda, `XML_STORAGE_MODE=REFERENCE_ONLY` por padrão), fechamento
+  mensal com checklist ao vivo e snapshot de indicadores, dashboard gerencial (faturamento x
+  resultado, canais, ranking de produtos, estoque parado/cobertura/reposição sugerida, seção
+  "precisa da sua atenção"), busca global + Ctrl+K, notificações internas deduplicadas e
+  autorresolvidas, painel de jobs (reaproveita `SyncJob` da Fase 3, sem mudança de schema), outbox
+  de sincronização de estoque multicanal (via reconciliação periódica, nunca no caminho da venda;
+  continua desligado por padrão), filtros persistentes na URL e onboarding não bloqueante. Revisão
+  completa, decisões de design e o que ficou por fazer em **`docs/phase4-review.md`**.
 
 ## Stack
 
@@ -199,15 +208,21 @@ Estado atual verificado nesta etapa:
 ## Áreas da aplicação
 
 ```text
-Dashboard
+Dashboard     → cards com comparação de período · faturamento x resultado · canais · produtos ·
+                "precisa da sua atenção" · onboarding (primeiros passos)
 Vendas       → Pedidos · Nova venda · Devoluções · Canais
-Produtos     → Produtos · Categorias · Estoque · Entradas · Movimentações
-Financeiro   → Visão geral · Receitas · Despesas · Taxas · Fechamento mensal
-Fiscal       → Documentos fiscais · Exportação de XML
+Produtos     → Produtos · Categorias · Estoque (+ estoque parado/reposição sugerida) · Entradas ·
+               Movimentações
+Financeiro   → Visão geral · Receitas · Despesas · Taxas · Fechamento mensal (checklist + snapshot)
+Fiscal       → Documentos fiscais (upload manual, ação secundária) · Exportação de XML
+               (preview por mês + ZIP sob demanda, ação principal)
 Relatórios
-Integrações  → TikTok Shop (OAuth real: produtos, pedidos, estoque, financeiro, devoluções, falhas) ·
-               Shopee (Em breve) · Mercado Livre (Em breve)
-Configurações → Empresa · Usuários · Permissões · Auditoria
+Integrações  → TikTok Shop (OAuth real: produtos, pedidos, estoque + outbox de sincronização,
+               financeiro, devoluções, falhas) · Shopee (Em breve) · Mercado Livre (Em breve)
+Configurações → Empresa (inclui sincronização automática de estoque) · Usuários · Permissões ·
+               Jobs · Auditoria
+
+Busca global + Ctrl+K (header) · Notificações internas (sino, header)
 ```
 
 ## Autenticação e segurança
@@ -252,10 +267,21 @@ testar toda a interface sem qualquer integração real com marketplace.
 
 ## Limitações conhecidas desta etapa (por escopo, não por esquecimento)
 
-- Sem chamadas reais a TikTok Shop, Shopee ou Mercado Livre — as telas de integração existem, mas
-  toda ação de conectar/sincronizar retorna explicitamente "não implementado nesta etapa" (HTTP 501).
-- Exportação de XML fiscal gera documentos **mock** (fixture de teste) a partir dos dados já
-  armazenados — não há integração real com SEFAZ.
+- TikTok Shop tem integração real (OAuth, importação, webhooks, financeiro, devoluções, outbox de
+  estoque). Shopee e Mercado Livre continuam só como telas "Em breve" — toda ação de
+  conectar/sincronizar retorna explicitamente "não implementado nesta etapa" (HTTP 501).
+- O sistema **nunca emite NF-e** (não é um ERP fiscal nem substitui um emissor/contador — ver
+  `docs/phase4-review.md`, regra fundamental da Fase 4). `FiscalDocument` é só uma referência a um
+  documento emitido em outro lugar; o XML pode ser importado manualmente (upload) ou baixado sob
+  demanda via um `FiscalDocumentProvider` quando existir uma fonte oficial — hoje só o provider
+  manual existe, nenhum XML é gerado artificialmente.
+- `Company.allowNegativeStock` existe no schema e é aceito no cadastro, mas o
+  `InventoryLedgerService` ainda não o lê (sempre rejeita saldo físico negativo, independente do
+  valor da flag) — limitação consciente, documentada em `docs/phase4-review.md`.
+- Sincronização automática de estoque (outbox multicanal) exige dois interruptores ligados ao
+  mesmo tempo (`TIKTOK_INVENTORY_PUSH_ENABLED` no servidor **e** o toggle por empresa em
+  Configurações → Empresa) e continua desligada por padrão — o outbox só detecta e acumula
+  divergência até que um ADMIN ative os dois.
 - Algumas dependências transitivas do NestJS 10/Next.js 14 têm avisos de segurança conhecidos
   (`npm audit`) cuja correção completa exigiria major upgrades (Nest 10→12, Next 14→16) fora do
   escopo desta fundação; a versão patch mais recente de cada major já está em uso.

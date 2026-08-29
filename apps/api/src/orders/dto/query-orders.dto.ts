@@ -1,4 +1,4 @@
-import { OrderStatus } from '@ecommerce-manager/database';
+import { OrderIntegrationSyncStatus, OrderStatus } from '@ecommerce-manager/database';
 import { Type } from 'class-transformer';
 import { IsBoolean, IsDateString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
@@ -19,6 +19,10 @@ export class QueryOrdersDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(OrderStatus)
   status?: OrderStatus;
+
+  @IsOptional()
+  @IsEnum(OrderIntegrationSyncStatus)
+  syncStatus?: OrderIntegrationSyncStatus;
 
   @IsOptional()
   @IsUUID()

@@ -99,6 +99,12 @@ export class FinanceController {
     return this.financeService.getMonthlyClosing(user.companyId, id);
   }
 
+  @Get('monthly-closings/:referenceMonth/preview')
+  @RequirePermissions(PERMISSIONS.FINANCE_READ)
+  getMonthlyClosingPreview(@CurrentUser() user: AuthenticatedUser, @Param('referenceMonth') referenceMonth: string) {
+    return this.financeService.getMonthlyClosingPreview(user.companyId, referenceMonth);
+  }
+
   @Post('monthly-closings/:referenceMonth/close')
   @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
   closeMonth(@CurrentUser() user: AuthenticatedUser, @Param('referenceMonth') referenceMonth: string) {

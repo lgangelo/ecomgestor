@@ -234,12 +234,36 @@ descrevia com mais detalhe do que o resumo acima:
   sem vínculo e atualização fora de ordem) — nenhum depende de rede real; suíte total da API subiu
   de 27 para 52 testes unitários, todos passando.
 
+## Entregue na Fase 4 — outbox de sincronização de estoque
+
+A seção 51-56 da Fase 4 pediu para amadurecer a infraestrutura de sincronização automática de
+estoque sem tocar no núcleo (`InventoryLedgerService`) e mantendo o push desligado por padrão.
+Implementado em `apps/api/src/integrations/tiktok/tiktok-stock-outbox.service.ts` +
+`tiktok-stock-outbox-scheduler.service.ts`:
+
+- Job periódico a cada 5 minutos reaproveita `TikTokInventorySyncService.compare()` (a mesma fonte
+  da tela de comparação manual) para detectar divergência e alimentar `stock_sync_outbox` — nunca
+  instrumenta `OrdersService`/`ReturnsService`/`InventoryLedgerService` diretamente (acoplaria a
+  integração ao núcleo de estoque, o oposto do que esta integração sempre evitou).
+- Coalescing: uma nova divergência para o mesmo SKU atualiza a entrada `PENDING` existente em vez
+  de criar uma segunda linha — só o valor final importa, nunca a sequência intermediária.
+- Envio de fato exige **dois** interruptores ligados ao mesmo tempo:
+  `TIKTOK_INVENTORY_PUSH_ENABLED` (servidor) **e** `Company.inventoryAutoSyncEnabled` (por
+  empresa, toggle em Configurações → Empresa, só um ADMIN liga). Sem qualquer um dos dois, o
+  outbox só acumula/detecta — nunca envia sozinho. Nenhum dos dois é ativado por
+  migration/seed/deploy.
+- A tela de comparação (`/integracoes/tiktok`, aba Estoque) ganhou os 4 estados (OK/Pendente/
+  Divergente/Erro) e "Último sync", vindos do outbox — sem endpoint novo, o
+  `GET /integrations/tiktok/inventory/compare` já existente passou a retornar esse relatório
+  combinado.
+
 ## Conscientemente não implementado nesta fase
 
-- **Sincronização automática de estoque disparada por venda** (seção 40 do pedido): a estrutura
-  existe (`TikTokQueueService.enqueuePushInventory`), mas nada dispara isso automaticamente hoje —
-  só o botão manual "Enviar estoque central" (atrás da mesma flag) está ligado. Habilitar o
-  gatilho automático fica para quando houver validação em sandbox real.
+- **Sincronização automática de estoque disparada por venda** (seção 40 do pedido, Fase 3): a
+  estrutura existia (`TikTokQueueService.enqueuePushInventory`), mas nada disparava isso
+  automaticamente. Na Fase 4 (ver seção abaixo) isso evoluiu para um outbox com reconciliação
+  periódica — ainda nunca disparado pela venda em si (a venda sempre faz commit interno primeiro,
+  nunca espera a TikTok), e continua desligado por padrão.
 - **Auto-abertura do wizard de importação** logo após o callback do OAuth — o usuário precisa
   clicar em "Importar dados" na aba Configurações uma vez após conectar. Poupa uma interação de UX,
   não é bloqueante.

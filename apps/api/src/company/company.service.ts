@@ -24,6 +24,10 @@ export class CompanyService {
         ...(dto.legalName !== undefined ? { legalName: dto.legalName } : {}),
         ...(dto.cnpj !== undefined ? { cnpj: dto.cnpj } : {}),
         ...(dto.timezone !== undefined ? { timezone: dto.timezone } : {}),
+        ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
+        ...(dto.slowMovingDays !== undefined ? { slowMovingDays: dto.slowMovingDays } : {}),
+        ...(dto.restockCoverageDays !== undefined ? { restockCoverageDays: dto.restockCoverageDays } : {}),
+        ...(dto.inventoryAutoSyncEnabled !== undefined ? { inventoryAutoSyncEnabled: dto.inventoryAutoSyncEnabled } : {}),
       },
     });
 

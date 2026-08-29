@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { FiscalService } from '../fiscal/fiscal.service';
 import { paginate, type PaginatedResult } from '../common/dto/pagination.dto';
 import { CreateExpenseCategoryDto } from './dto/create-expense-category.dto';
 import { CreateExpenseDto } from './dto/create-expense.dto';
@@ -15,6 +16,7 @@ import {
   getCurrentMonthRange,
   getMonthRangeFromReference,
 } from './finance-aggregates.util';
+import { buildMonthlyClosingChecklist } from './monthly-closing-checklist.util';
 import type { Prisma } from '@ecommerce-manager/database';
 
 const MANAGEMENT_DISCLAIMER =
@@ -37,6 +39,7 @@ export class FinanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly fiscalService: FiscalService,
   ) {}
 
   async listExpenseCategories(companyId: string) {
@@ -214,6 +217,37 @@ export class FinanceService {
     return closing;
   }
 
+  /**
+   * Checklist ao vivo + resumo antes de fechar (seções 20-25 da Fase 4) — não persiste nada,
+   * só calcula o mesmo conteúdo que `closeMonth` grava como snapshot, para o usuário conferir
+   * antes de confirmar.
+   */
+  async getMonthlyClosingPreview(companyId: string, referenceMonth: string) {
+    let start: Date;
+    let end: Date;
+    try {
+      ({ start, end } = getMonthRangeFromReference(referenceMonth));
+    } catch {
+      throw new BadRequestException('referenceMonth inválido. Formato esperado: YYYY-MM.');
+    }
+
+    const [aggregates, checklist, existing] = await Promise.all([
+      computeFinanceAggregates(this.prisma, companyId, start, end),
+      buildMonthlyClosingChecklist(this.prisma, this.fiscalService, companyId, referenceMonth, start, end),
+      this.prisma.client.monthlyClosing.findUnique({
+        where: { companyId_referenceMonth: { companyId, referenceMonth: start } },
+      }),
+    ]);
+
+    return {
+      referenceMonth,
+      status: existing?.status ?? 'OPEN',
+      ...aggregates,
+      disclaimer: MANAGEMENT_DISCLAIMER,
+      ...checklist,
+    };
+  }
+
   async closeMonth(companyId: string, userId: string, referenceMonth: string) {
     let start: Date;
     let end: Date;
@@ -223,7 +257,21 @@ export class FinanceService {
       throw new BadRequestException('referenceMonth inválido. Formato esperado: YYYY-MM.');
     }
 
-    const aggregates = await computeFinanceAggregates(this.prisma, companyId, start, end);
+    const [aggregates, checklist] = await Promise.all([
+      computeFinanceAggregates(this.prisma, companyId, start, end),
+      buildMonthlyClosingChecklist(this.prisma, this.fiscalService, companyId, referenceMonth, start, end),
+    ]);
+
+    // Snapshot de contadores (seção 27) — preserva o que foi mostrado ao fechar; não é
+    // contabilidade imutável, o período pode ser reaberto e refeito (seção 26).
+    const snapshot = {
+      ordersCount: checklist.ordersCount,
+      returnsCount: checklist.returnsCount,
+      saleInvoiceCount: checklist.fiscal.saleInvoiceCount,
+      returnInvoiceCount: checklist.fiscal.returnInvoiceCount,
+      fiscalPendingCount: checklist.fiscal.xmlUnavailableCount,
+      warningsSnapshot: checklist.warnings as unknown as Prisma.InputJsonValue,
+    };
 
     const existing = await this.prisma.client.monthlyClosing.findUnique({
       where: { companyId_referenceMonth: { companyId, referenceMonth: start } },
@@ -235,11 +283,13 @@ export class FinanceService {
         companyId,
         referenceMonth: start,
         ...aggregates,
+        ...snapshot,
         status: 'CLOSED',
         closedAt: new Date(),
       },
       update: {
         ...aggregates,
+        ...snapshot,
         status: 'CLOSED',
         closedAt: new Date(),
       },

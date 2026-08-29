@@ -90,3 +90,31 @@ export const MONTHLY_CLOSING_STATUS_PRESENTATION: Record<string, StatusPresentat
   OPEN: { label: 'Em aberto', tone: 'warning' },
   CLOSED: { label: 'Fechado', tone: 'success' },
 };
+
+/** Status reais de `SyncJob` (Fase 3) — painel de jobs (seção 46 da Fase 4) reaproveita o mesmo
+ * vocabulário, nunca inventa WAITING/ACTIVE/DELAYED que o modelo não tem. */
+export const SYNC_JOB_STATUS_PRESENTATION: Record<string, StatusPresentation> = {
+  PENDING: { label: 'Pendente', tone: 'muted' },
+  RUNNING: { label: 'Em execução', tone: 'info' },
+  COMPLETED: { label: 'Concluído', tone: 'success' },
+  FAILED: { label: 'Falhou', tone: 'danger' },
+};
+
+/** Situação da sincronização de estoque multicanal (seção 54 da Fase 4) — separa o status do
+ * documento (outbox: pendente/erro) da divergência ao vivo entre estoque central e canal. */
+export const STOCK_SYNC_STATUS_PRESENTATION: Record<string, StatusPresentation> = {
+  OK: { label: 'OK', tone: 'success' },
+  PENDENTE: { label: 'Pendente', tone: 'muted' },
+  DIVERGENTE: { label: 'Divergente', tone: 'warning' },
+  ERRO: { label: 'Erro', tone: 'danger' },
+};
+
+/** Categorias da central de notificações (seção 41 da Fase 4). */
+export const NOTIFICATION_CATEGORY_PRESENTATION: Record<string, StatusPresentation> = {
+  ESTOQUE: { label: 'Estoque', tone: 'warning' },
+  PEDIDO: { label: 'Pedido', tone: 'info' },
+  FISCAL: { label: 'Fiscal', tone: 'info' },
+  INTEGRACAO: { label: 'Integração', tone: 'danger' },
+  FINANCEIRO: { label: 'Financeiro', tone: 'warning' },
+  SISTEMA: { label: 'Sistema', tone: 'muted' },
+};

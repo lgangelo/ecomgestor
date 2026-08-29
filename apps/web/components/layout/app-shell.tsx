@@ -4,6 +4,7 @@ import * as React from 'react';
 import { X } from 'lucide-react';
 import { SidebarNav } from './sidebar-nav';
 import { Topbar } from './topbar';
+import { CommandPalette } from '@/components/search/command-palette';
 import type { SessionUser } from '@/lib/types/auth';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +16,19 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
+
+  // Ctrl+K / Cmd+K abre o command palette de qualquer tela (seção 40 da Fase 4).
+  React.useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <div className="flex min-h-screen bg-muted/30">
@@ -49,6 +63,8 @@ export function AppShell({
         <Topbar user={user} onMenuClick={() => setMobileOpen(true)} />
         <main className="flex-1 overflow-x-hidden px-4 py-6 sm:px-6 lg:px-8">{children}</main>
       </div>
+
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} permissions={user.permissions} />
     </div>
   );
 }

@@ -57,11 +57,50 @@ export interface FinanceOverview {
   disclaimer: string;
 }
 
+export type ChecklistSeverity = 'ok' | 'warning';
+
+/** Item de checklist do fechamento mensal (seções 20-24 da Fase 4) — nenhum é bloqueante. */
+export interface ChecklistItem {
+  key: string;
+  label: string;
+  severity: ChecklistSeverity;
+  detail?: string;
+  link?: string;
+}
+
+export interface FiscalChecklist {
+  saleInvoiceCount: number;
+  returnInvoiceCount: number;
+  xmlAvailableCount: number;
+  xmlUnavailableCount: number;
+  items: ChecklistItem[];
+}
+
 export interface MonthlyClosing extends Omit<FinanceOverview, 'disclaimer'> {
   id: string;
   referenceMonth: string;
   status: 'OPEN' | 'CLOSED';
   closedAt: string | null;
+  lastReopenedAt: string | null;
+  lastReopenReason: string | null;
+  ordersCount: number;
+  returnsCount: number;
+  saleInvoiceCount: number;
+  returnInvoiceCount: number;
+  fiscalPendingCount: number;
+  warningsSnapshot: ChecklistItem[] | null;
+}
+
+/** Checklist ao vivo + resumo antes de fechar (seção 25) — não persiste nada. */
+export interface MonthlyClosingPreview extends FinanceOverview {
+  referenceMonth: string;
+  status: 'OPEN' | 'CLOSED';
+  ordersCount: number;
+  returnsCount: number;
+  operational: ChecklistItem[];
+  financial: ChecklistItem[];
+  fiscal: FiscalChecklist;
+  warnings: ChecklistItem[];
 }
 
 export interface FeeListItem {
@@ -158,6 +197,14 @@ export function useMonthlyClosing(id: string | undefined) {
   });
 }
 
+export function useMonthlyClosingPreview(referenceMonth: string) {
+  return useQuery({
+    queryKey: ['monthly-closing-preview', referenceMonth],
+    queryFn: () => apiFetch<MonthlyClosingPreview>(`/finance/monthly-closings/${referenceMonth}/preview`),
+    enabled: Boolean(referenceMonth),
+  });
+}
+
 export function useCloseMonth() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -165,6 +212,7 @@ export function useCloseMonth() {
       apiFetch<MonthlyClosing>(`/finance/monthly-closings/${referenceMonth}/close`, { method: 'POST' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['monthly-closings'] });
+      queryClient.invalidateQueries({ queryKey: ['monthly-closing-preview'] });
       toast({ title: 'Mês fechado com sucesso.' });
     },
     onError: onErrorToast('Não foi possível fechar o mês'),
@@ -178,6 +226,7 @@ export function useReopenClosing() {
       apiFetch<MonthlyClosing>(`/finance/monthly-closings/${id}/reopen`, { method: 'POST', body: { reason } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['monthly-closings'] });
+      queryClient.invalidateQueries({ queryKey: ['monthly-closing-preview'] });
       toast({ title: 'Período reaberto.' });
     },
     onError: onErrorToast('Não foi possível reabrir o período'),

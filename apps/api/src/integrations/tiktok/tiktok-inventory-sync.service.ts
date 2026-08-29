@@ -73,7 +73,11 @@ export class TikTokInventorySyncService {
       });
   }
 
-  async push(companyId: string, userId: string, variantId: string): Promise<{ pushed: number }> {
+  /**
+   * `userId` é `null` quando disparado pelo outbox automático (seção 52 da Fase 4) — nunca uma
+   * ação de um usuário interativo nesse caso, mas continua sempre auditado (seção 55/56).
+   */
+  async push(companyId: string, userId: string | null, variantId: string): Promise<{ pushed: number }> {
     if (!this.isPushEnabled()) {
       throw new ForbiddenException(
         'Envio de estoque para a TikTok Shop está desabilitado (TIKTOK_INVENTORY_PUSH_ENABLED=false).',

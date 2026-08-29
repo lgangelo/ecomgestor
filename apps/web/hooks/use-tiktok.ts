@@ -43,6 +43,9 @@ export interface InventoryComparisonRow {
   central: number;
   tiktok: number | null;
   divergent: boolean;
+  /** Seção 54 da Fase 4 — separa o status do outbox (PENDENTE/ERRO) da divergência ao vivo. */
+  status: 'OK' | 'PENDENTE' | 'DIVERGENTE' | 'ERRO';
+  lastSyncAt: string | null;
 }
 
 export interface TikTokFailedJob {

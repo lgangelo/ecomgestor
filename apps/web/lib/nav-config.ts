@@ -82,13 +82,17 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // Sem `permission` no grupo (seção 61 da Fase 4 — Jobs/Auditoria ficam em Configurações >
+    // Administração): cada item já tem sua própria permissão; o grupo só depende de pelo menos
+    // um item estar visível (ver `sidebar-nav.tsx`). Um MANAGER com `audit.read`/
+    // `integration.jobs.read` mas sem `settings.manage` precisa continuar vendo Auditoria/Jobs.
     label: 'Configurações',
     icon: Settings,
-    permission: 'settings.manage',
     items: [
       { label: 'Empresa', href: '/configuracoes/empresa', permission: 'settings.manage' },
       { label: 'Usuários', href: '/configuracoes/usuarios', permission: 'users.manage' },
       { label: 'Permissões', href: '/configuracoes/permissoes', permission: 'users.manage' },
+      { label: 'Jobs', href: '/configuracoes/jobs', permission: 'integration.jobs.read' },
       { label: 'Auditoria', href: '/configuracoes/auditoria', permission: 'audit.read' },
     ],
   },

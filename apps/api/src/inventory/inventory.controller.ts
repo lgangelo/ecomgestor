@@ -28,6 +28,12 @@ export class InventoryController {
     return this.inventoryService.getSummary(user.companyId);
   }
 
+  @Get('insights')
+  @RequirePermissions(PERMISSIONS.INVENTORY_READ)
+  getInsights(@CurrentUser() user: AuthenticatedUser) {
+    return this.inventoryService.getInsights(user.companyId);
+  }
+
   @Get('movements')
   @RequirePermissions(PERMISSIONS.INVENTORY_READ)
   listMovements(@CurrentUser() user: AuthenticatedUser, @Query() query: QueryMovementsDto) {

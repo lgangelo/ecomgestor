@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { Menu, Moon, Sun, LogOut, User as UserIcon } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
+import { GlobalSearch } from '@/components/search/global-search';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 import type { SessionUser } from '@/lib/types/auth';
 import { cn } from '@/lib/utils';
 
@@ -38,9 +40,10 @@ export function Topbar({
         <Menu className="h-5 w-5" />
       </button>
 
-      <div className="hidden lg:block" />
+      <GlobalSearch />
 
       <div className="flex items-center gap-2">
+        <NotificationBell />
         <button
           type="button"
           onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}

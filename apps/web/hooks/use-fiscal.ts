@@ -19,6 +19,16 @@ export interface FiscalDocumentListItem {
   issueDate: string | null;
 }
 
+/** Preview do mês antes do download (seção 12 da Fase 4) — nunca finge que o pacote está completo. */
+export interface FiscalMonthlySummary {
+  referenceMonth: string;
+  documentsCount: number;
+  saleInvoiceCount: number;
+  returnInvoiceCount: number;
+  xmlAvailableCount: number;
+  xmlUnavailableCount: number;
+}
+
 export interface FiscalPending {
   salesWithoutInvoice: Array<{
     orderId: string;
@@ -85,6 +95,32 @@ export function useDownloadFiscalXml() {
       downloadBlob(apiUrl(`/fiscal/documents/${documentId}/xml`), `nfe-${documentId}.xml`),
     onError: () =>
       toast({ title: 'Não foi possível baixar o XML', variant: 'destructive' }),
+  });
+}
+
+export function useFiscalMonthlySummary(referenceMonth: string, channelId?: string) {
+  const query = buildQueryString({ referenceMonth, channelId });
+  return useQuery({
+    queryKey: ['fiscal-monthly-summary', referenceMonth, channelId],
+    queryFn: () => apiFetch<FiscalMonthlySummary>(`/fiscal/monthly-summary${query}`),
+    enabled: Boolean(referenceMonth),
+  });
+}
+
+/** Ação principal da Fase 4 (seção 11) — "Baixar XMLs para contabilidade". */
+export function useDownloadMonthlyFiscalExport() {
+  return useMutation({
+    mutationFn: ({ referenceMonth, channelId }: { referenceMonth: string; channelId?: string }) => {
+      const query = buildQueryString({ referenceMonth, channelId });
+      return downloadBlob(apiUrl(`/fiscal/monthly-export${query}`), `fiscal-${referenceMonth}.zip`);
+    },
+    onSuccess: () => toast({ title: 'Download iniciado.' }),
+    onError: (error) =>
+      toast({
+        title: 'Não foi possível gerar o pacote de XMLs',
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      }),
   });
 }
 

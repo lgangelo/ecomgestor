@@ -31,6 +31,10 @@ import { TikTokModule } from './integrations/tiktok/tiktok.module';
 import { CompanyModule } from './company/company.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
+import { SearchModule } from './search/search.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { JobsModule } from './jobs/jobs.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
 
 @Module({
   imports: [
@@ -58,6 +62,10 @@ import { RolesModule } from './roles/roles.module';
     CompanyModule,
     UsersModule,
     RolesModule,
+    SearchModule,
+    NotificationsModule,
+    JobsModule,
+    OnboardingModule,
   ],
   providers: [
     AppLoggerService,

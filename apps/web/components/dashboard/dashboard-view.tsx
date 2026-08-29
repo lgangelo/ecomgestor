@@ -8,14 +8,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { useDashboard } from '@/hooks/use-reports';
 import { PeriodFilterBar, type PeriodFilterValue } from './period-filter-bar';
-import { AlertsPanel } from './alerts-panel';
-import {
-  MarginByProductTable,
-  RevenueByPeriodChart,
-  SalesByChannelChart,
-  SalesByDayChart,
-  TopProductsTable,
-} from './dashboard-charts';
+import { AttentionSection } from './attention-section';
+import { ProductsRankingTable, RevenueByPeriodChart, SalesByChannelChart } from './dashboard-charts';
+import { OnboardingChecklist } from '@/components/onboarding/onboarding-checklist';
 
 function defaultPeriod(): PeriodFilterValue {
   const end = new Date();
@@ -45,11 +40,12 @@ export function DashboardView() {
   return (
     <div>
       <PageHeader title="Dashboard" description="Visão geral das vendas, estoque e financeiro." />
+      <OnboardingChecklist />
       <PeriodFilterBar value={filters} onChange={setFilters} />
 
       {isLoading || !data ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
+          {Array.from({ length: 7 }).map((_, i) => (
             <Skeleton key={i} className="h-28" />
           ))}
         </div>
@@ -61,6 +57,12 @@ export function DashboardView() {
               value={formatBRL(data.cards.revenue)}
               icon={DollarSign}
               trend={trendFor(data.cards.revenue, data.previous?.revenue)}
+            />
+            <StatCard
+              title="Receita líquida"
+              value={formatBRL(data.cards.netRevenue)}
+              icon={DollarSign}
+              trend={trendFor(data.cards.netRevenue, data.previous?.netRevenue)}
             />
             <StatCard
               title="Pedidos"
@@ -91,11 +93,9 @@ export function DashboardView() {
 
           <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <RevenueByPeriodChart data={data.charts.revenueByPeriod} />
-            <SalesByDayChart data={data.charts.salesByDay} />
+            <AttentionSection items={data.attention} />
             <SalesByChannelChart data={data.charts.salesByChannel} />
-            <AlertsPanel alerts={data.alerts} />
-            <TopProductsTable data={data.charts.topProducts} />
-            <MarginByProductTable data={data.charts.marginByProduct} />
+            <ProductsRankingTable data={data.charts.products} />
           </div>
         </>
       )}

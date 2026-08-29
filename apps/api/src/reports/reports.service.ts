@@ -2,11 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { csvEscape } from '../common/csv.util';
+import { FiscalService } from '../fiscal/fiscal.service';
 import { DashboardQueryDto } from './dto/dashboard-query.dto';
 
 interface PeriodOrder {
   id: string;
   total: Prisma.Decimal;
+  discount: Prisma.Decimal;
   status: OrderStatus;
   orderDate: Date;
   channel: { name: string };
@@ -22,28 +24,94 @@ interface PeriodOrder {
   fiscalDocuments: Array<{ id: string }>;
 }
 
+/** Item de "Precisa da sua atenção" (seção 63 da Fase 4) — só aparece quando count > 0. */
+export interface AttentionItem {
+  key: string;
+  label: string;
+  count: number;
+  link: string;
+}
+
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fiscalService: FiscalService,
+  ) {}
 
   async getDashboard(companyId: string, query: DashboardQueryDto) {
     const { start, end } = this.resolvePeriod(query.dateFrom, query.dateTo);
-    const orders = await this.fetchOrders(companyId, start, end, query.channelId);
-    const current = this.computeCards(orders);
-    const charts = this.computeCharts(orders);
+    const [orders, returnsAmount, attention] = await Promise.all([
+      this.fetchOrders(companyId, start, end, query.channelId),
+      this.fetchReturnsAmount(companyId, start, end, query.channelId),
+      this.computeAttention(companyId),
+    ]);
+    const current = this.computeCards(orders, returnsAmount);
+    const charts = this.computeCharts(orders, start, end);
     const alerts = await this.computeAlerts(companyId, orders, start, end);
 
-    const result: Record<string, unknown> = { cards: current, charts, alerts };
+    const result: Record<string, unknown> = { cards: current, charts, alerts, attention };
 
     if (query.compare === 'previous_period') {
       const lengthMs = end.getTime() - start.getTime();
       const prevEnd = new Date(start.getTime());
       const prevStart = new Date(start.getTime() - lengthMs);
-      const previousOrders = await this.fetchOrders(companyId, prevStart, prevEnd, query.channelId);
-      result.previous = this.computeCards(previousOrders);
+      const [previousOrders, previousReturnsAmount] = await Promise.all([
+        this.fetchOrders(companyId, prevStart, prevEnd, query.channelId),
+        this.fetchReturnsAmount(companyId, prevStart, prevEnd, query.channelId),
+      ]);
+      result.previous = this.computeCards(previousOrders, previousReturnsAmount);
     }
 
     return result;
+  }
+
+  /**
+   * Seção 63 — "Precisa da sua atenção": sinais operacionais acionáveis, cada um com link para a
+   * tela onde o usuário resolve. Nunca inclui um item com contagem zero (evita ruído — seção 42).
+   */
+  private async computeAttention(companyId: string): Promise<AttentionItem[]> {
+    const [inventories, fiscalPending, unmappedOrdersCount, tiktokSyncFailedCount] = await Promise.all([
+      this.prisma.client.inventory.findMany({
+        where: { companyId },
+        select: { onHand: true, reserved: true, variant: { select: { minStock: true } } },
+      }),
+      this.fiscalService.getPending(companyId),
+      this.prisma.client.order.count({ where: { companyId, integrationSyncStatus: 'REQUIRES_MAPPING' } }),
+      this.prisma.client.syncJob.count({ where: { status: 'FAILED', integration: { companyId } } }),
+    ]);
+
+    // Mesmo critério de "abaixo do mínimo" do AlertsPanel — não dá para filtrar por uma
+    // expressão (onHand - reserved) diretamente no Prisma, então compara em memória.
+    const belowMinimumCount = inventories.filter((inv) => inv.onHand - inv.reserved < inv.variant.minStock).length;
+
+    const fiscalPendingCount = fiscalPending.salesWithoutInvoice.length + fiscalPending.returnsWithoutDocument.length;
+
+    const items: AttentionItem[] = [
+      { key: 'low_stock', label: 'produtos com estoque baixo', count: belowMinimumCount, link: '/produtos/estoque' },
+      { key: 'fiscal_pending', label: 'documentos fiscais pendentes', count: fiscalPendingCount, link: '/fiscal' },
+      { key: 'tiktok_sync_failed', label: 'falha(s) de sincronização TikTok', count: tiktokSyncFailedCount, link: '/integracoes/tiktok' },
+      {
+        key: 'tiktok_unmapped',
+        label: 'produtos TikTok sem vínculo',
+        count: unmappedOrdersCount,
+        link: '/vendas/pedidos?syncStatus=REQUIRES_MAPPING',
+      },
+    ];
+
+    return items.filter((item) => item.count > 0);
+  }
+
+  private async fetchReturnsAmount(companyId: string, start: Date, end: Date, channelId?: string): Promise<number> {
+    const agg = await this.prisma.client.refund.aggregate({
+      where: {
+        return: {
+          order: { companyId, orderDate: { gte: start, lte: end }, ...(channelId ? { channelId } : {}) },
+        },
+      },
+      _sum: { amount: true },
+    });
+    return Number(agg._sum.amount ?? 0);
   }
 
   private resolvePeriod(dateFrom?: string, dateTo?: string): { start: Date; end: Date } {
@@ -75,9 +143,11 @@ export class ReportsService {
     });
   }
 
-  private computeCards(orders: PeriodOrder[]) {
+  private computeCards(orders: PeriodOrder[], returnsAmount: number) {
     const active = orders.filter((o) => o.status !== OrderStatus.CANCELLED);
     const revenue = active.reduce((sum, o) => sum + Number(o.total), 0);
+    const discounts = active.reduce((sum, o) => sum + Number(o.discount), 0);
+    const netRevenue = revenue - discounts - returnsAmount;
     const orderCount = active.length;
     const averageTicket = orderCount > 0 ? revenue / orderCount : 0;
     const cmv = active.reduce(
@@ -89,11 +159,12 @@ export class ReportsService {
         sum + o.payments.filter((p) => p.status === 'PENDING').reduce((s, p) => s + Number(p.amount), 0),
       0,
     );
-    const estimatedProfit = revenue - cmv;
+    const estimatedProfit = netRevenue - cmv;
     const margin = revenue > 0 ? (estimatedProfit / revenue) * 100 : 0;
 
     return {
       revenue: round2(revenue),
+      netRevenue: round2(netRevenue),
       orders: orderCount,
       averageTicket: round2(averageTicket),
       estimatedProfit: round2(estimatedProfit),
@@ -102,33 +173,63 @@ export class ReportsService {
     };
   }
 
-  private computeCharts(orders: PeriodOrder[]) {
+  private computeCharts(orders: PeriodOrder[], start: Date, end: Date) {
     const active = orders.filter((o) => o.status !== OrderStatus.CANCELLED);
 
-    const revenueByDay = new Map<string, number>();
+    // Seção 30 — gráfico principal por dia quando o período é curto, por semana ISO quando é
+    // longo (evita um gráfico ilegível de 6 meses de barras diárias).
+    const spanDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)));
+    const useWeeklyBuckets = spanDays > 45;
+    const bucketOf = (date: Date) => (useWeeklyBuckets ? isoWeekKey(date) : date.toISOString().slice(0, 10));
+
+    const revenueByBucket = new Map<string, { total: number; cmv: number }>();
     const ordersByDay = new Map<string, number>();
     for (const order of active) {
+      const bucket = bucketOf(order.orderDate);
+      const entry = revenueByBucket.get(bucket) ?? { total: 0, cmv: 0 };
+      entry.total += Number(order.total);
+      entry.cmv += order.items.reduce((s, i) => s + Number(i.unitCost) * i.quantity, 0);
+      revenueByBucket.set(bucket, entry);
+
       const day = order.orderDate.toISOString().slice(0, 10);
-      revenueByDay.set(day, (revenueByDay.get(day) ?? 0) + Number(order.total));
       ordersByDay.set(day, (ordersByDay.get(day) ?? 0) + 1);
     }
 
-    const revenueByPeriod = Array.from(revenueByDay.entries())
+    // Gráfico principal (seção 30): faturamento x resultado — um único gráfico, sem separar em
+    // vários cards (seção 62/30: "evitar excesso de gráficos").
+    const revenueByPeriod = Array.from(revenueByBucket.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, total]) => ({ date, total: round2(total) }));
+      .map(([date, stats]) => ({ date, total: round2(stats.total), result: round2(stats.total - stats.cmv) }));
 
     const salesByDay = Array.from(ordersByDay.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, count]) => ({ date, orders: count }));
 
-    const revenueByChannel = new Map<string, number>();
+    // Seção 31 — canais com ticket médio/lucro/margem, não só faturamento.
+    const channelStats = new Map<string, { total: number; cmv: number; orders: number }>();
     for (const order of active) {
       const key = order.channel.name;
-      revenueByChannel.set(key, (revenueByChannel.get(key) ?? 0) + Number(order.total));
+      const entry = channelStats.get(key) ?? { total: 0, cmv: 0, orders: 0 };
+      entry.total += Number(order.total);
+      entry.cmv += order.items.reduce((s, i) => s + Number(i.unitCost) * i.quantity, 0);
+      entry.orders += 1;
+      channelStats.set(key, entry);
     }
-    const salesByChannel = Array.from(revenueByChannel.entries())
-      .sort(([, a], [, b]) => b - a)
-      .map(([channelName, total]) => ({ channelName, total: round2(total) }));
+    const totalRevenueAllChannels = Array.from(channelStats.values()).reduce((sum, c) => sum + c.total, 0);
+    const salesByChannel = Array.from(channelStats.entries())
+      .sort(([, a], [, b]) => b.total - a.total)
+      .map(([channelName, stats]) => {
+        const profit = stats.total - stats.cmv;
+        return {
+          channelName,
+          total: round2(stats.total),
+          orders: stats.orders,
+          averageTicket: stats.orders > 0 ? round2(stats.total / stats.orders) : 0,
+          profit: round2(profit),
+          marginPercent: stats.total > 0 ? round2((profit / stats.total) * 100) : 0,
+          share: totalRevenueAllChannels > 0 ? round2((stats.total / totalRevenueAllChannels) * 100) : 0,
+        };
+      });
 
     const productStats = new Map<string, { quantity: number; revenue: number; cmv: number }>();
     for (const order of active) {
@@ -175,10 +276,25 @@ export class ReportsService {
       .sort((a, b) => a.marginPercent - b.marginPercent)
       .slice(0, 10);
 
+    // Seção 32 — ranking unificado com alternância cliente-side (mais vendido/maior lucro/menor
+    // margem), mantendo os cortes antigos acima por compatibilidade. Limitado a 50 produtos:
+    // suficiente para um catálogo de e-commerce gerencial sem devolver o catálogo inteiro.
+    const products = Array.from(productStats.entries())
+      .map(([productName, stats]) => ({
+        productName,
+        quantity: stats.quantity,
+        revenue: round2(stats.revenue),
+        profit: round2(stats.revenue - stats.cmv),
+        marginPercent: stats.revenue > 0 ? round2(((stats.revenue - stats.cmv) / stats.revenue) * 100) : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 50);
+
     return {
       revenueByPeriod,
       salesByDay,
       salesByChannel,
+      products,
       topProducts,
       marginByProduct,
       highestProfit,
@@ -220,6 +336,19 @@ export class ReportsService {
 
 function round2(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/** Chave de semana ISO (ex.: "2026-W35") — usada para agrupar o gráfico principal (seção 30)
+ * quando o período selecionado é longo demais para um bucket por dia. */
+function isoWeekKey(date: Date): string {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNum = (d.getUTCDay() + 6) % 7; // segunda-feira = 0
+  d.setUTCDate(d.getUTCDate() - dayNum + 3); // quinta-feira da mesma semana ISO
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const firstThursdayDayNum = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstThursdayDayNum + 3);
+  const week = 1 + Math.round((d.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
 @Injectable()

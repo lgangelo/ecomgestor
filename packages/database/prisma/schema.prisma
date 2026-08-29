@@ -38,6 +38,11 @@ model Company {
   slowMovingDays      Int     @default(60) @map("slow_moving_days")
   // Cobertura (em dias de venda média) abaixo da qual um SKU vira sugestão de reposição (seção 36).
   restockCoverageDays Int     @default(14) @map("restock_coverage_days")
+  // Sincronização automática de estoque multicanal (seção 56 da Fase 4) — gate por empresa,
+  // ADICIONAL ao gate global `TIKTOK_INVENTORY_PUSH_ENABLED` (ambos precisam estar ligados para
+  // o outbox enviar algo automaticamente). Default false — nunca ativado por migration/deploy;
+  // só um ADMIN liga pela tela de Configurações.
+  inventoryAutoSyncEnabled Boolean @default(false) @map("inventory_auto_sync_enabled")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 

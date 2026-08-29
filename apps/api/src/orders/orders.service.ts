@@ -51,6 +51,7 @@ export class OrdersService {
       companyId,
       ...(query.channelId ? { channelId: query.channelId } : {}),
       ...(query.status ? { status: query.status } : {}),
+      ...(query.syncStatus ? { integrationSyncStatus: query.syncStatus } : {}),
       ...(query.customerName
         ? { customerName: { contains: query.customerName, mode: 'insensitive' as const } }
         : {}),

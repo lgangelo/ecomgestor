@@ -52,7 +52,7 @@ function makeFakePrisma() {
 describe('TikTokJobsService.withTracking — política de retry (seção 25/27)', () => {
   it('erro de rate limit dentro do limite de tentativas: relança para o BullMQ reagendar', async () => {
     const { client, jobs } = makeFakePrisma();
-    const service = new TikTokJobsService({ client } as unknown as PrismaService);
+    const service = new TikTokJobsService({ client } as unknown as PrismaService, {} as never);
 
     await expect(
       service.withTracking(
@@ -69,7 +69,7 @@ describe('TikTokJobsService.withTracking — política de retry (seção 25/27)'
 
   it('erro de autenticação nunca é relançado — para imediatamente e marca FAILED', async () => {
     const { client, jobs } = makeFakePrisma();
-    const service = new TikTokJobsService({ client } as unknown as PrismaService);
+    const service = new TikTokJobsService({ client } as unknown as PrismaService, {} as never);
 
     const result = await service.withTracking(
       { integrationId: 'int-1', type: 'tiktok-import-orders', attemptNumber: 1, maxAttempts: 5 },
@@ -85,7 +85,7 @@ describe('TikTokJobsService.withTracking — política de retry (seção 25/27)'
 
   it('esgotadas as tentativas, mesmo um erro retryable para de ser relançado (nunca retry infinito)', async () => {
     const { client, jobs } = makeFakePrisma();
-    const service = new TikTokJobsService({ client } as unknown as PrismaService);
+    const service = new TikTokJobsService({ client } as unknown as PrismaService, {} as never);
 
     const result = await service.withTracking(
       { integrationId: 'int-1', type: 'tiktok-import-orders', attemptNumber: 5, maxAttempts: 5 },
@@ -100,7 +100,7 @@ describe('TikTokJobsService.withTracking — política de retry (seção 25/27)'
 
   it('sucesso marca o job como COMPLETED e retorna o valor da função', async () => {
     const { client, jobs } = makeFakePrisma();
-    const service = new TikTokJobsService({ client } as unknown as PrismaService);
+    const service = new TikTokJobsService({ client } as unknown as PrismaService, {} as never);
 
     const result = await service.withTracking(
       { integrationId: 'int-1', type: 'tiktok-import-orders', attemptNumber: 1, maxAttempts: 5 },

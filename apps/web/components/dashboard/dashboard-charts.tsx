@@ -1,12 +1,14 @@
 'use client';
 
+import * as React from 'react';
 import {
   Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -15,8 +17,11 @@ import {
   YAxis,
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { formatDate } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import type { DashboardResponse } from '@/hooks/use-reports';
 
 const PIE_COLORS = [
@@ -35,15 +40,25 @@ const chartTooltipStyle = {
   fontSize: 12,
 };
 
+/** Formata a label do eixo X — funciona tanto para "YYYY-MM-DD" (dia) quanto "YYYY-Www" (semana
+ * ISO, usada pelo backend quando o período selecionado é longo — seção 30 da Fase 4). */
+function formatBucketLabel(value: string): string {
+  const weekMatch = /^(\d{4})-W(\d{2})$/.exec(value);
+  if (weekMatch) return `Sem ${weekMatch[2]}`;
+  return formatDate(value);
+}
+
+/** Gráfico principal do dashboard (seção 30): faturamento x resultado em um único gráfico, para
+ * não fragmentar em vários cards separados (seção 62 — evitar excesso de gráficos). */
 export function RevenueByPeriodChart({ data }: { data: DashboardResponse['charts']['revenueByPeriod'] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Faturamento por período</CardTitle>
+        <CardTitle>Faturamento x Resultado</CardTitle>
       </CardHeader>
       <CardContent className="h-72 pt-0">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+          <ComposedChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
             <defs>
               <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.35} />
@@ -53,17 +68,18 @@ export function RevenueByPeriodChart({ data }: { data: DashboardResponse['charts
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis
               dataKey="date"
-              tickFormatter={(v) => formatDate(v)}
+              tickFormatter={formatBucketLabel}
               tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }}
             />
             <YAxis tick={{ fontSize: 11, fill: 'hsl(var(--muted-foreground))' }} width={70} tickFormatter={(v) => formatBRL(v)} />
             <Tooltip
               contentStyle={chartTooltipStyle}
-              labelFormatter={(v) => formatDate(v as string)}
-              formatter={(v: number) => [formatBRL(v), 'Faturamento']}
+              labelFormatter={(v) => formatBucketLabel(v as string)}
+              formatter={(v: number, name: string) => [formatBRL(v), name === 'total' ? 'Faturamento' : 'Resultado']}
             />
             <Area type="monotone" dataKey="total" stroke="hsl(var(--primary))" fill="url(#revenueFill)" strokeWidth={2} />
-          </AreaChart>
+            <Line type="monotone" dataKey="result" stroke="hsl(var(--success))" strokeWidth={2} dot={false} />
+          </ComposedChart>
         </ResponsiveContainer>
       </CardContent>
     </Card>
@@ -91,26 +107,132 @@ export function SalesByDayChart({ data }: { data: DashboardResponse['charts']['s
   );
 }
 
+/** Vendas por canal (seção 31 da Fase 4): % visual (pizza) + detalhe por canal (ticket médio,
+ * lucro, margem) — não só faturamento. */
 export function SalesByChannelChart({ data }: { data: DashboardResponse['charts']['salesByChannel'] }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>Vendas por canal</CardTitle>
       </CardHeader>
-      <CardContent className="h-72 pt-0">
+      <CardContent className="pt-0">
         {data.length === 0 ? (
-          <p className="flex h-full items-center justify-center text-sm text-muted-foreground">Sem dados no período.</p>
+          <p className="flex h-40 items-center justify-center text-sm text-muted-foreground">Sem dados no período.</p>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={data} dataKey="total" nameKey="channelName" innerRadius={50} outerRadius={90} paddingAngle={2}>
-                {data.map((entry, index) => (
-                  <Cell key={entry.channelName} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+          <>
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={data} dataKey="total" nameKey="channelName" innerRadius={50} outerRadius={90} paddingAngle={2}>
+                    {data.map((entry, index) => (
+                      <Cell key={entry.channelName} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={chartTooltipStyle} formatter={(v: number) => formatBRL(v)} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Canal</TableHead>
+                  <TableHead>%</TableHead>
+                  <TableHead>Faturamento</TableHead>
+                  <TableHead>Pedidos</TableHead>
+                  <TableHead>Ticket médio</TableHead>
+                  <TableHead>Lucro</TableHead>
+                  <TableHead>Margem</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.map((row) => (
+                  <TableRow key={row.channelName}>
+                    <TableCell className="font-medium">{row.channelName}</TableCell>
+                    <TableCell>{row.share.toFixed(0)}%</TableCell>
+                    <TableCell>{formatBRL(row.total)}</TableCell>
+                    <TableCell>{row.orders}</TableCell>
+                    <TableCell>{formatBRL(row.averageTicket)}</TableCell>
+                    <TableCell>{formatBRL(row.profit)}</TableCell>
+                    <TableCell className={row.marginPercent >= 0 ? 'text-success' : 'text-destructive'}>
+                      {row.marginPercent.toFixed(1)}%
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </Pie>
-              <Tooltip contentStyle={chartTooltipStyle} formatter={(v: number) => formatBRL(v)} />
-            </PieChart>
-          </ResponsiveContainer>
+              </TableBody>
+            </Table>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+type ProductSortMode = 'revenue' | 'profit' | 'margin';
+
+const PRODUCT_SORT_OPTIONS: Array<{ value: ProductSortMode; label: string }> = [
+  { value: 'revenue', label: 'Mais vendidos' },
+  { value: 'profit', label: 'Maior lucro' },
+  { value: 'margin', label: 'Menor margem' },
+];
+
+/** Ranking unificado de produtos (seção 32 da Fase 4) com alternância entre critérios — troca só
+ * a ordenação no cliente, sem nova requisição. */
+export function ProductsRankingTable({ data }: { data: DashboardResponse['charts']['products'] }) {
+  const [sortMode, setSortMode] = React.useState<ProductSortMode>('revenue');
+
+  const sorted = React.useMemo(() => {
+    const copy = [...data];
+    if (sortMode === 'profit') return copy.sort((a, b) => b.profit - a.profit);
+    if (sortMode === 'margin') return copy.sort((a, b) => a.marginPercent - b.marginPercent);
+    return copy.sort((a, b) => b.revenue - a.revenue);
+  }, [data, sortMode]);
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
+        <CardTitle>Produtos</CardTitle>
+        <div className="flex gap-1">
+          {PRODUCT_SORT_OPTIONS.map((option) => (
+            <Button
+              key={option.value}
+              size="sm"
+              variant={sortMode === option.value ? 'default' : 'outline'}
+              className="h-7 px-2 text-xs"
+              onClick={() => setSortMode(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {sorted.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">Sem vendas no período.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produto</TableHead>
+                <TableHead>Unidades</TableHead>
+                <TableHead>Faturamento</TableHead>
+                <TableHead>Lucro</TableHead>
+                <TableHead>Margem</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sorted.slice(0, 10).map((item) => (
+                <TableRow key={item.productName}>
+                  <TableCell className="max-w-56 truncate font-medium">{item.productName}</TableCell>
+                  <TableCell>{item.quantity}</TableCell>
+                  <TableCell>{formatBRL(item.revenue)}</TableCell>
+                  <TableCell>{formatBRL(item.profit)}</TableCell>
+                  <TableCell className={cn(item.marginPercent >= 0 ? 'text-success' : 'text-destructive')}>
+                    {item.marginPercent.toFixed(1)}%
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </CardContent>
     </Card>

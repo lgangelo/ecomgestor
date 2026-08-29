@@ -10,6 +10,7 @@ import { TikTokProductsSyncService } from './tiktok-products-sync.service';
 import { TikTokInventorySyncService } from './tiktok-inventory-sync.service';
 import { TikTokFinanceSyncService } from './tiktok-finance-sync.service';
 import { TikTokJobsService } from './tiktok-jobs.service';
+import { TikTokStockOutboxService } from './tiktok-stock-outbox.service';
 import { LinkTikTokProductDto } from './dto/link-tiktok-product.dto';
 import { IgnoreTikTokProductDto } from './dto/ignore-tiktok-product.dto';
 import { CreateTikTokProductDto } from './dto/create-tiktok-product.dto';
@@ -24,6 +25,7 @@ export class TikTokController {
     private readonly inventorySync: TikTokInventorySyncService,
     private readonly financeSync: TikTokFinanceSyncService,
     private readonly jobsService: TikTokJobsService,
+    private readonly stockOutbox: TikTokStockOutboxService,
     private readonly ordersService: OrdersService,
     private readonly queue: TikTokQueueService,
   ) {}
@@ -98,10 +100,11 @@ export class TikTokController {
     return this.financeSync.getOrderReconciliation(user.companyId, orderId);
   }
 
+  /** Seção 54 da Fase 4 — status inclui PENDENTE/ERRO vindos do outbox, não só OK/DIVERGENTE. */
   @Get('inventory/compare')
   @RequirePermissions(PERMISSIONS.INTEGRATION_INVENTORY_COMPARE)
   compareInventory(@CurrentUser() user: AuthenticatedUser) {
-    return this.inventorySync.compare(user.companyId);
+    return this.stockOutbox.getStatusReport(user.companyId);
   }
 
   @Get('inventory/push-enabled')
@@ -125,41 +128,7 @@ export class TikTokController {
   @Post('jobs/:id/retry')
   @RequirePermissions(PERMISSIONS.INTEGRATION_JOBS_RETRY)
   async retryJob(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    const job = await this.jobsService.prepareRetry(id, user.companyId);
-    await this.requeue(user, job.type, job.payload);
+    await this.jobsService.retryAndRequeue(id, user);
     return { requeued: true };
-  }
-
-  private async requeue(user: AuthenticatedUser, type: string, payload: unknown) {
-    switch (type) {
-      case 'tiktok-import-orders':
-        await this.queue.enqueueImportOrders({ companyId: user.companyId, userId: user.userId });
-        return;
-      case 'tiktok-import-products':
-        await this.queue.enqueueImportProducts({ companyId: user.companyId });
-        return;
-      case 'tiktok-sync-finance':
-        await this.queue.enqueueSyncFinance({ companyId: user.companyId });
-        return;
-      case 'tiktok-sync-returns':
-        await this.queue.enqueueSyncReturns({ companyId: user.companyId });
-        return;
-      case 'tiktok-push-inventory': {
-        const data = payload as { variantId?: string } | null;
-        if (data?.variantId) {
-          await this.queue.enqueuePushInventory({ companyId: user.companyId, userId: user.userId, variantId: data.variantId });
-        }
-        return;
-      }
-      case 'tiktok-process-webhook': {
-        const data = payload as { webhookEventId?: string } | null;
-        if (data?.webhookEventId) {
-          await this.queue.enqueueProcessWebhook({ webhookEventId: data.webhookEventId });
-        }
-        return;
-      }
-      default:
-        return;
-    }
   }
 }

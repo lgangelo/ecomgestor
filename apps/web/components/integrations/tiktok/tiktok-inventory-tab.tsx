@@ -5,7 +5,9 @@ import { Warehouse } from 'lucide-react';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TableSkeleton } from '@/components/shared/table-skeleton';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { STOCK_SYNC_STATUS_PRESENTATION } from '@ecommerce-manager/ui';
+import { formatDate } from '@/lib/format';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Dialog,
@@ -50,6 +52,8 @@ export function TikTokInventoryTab() {
               <TableHead>SKU</TableHead>
               <TableHead>Central</TableHead>
               <TableHead>TikTok</TableHead>
+              <TableHead>Diferença</TableHead>
+              <TableHead>Último sync</TableHead>
               <TableHead>Situação</TableHead>
               {pushEnabled?.enabled && <TableHead className="text-right">Ações</TableHead>}
             </TableRow>
@@ -60,8 +64,10 @@ export function TikTokInventoryTab() {
                 <TableCell>{row.sku}</TableCell>
                 <TableCell>{row.central}</TableCell>
                 <TableCell>{row.tiktok ?? '—'}</TableCell>
+                <TableCell>{row.tiktok !== null ? row.central - row.tiktok : '—'}</TableCell>
+                <TableCell>{row.lastSyncAt ? formatDate(row.lastSyncAt, true) : '—'}</TableCell>
                 <TableCell>
-                  {row.divergent ? <Badge tone="warning">Divergente</Badge> : <Badge tone="success">OK</Badge>}
+                  <StatusBadge status={row.status} map={STOCK_SYNC_STATUS_PRESENTATION} />
                 </TableCell>
                 {pushEnabled?.enabled && (
                   <TableCell className="text-right">

@@ -23,17 +23,20 @@ import {
   useFiscalDocuments,
   useFiscalPending,
 } from '@/hooks/use-fiscal';
+import { useUrlFilters } from '@/hooks/use-url-filters';
 import { FiscalUploadDialog } from './upload-dialog';
 import { AssociateFiscalDocumentDialog } from './associate-dialog';
 
 const STATUSES = ['PENDING', 'ISSUED', 'CANCELLED', 'ERROR'];
 
+// Filtro e paginação persistem na URL (seção 57 da Fase 4).
+const DEFAULT_FILTERS = { page: 1, status: '' };
+
 export function FiscalDocumentsView() {
-  const [page, setPage] = React.useState(1);
-  const [status, setStatus] = React.useState<string | undefined>();
+  const [filters, setFilters] = useUrlFilters(DEFAULT_FILTERS);
   const [selected, setSelected] = React.useState<string[]>([]);
 
-  const { data, isLoading } = useFiscalDocuments({ page, pageSize: 20, status });
+  const { data, isLoading } = useFiscalDocuments({ page: filters.page, pageSize: 20, status: filters.status || undefined });
   const { data: pending } = useFiscalPending();
   const downloadXml = useDownloadFiscalXml();
   const exportDocuments = useExportFiscalDocuments();
@@ -107,11 +110,8 @@ export function FiscalDocumentsView() {
       <div className="mb-4 space-y-1.5">
         <Label>Status</Label>
         <Select
-          value={status ?? 'all'}
-          onValueChange={(v) => {
-            setStatus(v === 'all' ? undefined : v);
-            setPage(1);
-          }}
+          value={filters.status || 'all'}
+          onValueChange={(v) => setFilters({ status: v === 'all' ? undefined : v, page: 1 })}
         >
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Todos" />
@@ -189,7 +189,12 @@ export function FiscalDocumentsView() {
       )}
 
       {data && data.totalPages > 1 && (
-        <PaginationBar page={data.page} totalPages={data.totalPages} total={data.total} onPageChange={setPage} />
+        <PaginationBar
+          page={data.page}
+          totalPages={data.totalPages}
+          total={data.total}
+          onPageChange={(page) => setFilters({ page })}
+        />
       )}
     </div>
   );

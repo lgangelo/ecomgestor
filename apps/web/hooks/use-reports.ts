@@ -6,6 +6,7 @@ import { buildQueryString } from '@/lib/query-string';
 
 export interface DashboardCards {
   revenue: number;
+  netRevenue: number;
   orders: number;
   averageTicket: number;
   estimatedProfit: number;
@@ -13,13 +14,30 @@ export interface DashboardCards {
   receivable: number;
 }
 
+/** Item de "Precisa da sua atenção" (seção 63 da Fase 4) — só chega quando count > 0. */
+export interface AttentionItem {
+  key: string;
+  label: string;
+  count: number;
+  link: string;
+}
+
 export interface DashboardResponse {
   cards: DashboardCards;
   previous?: DashboardCards;
   charts: {
-    revenueByPeriod: Array<{ date: string; total: number }>;
+    revenueByPeriod: Array<{ date: string; total: number; result: number }>;
     salesByDay: Array<{ date: string; orders: number }>;
-    salesByChannel: Array<{ channelName: string; total: number }>;
+    salesByChannel: Array<{
+      channelName: string;
+      total: number;
+      orders: number;
+      averageTicket: number;
+      profit: number;
+      marginPercent: number;
+      share: number;
+    }>;
+    products: Array<{ productName: string; quantity: number; revenue: number; profit: number; marginPercent: number }>;
     topProducts: Array<{ productName: string; quantity: number; revenue: number }>;
     marginByProduct: Array<{ productName: string; marginPercent: number }>;
   };
@@ -29,6 +47,7 @@ export interface DashboardResponse {
     salesWithoutFiscalDocument: number;
     integrationDelayed: boolean;
   };
+  attention: AttentionItem[];
 }
 
 export interface DashboardFilters {

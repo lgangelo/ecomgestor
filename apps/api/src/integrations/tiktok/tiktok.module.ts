@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AuditModule } from '../../audit/audit.module';
 import { OrdersModule } from '../../orders/orders.module';
 import { ReturnsModule } from '../../returns/returns.module';
@@ -17,6 +18,8 @@ import { TikTokReturnsSyncService } from './tiktok-returns-sync.service';
 import { TikTokJobsService } from './tiktok-jobs.service';
 import { TikTokHealthService } from './tiktok-health.service';
 import { TikTokWebhookProcessorService } from './tiktok-webhook-processor.service';
+import { TikTokStockOutboxService } from './tiktok-stock-outbox.service';
+import { TikTokStockOutboxSchedulerService } from './tiktok-stock-outbox-scheduler.service';
 import { TikTokController } from './tiktok.controller';
 import { TikTokQueueService } from '../../queue/tiktok-queue.service';
 
@@ -26,7 +29,7 @@ import { TikTokQueueService } from '../../queue/tiktok-queue.service';
  * a integração nunca decide sozinha uma transição de estoque ou de status de pedido.
  */
 @Module({
-  imports: [AuditModule, OrdersModule, ReturnsModule],
+  imports: [AuditModule, OrdersModule, ReturnsModule, ScheduleModule.forRoot()],
   controllers: [TikTokOAuthController, TikTokWebhookController, TikTokController],
   providers: [
     TikTokCredentialsService,
@@ -42,6 +45,8 @@ import { TikTokQueueService } from '../../queue/tiktok-queue.service';
     TikTokJobsService,
     TikTokHealthService,
     TikTokWebhookProcessorService,
+    TikTokStockOutboxService,
+    TikTokStockOutboxSchedulerService,
     TikTokQueueService,
   ],
   exports: [

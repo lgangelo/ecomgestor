@@ -59,6 +59,41 @@ export function useInventorySummary() {
   });
 }
 
+export interface SlowMovingItem {
+  variantId: string;
+  sku: string;
+  productName: string;
+  onHand: number;
+  estimatedValue: number;
+  lastSaleAt: string | null;
+  daysSinceLastSale: number | null;
+}
+
+export interface RestockSuggestionItem {
+  variantId: string;
+  sku: string;
+  productName: string;
+  available: number;
+  minStock: number;
+  coverageDays: number | null;
+  reason: 'below_minimum' | 'low_coverage';
+}
+
+export interface InventoryInsights {
+  slowMovingDays: number;
+  restockCoverageDays: number;
+  slowMoving: SlowMovingItem[];
+  restockSuggestions: RestockSuggestionItem[];
+}
+
+/** Estoque parado + sugestão de reposição (seções 33-36 da Fase 4). */
+export function useInventoryInsights() {
+  return useQuery({
+    queryKey: ['inventory-insights'],
+    queryFn: () => apiFetch<InventoryInsights>('/inventory/insights'),
+  });
+}
+
 export function useInventoryMovements(filters: {
   variantId?: string;
   type?: string;
@@ -74,16 +109,26 @@ export function useInventoryMovements(filters: {
   });
 }
 
+export interface MovementResult {
+  onHand: number;
+  reserved: number;
+  available: number;
+}
+
 export function useCreateMovement() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: { variantId: string; type: string; quantity: number; reason: string; note?: string }) =>
-      apiFetch('/inventory/movements', { method: 'POST', body: data }),
-    onSuccess: () => {
+      apiFetch<MovementResult>('/inventory/movements', { method: 'POST', body: data }),
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-summary'] });
       queryClient.invalidateQueries({ queryKey: ['inventory-movements'] });
-      toast({ title: 'Movimentação registrada com sucesso.' });
+      // Feedback específico (seção 60 da Fase 4) — nunca um "Sucesso" genérico.
+      toast({
+        title: 'Movimentação registrada com sucesso.',
+        description: `Estoque atualizado para ${result.onHand} unidades (${result.available} disponíveis).`,
+      });
     },
     onError: (error) =>
       toast({
