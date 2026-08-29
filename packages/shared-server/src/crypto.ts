@@ -25,8 +25,15 @@ export function encryptSecret(plain: string, rawKey: string): string {
 }
 
 export function decryptSecret(ciphertext: string, rawKey: string): string {
-  const [ivB64, authTagB64, dataB64] = ciphertext.split('.');
-  if (!ivB64 || !authTagB64 || !dataB64) {
+  const parts = ciphertext.split('.');
+  // Exatamente 3 partes, não "3 partes não-vazias" — um valor original vazio ('') gera um
+  // terceiro segmento vazio (ex.: "iv.authTag."), que é um formato válido, só que sem dados
+  // cifrados. Checar com `!parte` rejeitaria isso incorretamente (string vazia é falsy em JS).
+  if (parts.length !== 3) {
+    throw new Error('Formato de segredo criptografado inválido');
+  }
+  const [ivB64, authTagB64, dataB64] = parts;
+  if (!ivB64 || !authTagB64) {
     throw new Error('Formato de segredo criptografado inválido');
   }
   const key = deriveKey(rawKey);
