@@ -158,30 +158,30 @@ function toUnixSeconds(date: Date): string {
   return String(Math.floor(date.getTime() / 1000));
 }
 
-export interface TikTokActiveShop {
+export interface TikTokAuthorizedShop {
   shopId: string;
   shopCipher: string;
   shopName?: string;
   region?: string;
 }
 
-interface RawActiveShopList {
+interface RawAuthorizedShops {
   shops?: Array<{ id?: string; cipher?: string; name?: string; region?: string }>;
 }
 
 /**
  * Chamado uma vez logo após a troca do `code` OAuth por token (nunca vem no próprio token) —
- * é o único jeito de descobrir o `shop_cipher` exigido por quase toda chamada de negócio.
- * Recebe um `TikTokClient` sem `shopCipher` configurado (esta chamada não aceita/precisa dele).
- * Usa "Get Active Shop List" (`/seller/{version}/shops`), não "Get Authorized Shops"
- * (`/authorization/{version}/shops`) — este último é só para Public Apps multi-shop e
- * responde "Access denied" para Custom Apps (confirmado no Partner Center).
+ * é o único jeito documentado (tabela de erros do Partner Center, código 106013) de obter o
+ * `shop_cipher` exigido por quase toda chamada de negócio. Recebe um `TikTokClient` sem
+ * `shopCipher` configurado (esta chamada não aceita/precisa dele). Exige o escopo "Shop
+ * Authorized Information" (seller.authorization.info) — sem ele dá "Access denied" (código
+ * 105005); "Get Active Shop List" (`/seller/{version}/shops`) foi tentado antes mas não retorna
+ * cipher para um Custom App local (BR), só id/region.
  */
-export async function getActiveShopList(client: TikTokClient): Promise<TikTokActiveShop[]> {
-  const raw = await client.request<RawActiveShopList>('GET', TIKTOK_PATHS.activeShopList);
-  // TEMPORÁRIO — remover depois de confirmar os nomes de campo reais (shop_id/shop_cipher
-  // vieram vazios mesmo sem erro, então ou a resposta veio vazia ou os campos têm outro nome).
-  console.log('[tiktok-active-shop-list-debug]', JSON.stringify(raw));
+export async function getAuthorizedShops(client: TikTokClient): Promise<TikTokAuthorizedShop[]> {
+  const raw = await client.request<RawAuthorizedShops>('GET', TIKTOK_PATHS.authorizedShops);
+  // TEMPORÁRIO — remover depois de confirmar que a resposta real inclui `cipher` desta vez.
+  console.log('[tiktok-authorized-shops-debug]', JSON.stringify(raw));
   return (raw.shops ?? [])
     .filter((shop): shop is { id: string; cipher: string; name?: string; region?: string } =>
       Boolean(shop.id && shop.cipher),

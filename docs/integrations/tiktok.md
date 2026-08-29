@@ -75,34 +75,43 @@ debug temporário, já removido)**: `access_token`, `access_token_expire_in`, `r
 
 **Erro real encontrado em produção**: `shop_cipher` é exigido como parâmetro em quase toda
 chamada de negócio (produtos, pedidos, devoluções) — sem ele a API responde "Missing identifier.
-The 'shop_cipher' query parameter is required to identify the target shop.". A primeira tentativa
-de buscá-lo via `GET /authorization/{version}/shops` ("Get Authorized Shops") **falhou** com
-"Access denied. This app has not been granted any access scope..." — confirmado no Partner
-Center (tentar testar esse endpoint com a chave do Custom App real dá o erro "A chave do
-aplicativo não pode testar a API que você selecionou"; só funciona com a chave genérica de teste
-da plataforma, que devolve dados de sandbox fake). Esse endpoint é só para Public Apps
-multi-shop. **O que funciona para Custom Apps** é `GET /seller/{version}/shops` ("Get Active
-Shop List") — mesmo formato de resposta (`data.shops[].id`/`.cipher`/`.name`/`.region`), chamado
-uma vez logo após a troca do código. Implementado em `handleCallback`
-(`apps/api/src/integrations/tiktok/tiktok-oauth.service.ts`) via `getActiveShopList`
-(`packages/integrations/src/tiktok/tiktok.connector.ts`), best-effort — uma falha aqui não
-derruba a conexão, só deixa `shop_cipher` vazio (bloqueando as chamadas de negócio até resolver).
-Assume-se um único shop por token — a única topologia possível para um Custom App (uso interno
-de um único seller). **Integrações conectadas antes desta correção precisam reconectar a loja**
-(botão "Conectar" de novo) para que o `shop_cipher` seja obtido e salvo — o refresh de token
-sozinho não o busca retroativamente.
+The 'shop_cipher' query parameter is required to identify the target shop." (código `106013`).
+A tabela oficial de erros do Partner Center (`docv2/page/common-errors`) confirma a fonte:
+"Retrieve this value from the **Get Authorized Shops** endpoint" — ou seja, `GET
+/authorization/{version}/shops` é mesmo o caminho certo (uma tentativa anterior trocou para
+`GET /seller/{version}/shops`, "Get Active Shop List", achando que "Get Authorized Shops" não
+funcionava para Custom Apps — **enganado**: o "Get Active Shop List" chegou a funcionar sem erro,
+mas só devolveu `id`/`region`, nunca `cipher`, para esta loja local (BR); revertido).
+
+O que de fato bloqueava "Get Authorized Shops" era falta de escopo — código `105005` ("Access
+denied. The app is not authorized to access the endpoint because the access scopes granted for
+the app or the access token do not contain the required access scope for the endpoint"), cuja
+correção documentada é: 1) conferir/ativar o escopo certo em Partner Center → App & Service →
+Manage API, 2) conferir o campo `granted_scopes` do **token**, e se faltando, pedir para o
+vendedor reautorizar para gerar um token novo com o escopo. O escopo certo aqui é **"Shop
+Authorized Information"** (Scope Key `seller.authorization.info`) — só ativar não bastava sem
+reautorizar depois (mesma mecânica do próximo parágrafo).
+
+Implementado em `handleCallback` (`apps/api/src/integrations/tiktok/tiktok-oauth.service.ts`) via
+`getAuthorizedShops` (`packages/integrations/src/tiktok/tiktok.connector.ts`), best-effort — uma
+falha aqui não derruba a conexão, só deixa `shop_cipher` vazio (bloqueando as chamadas de negócio
+até resolver). Assume-se um único shop por token — a única topologia possível para um Custom App
+(uso interno de um único seller). **Integrações conectadas antes desta correção precisam
+reconectar a loja** (ver reautorização abaixo) para que o `shop_cipher` seja obtido e salvo — o
+refresh de token sozinho não o busca retroativamente.
 
 **Reautorização depois de adicionar um escopo novo**: confirmado no próprio Partner Center
-("Gerenciar API" do app) — depois de ativar um escopo novo (ex.: "Informações globais da loja",
-`seller.shop.info`, necessário para `Get Active Shop List` acima), é preciso pedir para o
-vendedor **reautorizar direto pelo Seller Center** (botão "Autorizar" na linha do app em "Meus
-aplicativos"), não pelo nosso botão "Conectar" — reconectar pelo nosso fluxo normal não repropaga
-o escopo novo para o token. Esse "Autorizar" do Seller Center redireciona para o nosso callback
-(`/api/integrations/tiktok/callback`) com um `code` válido, mas **sem `state`** (não passou pelo
-nosso `/connect`, que é quem gera o state). `handleCallback` trata esse caso: sem `state`, mas com
-`code`, reidentifica a empresa pela integração TikTok Shop já existente — só seguro porque hoje há
-uma única empresa usando essa integração nesta instância; deixará de ser seguro se isto virar
-multi-tenant de verdade (precisaria de outro mecanismo para saber a qual empresa pertence).
+("Gerenciar API" do app) — depois de ativar um escopo novo (ex.: "Shop Authorized Information"
+acima), é preciso pedir para o vendedor **reautorizar direto pelo Seller Center** (botão
+"Autorizar" na linha do app em "Meus aplicativos"), não pelo nosso botão "Conectar" — reconectar
+pelo nosso fluxo normal não repropaga o escopo novo para o token (bate com a orientação oficial
+do erro 105005 acima: "reauthorize... to generate a new access token accordingly"). Esse
+"Autorizar" do Seller Center redireciona para o nosso callback (`/api/integrations/tiktok/callback`)
+com um `code` válido, mas **sem `state`** (não passou pelo nosso `/connect`, que é quem gera o
+state). `handleCallback` trata esse caso: sem `state`, mas com `code`, reidentifica a empresa pela
+integração TikTok Shop já existente — só seguro porque hoje há uma única empresa usando essa
+integração nesta instância; deixará de ser seguro se isto virar multi-tenant de verdade
+(precisaria de outro mecanismo para saber a qual empresa pertence).
 
 **Confirmado em produção (conexão real com a loja Venticelli Bolsas)**: os endpoints de busca
 (`products/search`, `orders/search`, `returns/search`) são **POST**, não GET — usar GET faz a

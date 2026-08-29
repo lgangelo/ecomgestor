@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType, IntegrationProvider, IntegrationStatus } from '@ecommerce-manager/database';
-import { buildAuthorizeUrl, exchangeAuthorizationCode, getActiveShopList, TikTokClient } from '@ecommerce-manager/integrations';
+import { buildAuthorizeUrl, exchangeAuthorizationCode, getAuthorizedShops, TikTokClient } from '@ecommerce-manager/integrations';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { AuditService } from '../../audit/audit.service';
@@ -118,17 +118,18 @@ export class TikTokOAuthService {
     const token = await exchangeAuthorizationCode(appKey, appSecret, code);
 
     // O token OAuth de um Custom App nunca inclui shop_id/shop_cipher (confirmado em produção:
-    // só traz seller_name/seller_base_region/open_id/granted_scopes) — "Get Active Shop List"
-    // (/seller/{version}/shops) é o endpoint que de fato funciona para obter isso num Custom
-    // App ("Get Authorized Shops", /authorization/{version}/shops, é só para Public Apps
-    // multi-shop e responde "Access denied" aqui). Best-effort: uma falha nunca derruba a
-    // conexão, só fica sem shop_cipher (bloqueando as chamadas de negócio até resolver).
-    let shop: Awaited<ReturnType<typeof getActiveShopList>>[number] | undefined;
+    // só traz seller_name/seller_base_region/open_id/granted_scopes) — "Get Authorized Shops"
+    // (/authorization/{version}/shops) é a fonte oficial do shop_cipher (documentação do Partner
+    // Center, código de erro 106013), exige o escopo "Shop Authorized Information"
+    // (seller.authorization.info) tanto no app quanto no token (código 105005 sem ele).
+    // Best-effort: uma falha nunca derruba a conexão, só fica sem shop_cipher (bloqueando as
+    // chamadas de negócio até resolver).
+    let shop: Awaited<ReturnType<typeof getAuthorizedShops>>[number] | undefined;
     try {
       const shopsClient = new TikTokClient({ appKey, appSecret, accessToken: token.accessToken });
-      shop = (await getActiveShopList(shopsClient))[0];
+      shop = (await getAuthorizedShops(shopsClient))[0];
     } catch (error) {
-      this.logger.warn('tiktok_get_active_shop_list_failed', {
+      this.logger.warn('tiktok_get_authorized_shops_failed', {
         operation: 'oauth_callback',
         errorMessage: (error as Error).message,
       });

@@ -19,14 +19,15 @@ export const TIKTOK_PATHS = {
   tokenRefresh: '/api/v2/token/refresh',
   /** A confirmar no Partner Center — padrão público conhecido, não extraído com certeza. */
   tokenExchange: '/api/v2/token/get',
-  /** "Get Authorized Shops" — confirmado em produção que NÃO funciona para Custom Apps (só
-   * Public Apps multi-shop; o Partner Center recusa até testar com a chave de um Custom App).
-   * Mantido só de referência — usar `activeShopList` abaixo. */
+  /** "Get Authorized Shops" — confirmado na documentação oficial (tabela de erros, código
+   * 106013 "Missing identifier. The shop_cipher query parameter is required...") como a fonte
+   * oficial do `shop_cipher`. Exige o escopo "Shop Authorized Information" (seller.authorization.info)
+   * — sem ele dá "Access denied" (código 105005) e o Partner Center nem deixa testar com a
+   * chave do app. `/seller/{version}/shops` ("Get Active Shop List") foi tentado antes mas só
+   * retorna id/region, sem cipher, para um Custom App local (BR) — não é o endpoint certo. */
   authorizedShops: `/authorization/${API_VERSION}/shops`,
-  /** "Get Active Shop List" — confirmado em produção como o equivalente que FUNCIONA para
-   * Custom Apps: retorna a(s) loja(s) ativas para o access_token atual (id/cipher/region),
-   * único jeito de obter o shop_cipher exigido pelos demais endpoints de negócio (o token OAuth
-   * em si nunca inclui shop_id/shop_cipher — só seller_name/seller_base_region/open_id). */
+  /** "Get Active Shop List" — mantido só de referência; não retorna shop_cipher para Custom
+   * App local (confirmado em produção). Usar `authorizedShops` acima. */
   activeShopList: `/seller/${API_VERSION}/shops`,
   /** A confirmar no Partner Center. */
   productsSearch: `/product/${API_VERSION}/products/search`,
