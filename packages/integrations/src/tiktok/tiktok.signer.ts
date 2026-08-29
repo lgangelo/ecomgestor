@@ -2,9 +2,13 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 /**
  * Assinatura de chamadas de API da TikTok Shop (seção 8 da Fase 3 — pesquisa confirmada em
- * docs/integrations/tiktok.md, item "Assinatura das requests"): HMAC-SHA256 do
- * path + query string ordenada (excluindo `sign` e `access_token`) + corpo, usando o
- * app_secret como chave. O resultado vai no parâmetro de query `sign`.
+ * docs/integrations/tiktok.md, item "Assinatura das requests"): HMAC-SHA256 de
+ * `app_secret + path + query string ordenada (excluindo sign/access_token) + corpo + app_secret`,
+ * usando o app_secret como chave. O resultado vai no parâmetro de query `sign`.
+ *
+ * Confirmado em produção (conexão real): faltava envolver a string com o app_secret nos dois
+ * lados (não é só "usar o app_secret como chave do HMAC") — sem isso a TikTok responde
+ * "Invalid credentials. The 'sign' query parameter is invalid.", mesmo com o restante correto.
  *
  * Deliberadamente distinta de `verifyWebhookSignature` abaixo — são dois mecanismos
  * diferentes documentados separadamente pela TikTok, nunca devem ser confundidos.
@@ -20,7 +24,7 @@ export function signApiRequest(params: {
     .filter((key) => key !== 'sign' && key !== 'access_token')
     .sort();
   const sortedQuery = sortedKeys.map((key) => `${key}${query[key]}`).join('');
-  const base = `${path}${sortedQuery}${body}`;
+  const base = `${appSecret}${path}${sortedQuery}${body}${appSecret}`;
   return createHmac('sha256', appSecret).update(base, 'utf8').digest('hex');
 }
 

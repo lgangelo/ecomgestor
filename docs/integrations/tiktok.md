@@ -98,10 +98,13 @@ conta própria, apenas lê o timestamp devolvido pela TikTok e o persiste.
 ## 8. Assinatura das requests
 
 Confirmado, e **distinta da assinatura de webhook** (ver item 17): a TikTok Shop assina cada
-chamada de API assinando o **path + query string ordenada + corpo**, e envia o resultado em um
-parâmetro de query `sign`, usando HMAC-SHA256 com o `app_secret` como chave. Os parâmetros
+chamada de API assinando **`app_secret` + path + query string ordenada + corpo + `app_secret`**
+(o `app_secret` envolve a string dos dois lados — não é só a chave do HMAC), e envia o resultado
+em um parâmetro de query `sign`, usando HMAC-SHA256 com o `app_secret` como chave. Os parâmetros
 `sign` e `access_token` são excluídos do cálculo antes de ordenar. `timestamp` e `app_key` fazem
 parte da query assinada. Implementado em `packages/integrations/src/tiktok/tiktok.signer.ts`.
+O `access_token` também precisa ir no header `x-tts-access-token` (não só na query) — ver
+`packages/integrations/src/tiktok/tiktok.client.ts`.
 
 ## 9. Paginação
 
