@@ -144,15 +144,102 @@ Duas formas, ambas sem senha padrão fixa no código:
 
 ## Rodando com Docker Compose (produção / VM)
 
-Pressupõe que o PostgreSQL já está instalado e configurado na VM (fora do Docker).
+Pressupõe que o PostgreSQL já está instalado e configurado na VM (fora do Docker). Este roteiro
+foi validado de ponta a ponta num deploy real (não só revisado manualmente) — os passos abaixo já
+refletem os ajustes necessários encontrados nesse teste.
+
+### 1. Preparar o PostgreSQL para aceitar conexão dos containers
+
+Por padrão, uma instalação nova do PostgreSQL só escuta em `127.0.0.1` — nenhum container
+consegue alcançar isso, independente de `host.docker.internal` estar mapeado corretamente ou não.
+
+```bash
+sudo -u postgres psql -c "SHOW config_file;"   # localiza postgresql.conf / pg_hba.conf
+```
+
+Em `postgresql.conf`, troque `listen_addresses = 'localhost'` por `listen_addresses = '*'`. Em
+`pg_hba.conf`, adicione (**antes** de qualquer linha `reject`), usando o mesmo método de
+autenticação já usado nas outras linhas do arquivo (`md5` ou `scram-sha-256` — confira com
+`grep -vE "^#|^$" pg_hba.conf`; se a senha do usuário foi definida com `password_encryption=md5`
+no servidor, a linha **precisa** ser `md5`, senão a autenticação falha mesmo com a senha certa):
+
+```
+host    all    ecommerce_manager    172.17.0.0/16    md5
+host    all    ecommerce_manager    172.21.0.0/16    md5
+```
+
+(`172.17.0.0/16` cobre a bridge padrão do Docker; `172.21.0.0/16` é a sub-rede de
+`ecommerce-network`, definida neste `docker-compose.yml` — confira a sua com
+`docker network inspect ecommerce-network --format '{{json .IPAM.Config}}'` caso seja diferente.
+O campo do banco é `all`, não `ecommerce_manager`: o Prisma cria um banco "sombra" com nome
+gerado dinamicamente na primeira vez que gera uma migration, e ele também precisa de acesso.)
+
+```bash
+systemctl restart postgresql
+```
+
+### 2. Configurar `.env`
 
 ```bash
 cp .env.example .env
-# edite .env: DATABASE_URL (apontando para host.docker.internal, ver comentário no arquivo),
-# WEB_DOMAIN, API_DOMAIN, JWT_ACCESS_SECRET, JWT_REFRESH_SECRET, COOKIE_DOMAIN, etc.
+```
 
+Preencha pelo menos:
+- `DATABASE_URL` — aponte para `host.docker.internal` (containers) com usuário/senha do passo 1.
+  Evite caracteres especiais na senha, ou codifique-os em percent-encoding (`@`→`%40` etc.) —
+  nunca coloque a senha entre aspas dentro da URL.
+- `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` / `INTEGRATION_SECRETS_KEY` — `openssl rand -base64 48`
+- `WEB_DOMAIN`, `API_DOMAIN`, `WEB_APP_URL`, `NEXT_PUBLIC_API_URL`, `COOKIE_DOMAIN` — domínios reais
+  apontando para a VM. **Testando sem domínio real ainda (acesso direto por IP)?** Veja a seção
+  "Testar sem domínio/TLS" mais abaixo — `WEB_DOMAIN`/`API_DOMAIN` como IP puro não funciona com
+  Traefik + Let's Encrypt (Let's Encrypt não emite certificado para IP).
+
+### 3. Build e primeiro banco
+
+```bash
 docker compose build
+```
+
+Na primeira vez (banco vazio), crie o histórico de migrations do Prisma junto com o schema —
+monte a pasta como volume para os arquivos ficarem no disco da VM (sem isso, o container
+descartável apaga a pasta ao sair):
+
+```bash
+docker compose run --rm -v "$(pwd)/packages/database/prisma:/app/packages/database/prisma" \
+  ecommerce-api npx prisma migrate dev --schema packages/database/prisma/schema.prisma --name init
+```
+
+Isso exige temporariamente permissão `CREATEDB` no usuário do Postgres (para o banco "sombra" do
+Prisma comparar o schema):
+```bash
+sudo -u postgres psql -c "ALTER USER ecommerce_manager WITH CREATEDB;"
+# ... rode o comando de migration acima ...
+sudo -u postgres psql -c "ALTER USER ecommerce_manager WITH NOCREATEDB;"   # revogue depois
+```
+
+Depois de gerado uma vez, **comite a pasta `packages/database/prisma/migrations/`** — deploys
+seguintes usam só `prisma migrate deploy` (sem `CREATEDB`, sem banco sombra):
+```bash
+git add packages/database/prisma/migrations && git commit -m "chore: bootstrap prisma migration history" && git push
+```
+
+Em deploys seguintes (com migration history já commitada):
+```bash
+docker compose run --rm ecommerce-api npx prisma migrate deploy --schema packages/database/prisma/schema.prisma
+```
+
+Crie o usuário administrador:
+```bash
+docker compose run --rm ecommerce-api node apps/api/dist/cli/create-admin.js \
+  --email admin@suaempresa.com --company "Sua Empresa"
+```
+(sem `--password`, uma senha forte é gerada e exibida uma única vez no terminal — guarde-a)
+
+### 4. Subir tudo
+
+```bash
 docker compose up -d
+docker compose ps      # todos devem ficar "healthy"/"running"
 ```
 
 Serviços:
@@ -168,13 +255,21 @@ O PostgreSQL **não** está no `docker-compose.yml` de propósito. Os containers
 `ecommerce-worker` alcançam o Postgres da VM via `host.docker.internal` (mapeado com
 `extra_hosts: host.docker.internal:host-gateway`, necessário no Linux com Docker ≥ 20.10).
 
-Depois do primeiro `docker compose up -d`, rode as migrations e o seed/CLI de admin dentro do
-container da API (ou de uma máquina com acesso à mesma `DATABASE_URL`):
+### Testar sem domínio/TLS (acesso direto por IP)
 
-```bash
-docker compose exec ecommerce-api npx prisma migrate deploy --schema packages/database/prisma/schema.prisma
-docker compose exec ecommerce-api node apps/api/dist/... # ou rode create-admin via ts-node localmente apontando para o Postgres da VM
-```
+Só para validar um deploy antes de ter domínio real apontado para a VM — **nunca para tráfego
+real saindo para a internet** (sem TLS, sem os security headers que o Traefik aplica):
+
+1. No `.env`: `NEXT_PUBLIC_API_URL=http://SEU_IP:3001/api`, `WEB_APP_URL=http://SEU_IP:3000`,
+   `COOKIE_DOMAIN=` (vazio — o atributo `Domain` do cookie não é válido para hosts que são IP
+   puro; o navegador rejeita o cookie inteiro se vier definido), `COOKIE_SECURE=false` (cookies
+   `Secure` são recusados pelo navegador fora de HTTPS).
+2. `ecommerce-api`/`ecommerce-web` já expõem as portas 3001/3000 diretamente no
+   `docker-compose.yml` para esse cenário (comentado como temporário — remova quando configurar
+   domínio real).
+3. `docker compose build && docker compose up -d` (rebuild necessário: `NEXT_PUBLIC_API_URL` é
+   embutido no bundle do navegador em tempo de build, não lido em tempo de execução).
+4. Acesse `http://SEU_IP:3000`.
 
 ## Testes, lint e build
 

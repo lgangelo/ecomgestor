@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import { AuditModule } from '../../audit/audit.module';
 import { OrdersModule } from '../../orders/orders.module';
 import { ReturnsModule } from '../../returns/returns.module';
@@ -19,7 +18,6 @@ import { TikTokJobsService } from './tiktok-jobs.service';
 import { TikTokHealthService } from './tiktok-health.service';
 import { TikTokWebhookProcessorService } from './tiktok-webhook-processor.service';
 import { TikTokStockOutboxService } from './tiktok-stock-outbox.service';
-import { TikTokStockOutboxSchedulerService } from './tiktok-stock-outbox-scheduler.service';
 import { TikTokController } from './tiktok.controller';
 import { TikTokQueueService } from '../../queue/tiktok-queue.service';
 
@@ -27,9 +25,16 @@ import { TikTokQueueService } from '../../queue/tiktok-queue.service';
  * Módulo da integração TikTok Shop (Fase 3). Importa OrdersModule/ReturnsModule para reusar o
  * domínio existente (`OrdersService`/`ReturnsService`) em vez de duplicar regras de negócio —
  * a integração nunca decide sozinha uma transição de estoque ou de status de pedido.
+ *
+ * Importado tanto por `AppModule` (processo da API) quanto por `WorkerModule` (processo do
+ * worker BullMQ) — são duas árvores de DI/processos independentes. Por isso o scheduler do
+ * outbox de estoque (`TikTokStockOutboxSchedulerService`) NÃO mora aqui: um provider com
+ * `@Cron` dentro deste módulo rodaria em dobro, uma vez por processo (bug real encontrado na
+ * primeira tentativa de deploy — ver `tiktok-stock-outbox-scheduler.module.ts`, importado só
+ * pelo `AppModule`).
  */
 @Module({
-  imports: [AuditModule, OrdersModule, ReturnsModule, ScheduleModule.forRoot()],
+  imports: [AuditModule, OrdersModule, ReturnsModule],
   controllers: [TikTokOAuthController, TikTokWebhookController, TikTokController],
   providers: [
     TikTokCredentialsService,
@@ -46,7 +51,6 @@ import { TikTokQueueService } from '../../queue/tiktok-queue.service';
     TikTokHealthService,
     TikTokWebhookProcessorService,
     TikTokStockOutboxService,
-    TikTokStockOutboxSchedulerService,
     TikTokQueueService,
   ],
   exports: [
@@ -60,6 +64,7 @@ import { TikTokQueueService } from '../../queue/tiktok-queue.service';
     TikTokReturnsSyncService,
     TikTokJobsService,
     TikTokWebhookProcessorService,
+    TikTokStockOutboxService,
     TikTokQueueService,
   ],
 })

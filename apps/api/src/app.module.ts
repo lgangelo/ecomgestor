@@ -28,6 +28,7 @@ import { FiscalModule } from './fiscal/fiscal.module';
 import { ReportsModule } from './reports/reports.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { TikTokModule } from './integrations/tiktok/tiktok.module';
+import { TikTokStockOutboxSchedulerModule } from './integrations/tiktok/tiktok-stock-outbox-scheduler.module';
 import { CompanyModule } from './company/company.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
@@ -60,6 +61,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     ReportsModule,
     IntegrationsModule,
     TikTokModule,
+    TikTokStockOutboxSchedulerModule,
     CompanyModule,
     UsersModule,
     RolesModule,
