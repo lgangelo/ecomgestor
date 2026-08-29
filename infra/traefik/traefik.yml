@@ -1,8 +1,14 @@
 # Configuração estática do Traefik.
-# Cloudflare fica na frente deste Traefik (proxy/CDN). Os certificados TLS abaixo usam
-# desafio HTTP-01; se a Cloudflare estiver em modo "Proxied", ajuste para o desafio DNS-01
-# com o provider da Cloudflare (requer CF_API_EMAIL/CF_DNS_API_TOKEN) ou utilize um
-# certificado de origem da própria Cloudflare.
+#
+# Topologia atual: Cloudflare Tunnel (cloudflared) roda na VM e conecta de SAÍDA para a borda da
+# Cloudflare — não há porta pública exposta na VM, e a Cloudflare termina o HTTPS. O túnel
+# encaminha para este Traefik via HTTP puro (entrypoint `web`, porta 80); por isso NÃO há
+# redirect automático para HTTPS aqui (isso já acontece na borda da Cloudflare, antes de chegar
+# na VM) e os roteadores em docker-compose.yml usam `entrypoints=web`, sem `tls.certresolver`.
+#
+# `websecure`/certificatesResolvers ficam definidos mas sem nenhum roteador os referenciando —
+# preservados para o caso de um dia trocar para exposição direta (sem Cloudflare) ou desafio
+# DNS-01; não fazem nada sozinhos.
 
 log:
   level: INFO
@@ -10,11 +16,6 @@ log:
 entryPoints:
   web:
     address: ':80'
-    http:
-      redirections:
-        entryPoint:
-          to: websecure
-          scheme: https
   websecure:
     address: ':443'
 
