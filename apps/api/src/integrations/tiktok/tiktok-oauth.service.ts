@@ -92,13 +92,22 @@ export class TikTokOAuthService {
 
     const token = await exchangeAuthorizationCode(appKey, appSecret, code);
 
-    // shop_id/shop_cipher nunca vêm no token OAuth — só "Get Authorized Shops" os retorna, e o
-    // shop_cipher é exigido em quase toda chamada de negócio (ver tiktok-connector.factory.ts).
-    // Assume-se um único shop autorizado por token: é a única topologia possível para um Custom
-    // App do Partner Center (uso interno de um único seller), diferente de um Public App.
-    const shopsClient = new TikTokClient({ appKey, appSecret, accessToken: token.accessToken });
-    const shops = await getAuthorizedShops(shopsClient);
-    const shop = shops[0];
+    // "Get Authorized Shops" NÃO está disponível para Custom Apps (confirmado no Partner Center:
+    // "A chave do aplicativo não pode testar a API que você selecionou") — só serve para Public
+    // Apps multi-shop. Tentamos mesmo assim (best-effort) só para não quebrar caso isso mude no
+    // futuro, mas uma falha aqui nunca deve derrubar a conexão: shop_id/shop_cipher de um Custom
+    // App precisam vir de dentro da própria resposta do token (ver debug temporário em
+    // parseTokenResponse, packages/integrations/src/tiktok/tiktok.auth.ts).
+    let shop: Awaited<ReturnType<typeof getAuthorizedShops>>[number] | undefined;
+    try {
+      const shopsClient = new TikTokClient({ appKey, appSecret, accessToken: token.accessToken });
+      shop = (await getAuthorizedShops(shopsClient))[0];
+    } catch (error) {
+      this.logger.warn('tiktok_get_authorized_shops_failed', {
+        operation: 'oauth_callback',
+        message: (error as Error).message,
+      });
+    }
 
     const integration = await this.credentialsService.getOrCreateIntegration(companyId);
     await this.credentialsService.saveCredentials(integration.id, {

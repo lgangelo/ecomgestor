@@ -69,6 +69,14 @@ function parseTokenResponse(json: unknown): TikTokTokenResponse {
   const envelope = json as { data?: Record<string, unknown> } | null;
   const data = envelope?.data ?? {};
 
+  // TEMPORÁRIO (remover após confirmar os nomes reais dos campos de shop_id/shop_cipher/region
+  // para Custom App — "Get Authorized Shops" não está disponível para esse tipo de app, ver
+  // docs/integrations/tiktok.md item 2). Redige qualquer campo com "token" no nome.
+  const redacted = Object.fromEntries(
+    Object.entries(data).map(([key, value]) => [key, /token/i.test(key) ? '[REDACTED]' : value]),
+  );
+  console.log('[tiktok-token-response-debug]', JSON.stringify(redacted));
+
   const accessToken = data.access_token ? String(data.access_token) : '';
   const refreshToken = data.refresh_token ? String(data.refresh_token) : '';
   if (!accessToken || !refreshToken) {
