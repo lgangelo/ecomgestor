@@ -48,7 +48,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
 
       <PageHeader
         title={`Pedido ${order.externalOrderId ?? order.id.slice(0, 8)}`}
-        description={`${order.channel.name} · ${formatDate(order.orderDate, true)}`}
+        description={`${order.channel.name} · ${formatDate(order.orderDate, true)}${order.customerName ? ` · Cliente: ${order.customerName}` : ''}`}
         actions={
           <div className="flex gap-2">
             <RegisterReturnDialog
@@ -106,7 +106,8 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                     <TableHead>Produto</TableHead>
                     <TableHead>Qtd.</TableHead>
                     <TableHead>Preço</TableHead>
-                    <TableHead>Desconto</TableHead>
+                    <TableHead>Desconto vendedor</TableHead>
+                    <TableHead>Desconto TikTok</TableHead>
                     <TableHead>Total</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -119,9 +120,8 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                       </TableCell>
                       <TableCell>{item.quantity}</TableCell>
                       <TableCell>{formatBRL(item.unitPrice)}</TableCell>
-                      <TableCell>
-                        {formatBRL(Number(item.sellerDiscount) + Number(item.platformDiscount))}
-                      </TableCell>
+                      <TableCell>{formatBRL(item.sellerDiscount)}</TableCell>
+                      <TableCell>{formatBRL(item.platformDiscount)}</TableCell>
                       <TableCell>{formatBRL(item.lineTotal)}</TableCell>
                     </TableRow>
                   ))}

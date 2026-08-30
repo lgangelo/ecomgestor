@@ -28,6 +28,10 @@ function mapSettlementStatus(raw: string): SettlementStatus {
   return SettlementStatus.PENDING;
 }
 
+/** Categorias de `SettlementTransaction` que representam taxa/comissão cobrada pela plataforma —
+ * as únicas que também alimentam `marketplace_fees` (ver `syncTransactionsForStatement`). */
+const FEE_TRANSACTION_TYPES = new Set(['PLATFORM_FEE', 'AFFILIATE_COMMISSION']);
+
 /**
  * Ingestão financeira (seção 29-30-31 da Fase 3): Get Statements -> Get Transactions by
  * Statement, alimentando `settlements`/`settlement_transactions` já existentes. Nunca inventa
@@ -128,6 +132,25 @@ export class TikTokFinanceSyncService {
           });
         } else {
           await this.prisma.client.settlementTransaction.create({ data });
+        }
+
+        // `marketplace_fees` é a tabela que o resto do sistema já lê para lucro/margem (pedido,
+        // dashboard financeiro, fechamento mensal) — sem isto, essas telas nunca descontavam a
+        // taxa/comissão da TikTok (tabela sempre vazia, nenhum código em nenhum lugar escrevia
+        // nela). O valor bruto da TikTok vem negativo (é um débito no saldo do repasse); aqui
+        // grava-se a magnitude positiva, que é o que as leituras existentes esperam subtrair.
+        if (order && FEE_TRANSACTION_TYPES.has(data.type) && tx.externalTransactionId) {
+          await this.prisma.client.marketplaceFee.upsert({
+            where: { externalTransactionId: tx.externalTransactionId },
+            create: {
+              channelId,
+              orderId: order.id,
+              feeType: data.type,
+              amount: Math.abs(Number(tx.amount)),
+              externalTransactionId: tx.externalTransactionId,
+            },
+            update: { amount: Math.abs(Number(tx.amount)) },
+          });
         }
         synced++;
       }

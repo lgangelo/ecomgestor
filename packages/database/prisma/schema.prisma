@@ -756,6 +756,10 @@ model MarketplaceFee {
   feeType   String   @map("fee_type")
   amount    Decimal  @db.Decimal(14, 2)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  // Espelha a transação de liquidação de origem (settlement_transactions.external_transaction_id)
+  // quando esta linha veio de um sync automático (TikTok Finance API) — permite upsert idempotente
+  // em vez de duplicar a taxa a cada re-sync do mesmo statement. Nulo para lançamentos manuais.
+  externalTransactionId String? @unique @map("external_transaction_id")
 
   channel SalesChannel @relation(fields: [channelId], references: [id])
   order   Order?       @relation(fields: [orderId], references: [id])
