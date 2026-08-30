@@ -51,6 +51,28 @@ export class ProductsController {
     return this.productsService.getAllCostHistory(id, user.companyId);
   }
 
+  /** Registra o mesmo custo para todas as variações do produto de uma vez (seção pedida pelo
+   * usuário) — quando o custo varia por variação, o operador continua usando o registro
+   * individual em `POST variants/:variantId/cost-history`. */
+  @Post(':id/cost-history')
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  async createCostHistoryForAllVariants(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: CreateCostHistoryDto,
+  ) {
+    const entries = await this.productsService.createCostHistoryForAllVariants(id, user.companyId, dto);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'CREATE',
+      entity: 'product_cost_history',
+      entityId: id,
+      newValue: { productId: id, cost: dto.cost, variantsAffected: entries.length },
+    });
+    return entries;
+  }
+
   @Get(':id/channels')
   @RequirePermissions(PERMISSIONS.PRODUCT_READ)
   getChannelMappings(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

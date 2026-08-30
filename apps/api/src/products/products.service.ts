@@ -419,6 +419,26 @@ export class ProductsService {
     });
   }
 
+  /** Registra o MESMO custo para todas as variações do produto de uma vez — para o caso comum
+   * de um produto cujas variações só diferem por cor (custo igual entre elas). Quando o custo
+   * realmente varia por variação (ex.: tamanho), o operador continua podendo registrar
+   * individualmente por SKU via `createCostHistory`. */
+  async createCostHistoryForAllVariants(productId: string, companyId: string, dto: CreateCostHistoryDto) {
+    const product = await this.findProductOrThrow(productId, companyId);
+    const variants = await this.prisma.client.productVariant.findMany({
+      where: { productId: product.id },
+      select: { id: true },
+    });
+    const effectiveDate = new Date(dto.effectiveDate);
+    return this.prisma.client.$transaction(
+      variants.map((variant) =>
+        this.prisma.client.productCostHistory.create({
+          data: { variantId: variant.id, cost: dto.cost, effectiveDate, note: dto.note ?? null },
+        }),
+      ),
+    );
+  }
+
   /** Aba "Resumo" (seção 4) — agrega estoque e vendas dos últimos 30 dias de todas as variantes. */
   async getSummary(productId: string, companyId: string) {
     const product = await this.findProductOrThrow(productId, companyId);

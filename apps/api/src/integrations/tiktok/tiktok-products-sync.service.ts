@@ -251,6 +251,26 @@ export class TikTokProductsSyncService {
       ? await this.findProductIdForExternalProduct(companyId, integration.channelId, externalProductId)
       : undefined;
 
+    // "Search Products" (fonte de `input.imageUrl`/`input.color`/`input.size`) confirmadamente
+    // não traz nenhum dos três — busca sob demanda via "Get Product" (uma única chamada resolve
+    // imagem + atributos de TODAS as SKUs do produto). Melhor-esforço: nunca trava a criação se
+    // a busca falhar.
+    let imageUrl = input.imageUrl;
+    let color = input.color;
+    let size = input.size;
+    if ((!imageUrl || (!color && !size)) && externalProductId) {
+      try {
+        const { connector } = await this.connectorFactory.forCompany(companyId);
+        const detail = await connector.getProductDetail(companyId, externalProductId);
+        imageUrl = imageUrl ?? detail.imageUrl;
+        const skuAttrs = detail.skus.find((s) => s.externalSku === externalSku);
+        color = color ?? skuAttrs?.color;
+        size = size ?? skuAttrs?.size;
+      } catch {
+        // best-effort — segue sem imagem/atributos.
+      }
+    }
+
     let productId: string;
     let variantId: string;
 
@@ -260,27 +280,14 @@ export class TikTokProductsSyncService {
           productId: existingProductId,
           sku: input.sku,
           suggestedPrice: input.price,
-          color: input.color ?? null,
-          size: input.size ?? null,
+          color: color ?? null,
+          size: size ?? null,
           status: VariantStatus.ACTIVE,
         },
       });
       productId = existingProductId;
       variantId = variant.id;
     } else {
-      // "Search Products" (fonte de `input.imageUrl`) nunca traz imagem — busca sob demanda via
-      // "Get Product" só na criação de um produto novo (nunca ao só adicionar variação a um já
-      // existente). Melhor-esforço: nunca trava a criação do produto se a busca falhar.
-      let imageUrl = input.imageUrl;
-      if (!imageUrl && externalProductId) {
-        try {
-          const { connector } = await this.connectorFactory.forCompany(companyId);
-          imageUrl = (await connector.getProductDetail(companyId, externalProductId)).imageUrl;
-        } catch {
-          // best-effort — segue sem imagem.
-        }
-      }
-
       const product = await this.prisma.client.product.create({
         data: {
           companyId,
@@ -293,8 +300,8 @@ export class TikTokProductsSyncService {
               {
                 sku: input.sku,
                 suggestedPrice: input.price,
-                color: input.color ?? null,
-                size: input.size ?? null,
+                color: color ?? null,
+                size: size ?? null,
                 status: VariantStatus.ACTIVE,
               },
             ],
@@ -436,12 +443,13 @@ export class TikTokProductsSyncService {
     let unchanged = 0;
     let notFoundOnTikTok = 0;
     const failed: Array<{ externalSku: string; error: string }> = [];
-    // "Get Product" (imagem) é uma chamada extra por produto — sem limite, um catálogo grande
-    // sem nenhuma imagem ainda faz o job demorar minutos numa única execução (confirmado pelo
-    // usuário: "o job de importar produtos agora tá demorando mais"). Limita quantas imagens
-    // busca POR EXECUÇÃO; o resto fica pendente e é buscado nas próximas sincronizações.
-    const MAX_IMAGE_FETCHES_PER_RUN = 20;
-    let imageFetchesThisRun = 0;
+    // "Get Product" (imagem + atributos de SKU) é uma chamada extra por produto — sem limite, um
+    // catálogo grande sem nada disso ainda faz o job demorar minutos numa única execução
+    // (confirmado pelo usuário: "o job de importar produtos agora tá demorando mais"). Limita
+    // quantas chamadas de detalhe faz POR EXECUÇÃO; o resto fica pendente e é buscado nas
+    // próximas sincronizações.
+    const MAX_DETAIL_FETCHES_PER_RUN = 20;
+    let detailFetchesThisRun = 0;
 
     for (const mapping of mappings) {
       const externalSku = mapping.externalSku ?? '';
@@ -467,34 +475,36 @@ export class TikTokProductsSyncService {
           changed = true;
         }
 
-        // Variações criadas antes deste campo ser extraído nunca ganhavam cor/tamanho depois —
-        // só preenche quando ainda está vazio, nunca sobrescreve o que o operador já editou.
-        const variantAttrUpdate: { color?: string; size?: string } = {};
-        if (!variant.color && externalProduct.color) variantAttrUpdate.color = externalProduct.color;
-        if (!variant.size && externalProduct.size) variantAttrUpdate.size = externalProduct.size;
-        if (Object.keys(variantAttrUpdate).length > 0) {
-          await this.prisma.client.productVariant.update({ where: { id: variant.id }, data: variantAttrUpdate });
-          changed = true;
-        }
-
-        // Produtos criados antes deste campo existir (ou sem imagem resolvida na criação) nunca
-        // ganhavam a foto depois — só preenche quando ainda está vazia, nunca sobrescreve uma
-        // capa que o operador já tenha definido manualmente. `externalProduct.imageUrl` vem de
-        // "Search Products", que nunca traz imagem (confirmado) — por isso busca sob demanda via
-        // "Get Product" quando ainda falta, best-effort (nunca aborta a sincronização do resto).
-        if (!variant.product.imageUrl && mapping.externalProductId && imageFetchesThisRun < MAX_IMAGE_FETCHES_PER_RUN) {
-          imageFetchesThisRun++;
+        // Produtos/variações criados antes destes campos serem extraídos (ou sem imagem/atributo
+        // resolvido na criação) nunca ganhavam isso depois — só preenche quando ainda está vazio,
+        // nunca sobrescreve o que o operador já editou manualmente. Nenhum dos três (imagem, cor,
+        // tamanho) vem de "Search Products" (confirmado) — busca tudo junto sob demanda via "Get
+        // Product" quando falta algo, best-effort (nunca aborta a sincronização do resto).
+        const missingImage = !variant.product.imageUrl;
+        const missingAttrs = !variant.color || !variant.size;
+        if ((missingImage || missingAttrs) && mapping.externalProductId && detailFetchesThisRun < MAX_DETAIL_FETCHES_PER_RUN) {
+          detailFetchesThisRun++;
           try {
             const detail = await connector.getProductDetail(companyId, mapping.externalProductId);
-            if (detail.imageUrl) {
+            if (missingImage && detail.imageUrl) {
               await this.prisma.client.product.update({
                 where: { id: variant.product.id },
                 data: { imageUrl: detail.imageUrl },
               });
               changed = true;
             }
+            if (missingAttrs) {
+              const skuAttrs = detail.skus.find((s) => s.externalSku === externalSku);
+              const variantAttrUpdate: { color?: string; size?: string } = {};
+              if (!variant.color && skuAttrs?.color) variantAttrUpdate.color = skuAttrs.color;
+              if (!variant.size && skuAttrs?.size) variantAttrUpdate.size = skuAttrs.size;
+              if (Object.keys(variantAttrUpdate).length > 0) {
+                await this.prisma.client.productVariant.update({ where: { id: variant.id }, data: variantAttrUpdate });
+                changed = true;
+              }
+            }
           } catch {
-            // best-effort — segue sem imagem, tenta de novo na próxima sincronização.
+            // best-effort — segue sem imagem/atributos, tenta de novo na próxima sincronização.
           }
         }
 

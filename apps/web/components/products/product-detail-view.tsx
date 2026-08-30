@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import { StatCard } from '@/components/shared/stat-card';
 import { VariantFormDialog } from './variant-form-dialog';
 import { VariantEditDialog } from './variant-edit-dialog';
 import { CostHistoryDialog } from './cost-history-dialog';
+import { ProductCostDialog } from './product-cost-dialog';
 import { ProductDeleteDialog } from './product-delete-dialog';
 import { ProductEditDialog } from './product-edit-dialog';
 
@@ -67,6 +68,16 @@ export function ProductDetailView({ productId }: { productId: string }) {
                 <Button variant="outline">
                   <Pencil className="h-4 w-4" />
                   Editar produto
+                </Button>
+              }
+            />
+            <ProductCostDialog
+              productId={productId}
+              variantCount={product.variants.length}
+              trigger={
+                <Button variant="outline">
+                  <Wallet className="h-4 w-4" />
+                  Definir custo
                 </Button>
               }
             />

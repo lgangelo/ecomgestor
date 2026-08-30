@@ -173,19 +173,16 @@ export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
   const skus = Array.isArray(product.skus) ? (product.skus as unknown[]) : [];
   const externalProductId = requiredStr(product, 'id');
   const name = requiredStr(product, 'title') || requiredStr(product, 'product_name');
-  // "Search Products" nunca traz imagem (confirmado) — sempre undefined aqui; a imagem real é
-  // buscada separadamente sob demanda via `getProductDetail`.
+  // "Search Products" nunca traz imagem NEM atributos de SKU (cor/tamanho) — confirmado em
+  // produção (payload bruto logado, sem main_images e sem sales_attributes em nenhuma SKU). Os
+  // dois só existem em "Get Product" (detalhe por id) e são buscados sob demanda via
+  // `getProductDetail`, nunca aqui.
   const imageUrl = extractMainImageUrl(product);
 
   if (skus.length === 0) {
     // Nunca visto em produção até agora, mas não deveria acontecer de verdade — mantém como
     // um único item em vez de descartar o produto inteiro silenciosamente.
     return [{ externalProductId, externalSku: externalProductId, name, price: '0', stock: 0, imageUrl, raw }];
-  }
-
-  if (skus.length > 1) {
-    // eslint-disable-next-line no-console -- debug temporário, remover após confirmar o campo real de cor/tamanho em produção
-    console.log('[tiktok-sku-attributes-debug]', JSON.stringify({ externalProductId, skus }));
   }
 
   return skus.map((rawSku) => {
@@ -209,13 +206,15 @@ export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
 }
 
 /**
- * Cor/tamanho da SKU — ainda não confirmado contra um payload real com múltiplas SKUs desta loja
- * (o único payload bruto logado até agora era de um produto com 1 SKU só). Suposição baseada no
- * padrão público da TikTok Shop Open API: `sales_attributes: [{ attribute_name, value_name }]`
- * por SKU. Log de debug temporário em `normalizeProductSkus` (só quando há mais de 1 SKU) até
- * confirmar. Nunca inventa — campo não reconhecido fica de fora, nunca vira "cor" por padrão.
+ * Cor/tamanho da SKU. CONFIRMADO em produção que "Search Products" não traz `sales_attributes`
+ * em nenhuma SKU (payload bruto de um produto de 2 SKUs logado, sem esse campo) — só existe em
+ * "Get Product" (detalhe por id, ver `getProductDetail` no connector), por isso esta função só é
+ * chamada a partir de lá. Suposição de nome de campo ainda não confirmada contra a resposta real
+ * desse endpoint (`sales_attributes: [{ attribute_name, value_name }]`, padrão público da TikTok
+ * Shop Open API) — debug temporário em `getProductDetail`. Nunca inventa — atributo não
+ * reconhecido fica de fora, nunca vira "cor" por padrão.
  */
-function extractSkuAttributes(sku: Record<string, unknown>): { color?: string; size?: string } {
+export function extractSkuAttributes(sku: Record<string, unknown>): { color?: string; size?: string } {
   const attributes = Array.isArray(sku.sales_attributes) ? (sku.sales_attributes as unknown[]) : [];
   let color: string | undefined;
   let size: string | undefined;

@@ -20,6 +20,7 @@ import { TikTokClient } from './tiktok.client';
 import { TIKTOK_PATHS } from './tiktok.types';
 import {
   extractMainImageUrl,
+  extractSkuAttributes,
   normalizeOrder,
   normalizeProductSkus,
   normalizeReturn,
@@ -41,6 +42,10 @@ interface RawPage {
   orders?: unknown[];
   returns?: unknown[];
   transactions?: unknown[];
+  /** "Get Transactions by Statement" pode responder com esta chave (nome do path,
+   * `statement_transactions`) em vez da genérica `transactions` — ainda não confirmado contra
+   * produção (0 transações sincronizadas em 87 statements é sinal forte de chave errada). */
+  statement_transactions?: unknown[];
   statements?: unknown[];
   products?: unknown[];
 }
@@ -117,27 +122,39 @@ export class TikTokConnector implements MarketplaceConnector {
   }
 
   /**
-   * Busca sob demanda a imagem principal de UM produto ("Get Product") — "Search Products" (usado
-   * para listar/sincronizar em massa) confirmadamente não traz nenhum campo de imagem, então esta
-   * chamada extra só é feita na criação/vínculo de um produto específico, nunca durante a
-   * listagem em massa (evita multiplicar centenas de chamadas por sync). Nunca lança: falha
-   * silenciosamente com `undefined` — a imagem é um "nice to have", não deve travar a criação do
-   * produto. Debug temporário até confirmar `main_images` contra o payload real deste endpoint.
+   * Busca sob demanda a imagem principal E os atributos (cor/tamanho) de cada SKU de UM produto
+   * ("Get Product") — "Search Products" (usado para listar/sincronizar em massa) confirmadamente
+   * não traz nenhum dos dois, então esta chamada extra só é feita na criação/vínculo de um
+   * produto específico, nunca durante a listagem em massa (evita multiplicar centenas de
+   * chamadas por sync) — e uma única chamada já resolve imagem + atributos juntos, nunca duas
+   * chamadas separadas para o mesmo produto. Nunca lança: falha silenciosamente com valores
+   * vazios — imagem/atributos são "nice to have", nunca devem travar a criação do produto. Debug
+   * temporário até confirmar `main_images`/`sales_attributes` contra o payload real deste
+   * endpoint (diferente do de "Search Products", já confirmado sem nenhum dos dois campos).
    */
-  async getProductDetail(companyId: string, externalProductId: string): Promise<{ imageUrl?: string }> {
+  async getProductDetail(
+    companyId: string,
+    externalProductId: string,
+  ): Promise<{ imageUrl?: string; skus: Array<{ externalSku: string; color?: string; size?: string }> }> {
     void companyId;
     try {
       const raw = await this.client.request<Record<string, unknown>>(
         'GET',
         TIKTOK_PATHS.productDetail(externalProductId),
       );
-      // eslint-disable-next-line no-console -- debug temporário, remover após confirmar o campo real de imagem em produção
+      // eslint-disable-next-line no-console -- debug temporário, remover após confirmar os campos reais de imagem/atributos em produção
       console.log('[tiktok-product-detail-debug]', JSON.stringify(raw));
-      return { imageUrl: extractMainImageUrl(raw) };
+      const rawSkus = Array.isArray(raw.skus) ? (raw.skus as unknown[]) : [];
+      const skus = rawSkus.map((rawSku) => {
+        const sku = (rawSku ?? {}) as Record<string, unknown>;
+        const { color, size } = extractSkuAttributes(sku);
+        return { externalSku: String(sku.id ?? ''), color, size };
+      });
+      return { imageUrl: extractMainImageUrl(raw), skus };
     } catch (error) {
       // eslint-disable-next-line no-console -- diagnóstico best-effort, nunca deve travar a criação do produto
       console.warn('[tiktok-product-detail-error]', (error as Error).message);
-      return { imageUrl: undefined };
+      return { imageUrl: undefined, skus: [] };
     }
   }
 
@@ -194,7 +211,11 @@ export class TikTokConnector implements MarketplaceConnector {
     const raw = await this.client.request<RawPage>('GET', path, {
       query: { ...buildPageQuery(params), sort_field: 'statement_time', sort_order: 'DESC' },
     });
-    const items = raw.transactions ?? raw.items ?? [];
+    const items = raw.transactions ?? raw.statement_transactions ?? raw.items ?? [];
+    if (items.length === 0) {
+      // eslint-disable-next-line no-console -- debug temporário: 0 transações sincronizadas em produção mesmo com >80 statements é suspeito
+      console.log('[tiktok-transactions-empty-debug]', JSON.stringify({ path, keys: Object.keys(raw) }));
+    }
     return {
       items: items.map((item) => normalizeTransaction(item, params.statementId)),
       nextPageToken: raw.next_page_token,

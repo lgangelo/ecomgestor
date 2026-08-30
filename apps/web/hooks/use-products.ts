@@ -238,6 +238,29 @@ export function useCreateCostHistory(productId: string, variantId: string) {
   });
 }
 
+/** Registra o mesmo custo para TODAS as variações do produto de uma vez — útil quando as
+ * variações só diferem por cor (custo igual). Quando o custo varia por tamanho, o operador
+ * continua registrando individualmente via `useCreateCostHistory` em cada variação. */
+export function useCreateCostHistoryForProduct(productId: string) {
+  const queryClient = useQueryClient();
+  const onErrorToast = useErrorToast();
+  return useMutation({
+    mutationFn: (data: { cost: number; effectiveDate: string; note?: string }) =>
+      apiFetch<Array<{ id: string; variantId: string }>>(`/products/${productId}/cost-history`, {
+        method: 'POST',
+        body: data,
+      }),
+    onSuccess: (entries) => {
+      queryClient.invalidateQueries({ queryKey: ['products', productId] });
+      for (const entry of entries) {
+        queryClient.invalidateQueries({ queryKey: ['cost-history', entry.variantId] });
+      }
+      toast({ title: `Custo registrado para ${entries.length} variação(ões).` });
+    },
+    onError: onErrorToast('Não foi possível registrar o custo'),
+  });
+}
+
 // -----------------------------------------------------------------------
 // Abas da página de produto (seção 4)
 // -----------------------------------------------------------------------
