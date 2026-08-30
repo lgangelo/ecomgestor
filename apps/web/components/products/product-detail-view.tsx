@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, History, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -194,7 +194,18 @@ function ResumoTab({
                   <TableCell className="font-medium">{variant.sku}</TableCell>
                   <TableCell>{[variant.color, variant.size].filter(Boolean).join(' / ') || '—'}</TableCell>
                   <TableCell>{formatBRL(variant.suggestedPrice)}</TableCell>
-                  <TableCell>{variant.latestCost ? formatBRL(variant.latestCost) : '—'}</TableCell>
+                  <TableCell>
+                    <CostHistoryDialog
+                      productId={productId}
+                      variantId={variant.id}
+                      sku={variant.sku}
+                      trigger={
+                        <Button variant="link" size="sm" className="h-auto p-0">
+                          {variant.latestCost ? formatBRL(variant.latestCost) : 'Definir custo'}
+                        </Button>
+                      }
+                    />
+                  </TableCell>
                   <TableCell>{variant.inventory.available}</TableCell>
                   <TableCell>{variant.inventory.reserved}</TableCell>
                   <TableCell>{variant.minStock}</TableCell>
@@ -211,17 +222,6 @@ function ResumoTab({
                           <Button variant="ghost" size="sm">
                             <Pencil className="h-4 w-4" />
                             Editar
-                          </Button>
-                        }
-                      />
-                      <CostHistoryDialog
-                        productId={productId}
-                        variantId={variant.id}
-                        sku={variant.sku}
-                        trigger={
-                          <Button variant="ghost" size="sm">
-                            <History className="h-4 w-4" />
-                            Custos
                           </Button>
                         }
                       />
