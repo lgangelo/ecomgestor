@@ -49,8 +49,9 @@ export class ReportsService {
       this.fetchReturnsAmount(companyId, start, end, query.channelId),
       this.computeAttention(companyId),
     ]);
-    const current = this.computeCards(orders, returnsAmount);
-    const charts = this.computeCharts(orders, start, end);
+    const feesByOrderId = await this.fetchFeesByOrderId(orders);
+    const current = this.computeCards(orders, returnsAmount, feesByOrderId);
+    const charts = this.computeCharts(orders, start, end, feesByOrderId);
     const alerts = await this.computeAlerts(companyId, orders, start, end);
 
     const result: Record<string, unknown> = { cards: current, charts, alerts, attention };
@@ -63,7 +64,8 @@ export class ReportsService {
         this.fetchOrders(companyId, prevStart, prevEnd, query.channelId),
         this.fetchReturnsAmount(companyId, prevStart, prevEnd, query.channelId),
       ]);
-      result.previous = this.computeCards(previousOrders, previousReturnsAmount);
+      const previousFeesByOrderId = await this.fetchFeesByOrderId(previousOrders);
+      result.previous = this.computeCards(previousOrders, previousReturnsAmount, previousFeesByOrderId);
     }
 
     return result;
@@ -125,6 +127,19 @@ export class ReportsService {
     return { start, end };
   }
 
+  /** Mapa orderId -> soma de MarketplaceFee — usado por computeCards/computeCharts para que o
+   * lucro/margem aqui bata com o do detalhe do pedido (que já descontava a taxa da plataforma;
+   * aqui não descontava nenhuma, deixando a margem do dashboard/relatórios superestimada). */
+  private async fetchFeesByOrderId(orders: PeriodOrder[]): Promise<Map<string, number>> {
+    if (orders.length === 0) return new Map();
+    const grouped = await this.prisma.client.marketplaceFee.groupBy({
+      by: ['orderId'],
+      where: { orderId: { in: orders.map((o) => o.id) } },
+      _sum: { amount: true },
+    });
+    return new Map(grouped.filter((g) => g.orderId).map((g) => [g.orderId as string, Number(g._sum.amount ?? 0)]));
+  }
+
   private async fetchOrders(
     companyId: string,
     start: Date,
@@ -148,7 +163,7 @@ export class ReportsService {
     });
   }
 
-  private computeCards(orders: PeriodOrder[], returnsAmount: number) {
+  private computeCards(orders: PeriodOrder[], returnsAmount: number, feesByOrderId: Map<string, number>) {
     const active = orders.filter((o) => o.status !== OrderStatus.CANCELLED);
     // `subtotal + shipping` (nunca `total`) é o valor bruto antes de qualquer desconto — `total`
     // já vem líquido dos dois descontos, então usá-lo aqui subtrairia o desconto do vendedor
@@ -168,12 +183,15 @@ export class ReportsService {
       (sum, o) => sum + o.items.reduce((s, i) => s + Number(i.unitCost) * i.quantity, 0),
       0,
     );
+    // Taxa da plataforma (comissão TikTok) — sem isto, o lucro/margem aqui não batiam com o
+    // "Lucro estimado" do detalhe do pedido, que sempre descontou a taxa (order.marketplaceFeesTotal).
+    const fees = active.reduce((sum, o) => sum + (feesByOrderId.get(o.id) ?? 0), 0);
     const receivable = orders.reduce(
       (sum, o) =>
         sum + o.payments.filter((p) => p.status === 'PENDING').reduce((s, p) => s + Number(p.amount), 0),
       0,
     );
-    const estimatedProfit = netRevenue - cmv;
+    const estimatedProfit = netRevenue - cmv - fees;
     const margin = revenue > 0 ? (estimatedProfit / revenue) * 100 : 0;
 
     return {
@@ -187,7 +205,7 @@ export class ReportsService {
     };
   }
 
-  private computeCharts(orders: PeriodOrder[], start: Date, end: Date) {
+  private computeCharts(orders: PeriodOrder[], start: Date, end: Date, feesByOrderId: Map<string, number>) {
     const active = orders.filter((o) => o.status !== OrderStatus.CANCELLED);
 
     // Seção 30 — gráfico principal por dia quando o período é curto, por semana ISO quando é
@@ -196,13 +214,14 @@ export class ReportsService {
     const useWeeklyBuckets = spanDays > 45;
     const bucketOf = (date: Date) => (useWeeklyBuckets ? isoWeekKey(date) : date.toISOString().slice(0, 10));
 
-    const revenueByBucket = new Map<string, { total: number; cmv: number }>();
+    const revenueByBucket = new Map<string, { total: number; cmv: number; fees: number }>();
     const ordersByDay = new Map<string, number>();
     for (const order of active) {
       const bucket = bucketOf(order.orderDate);
-      const entry = revenueByBucket.get(bucket) ?? { total: 0, cmv: 0 };
+      const entry = revenueByBucket.get(bucket) ?? { total: 0, cmv: 0, fees: 0 };
       entry.total += Number(order.total);
       entry.cmv += order.items.reduce((s, i) => s + Number(i.unitCost) * i.quantity, 0);
+      entry.fees += feesByOrderId.get(order.id) ?? 0;
       revenueByBucket.set(bucket, entry);
 
       const day = order.orderDate.toISOString().slice(0, 10);
@@ -210,30 +229,56 @@ export class ReportsService {
     }
 
     // Gráfico principal (seção 30): faturamento x resultado — um único gráfico, sem separar em
-    // vários cards (seção 62/30: "evitar excesso de gráficos").
+    // vários cards (seção 62/30: "evitar excesso de gráficos"). "Resultado" desconta CMV e taxa
+    // da plataforma — sem a taxa, ficava sempre superestimado em relação ao lucro real.
     const revenueByPeriod = Array.from(revenueByBucket.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, stats]) => ({ date, total: round2(stats.total), result: round2(stats.total - stats.cmv) }));
+      .map(([date, stats]) => ({ date, total: round2(stats.total), result: round2(stats.total - stats.cmv - stats.fees) }));
 
     const salesByDay = Array.from(ordersByDay.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, count]) => ({ date, orders: count }));
 
-    // Seção 31 — canais com ticket médio/lucro/margem, não só faturamento.
-    const channelStats = new Map<string, { total: number; cmv: number; orders: number }>();
+    // Seção 31 — canais com ticket médio/lucro/margem, não só faturamento. Inclui a taxa da
+    // plataforma (comissão) — sem isto, lucro/margem por canal e por produto ficavam
+    // superestimados (nunca descontavam a taxa, ao contrário do "Lucro estimado" do pedido).
+    const channelStats = new Map<string, { total: number; cmv: number; orders: number; fees: number }>();
+    const productStats = new Map<string, { quantity: number; revenue: number; cmv: number; fees: number }>();
     for (const order of active) {
-      const key = order.channel.name;
-      const entry = channelStats.get(key) ?? { total: 0, cmv: 0, orders: 0 };
-      entry.total += Number(order.total);
-      entry.cmv += order.items.reduce((s, i) => s + Number(i.unitCost) * i.quantity, 0);
-      entry.orders += 1;
-      channelStats.set(key, entry);
+      const orderFee = feesByOrderId.get(order.id) ?? 0;
+
+      const channelKey = order.channel.name;
+      const channelEntry = channelStats.get(channelKey) ?? { total: 0, cmv: 0, orders: 0, fees: 0 };
+      channelEntry.total += Number(order.total);
+      channelEntry.cmv += order.items.reduce((s, i) => s + Number(i.unitCost) * i.quantity, 0);
+      channelEntry.orders += 1;
+      channelEntry.fees += orderFee;
+      channelStats.set(channelKey, channelEntry);
+
+      // A taxa é só do PEDIDO (a TikTok não devolve por item) — rateia entre os itens
+      // proporcionalmente à receita de cada um, mesmo critério já usado para custos extras nas
+      // Entradas de Estoque (rateio por valor).
+      const orderRevenue = order.items.reduce(
+        (s, i) => s + Number(i.unitPrice) * i.quantity + Number(i.platformDiscount),
+        0,
+      );
+      for (const item of order.items) {
+        const name = item.productNameAtSale;
+        const entry = productStats.get(name) ?? { quantity: 0, revenue: 0, cmv: 0, fees: 0 };
+        entry.quantity += item.quantity;
+        // `unitPrice` já vem líquido dos dois descontos — soma-se de volta o da TikTok.
+        const itemRevenue = Number(item.unitPrice) * item.quantity + Number(item.platformDiscount);
+        entry.revenue += itemRevenue;
+        entry.cmv += Number(item.unitCost) * item.quantity;
+        entry.fees += orderRevenue > 0 ? orderFee * (itemRevenue / orderRevenue) : 0;
+        productStats.set(name, entry);
+      }
     }
     const totalRevenueAllChannels = Array.from(channelStats.values()).reduce((sum, c) => sum + c.total, 0);
     const salesByChannel = Array.from(channelStats.entries())
       .sort(([, a], [, b]) => b.total - a.total)
       .map(([channelName, stats]) => {
-        const profit = stats.total - stats.cmv;
+        const profit = stats.total - stats.cmv - stats.fees;
         return {
           channelName,
           total: round2(stats.total),
@@ -244,19 +289,6 @@ export class ReportsService {
           share: totalRevenueAllChannels > 0 ? round2((stats.total / totalRevenueAllChannels) * 100) : 0,
         };
       });
-
-    const productStats = new Map<string, { quantity: number; revenue: number; cmv: number }>();
-    for (const order of active) {
-      for (const item of order.items) {
-        const name = item.productNameAtSale;
-        const entry = productStats.get(name) ?? { quantity: 0, revenue: 0, cmv: 0 };
-        entry.quantity += item.quantity;
-        // `unitPrice` já vem líquido dos dois descontos — soma-se de volta o da TikTok.
-        entry.revenue += Number(item.unitPrice) * item.quantity + Number(item.platformDiscount);
-        entry.cmv += Number(item.unitCost) * item.quantity;
-        productStats.set(name, entry);
-      }
-    }
 
     const topProducts = Array.from(productStats.entries())
       .sort(([, a], [, b]) => b.revenue - a.revenue)
@@ -270,14 +302,14 @@ export class ReportsService {
     const marginByProduct = Array.from(productStats.entries())
       .map(([productName, stats]) => ({
         productName,
-        marginPercent: stats.revenue > 0 ? round2(((stats.revenue - stats.cmv) / stats.revenue) * 100) : 0,
+        marginPercent: stats.revenue > 0 ? round2(((stats.revenue - stats.cmv - stats.fees) / stats.revenue) * 100) : 0,
       }))
       .sort((a, b) => b.marginPercent - a.marginPercent)
       .slice(0, 10);
 
     // Seção 26 — cortes complementares além de "mais vendidos".
     const highestProfit = Array.from(productStats.entries())
-      .map(([productName, stats]) => ({ productName, profit: round2(stats.revenue - stats.cmv) }))
+      .map(([productName, stats]) => ({ productName, profit: round2(stats.revenue - stats.cmv - stats.fees) }))
       .sort((a, b) => b.profit - a.profit)
       .slice(0, 10);
 
@@ -285,7 +317,7 @@ export class ReportsService {
       .filter(([, stats]) => stats.revenue > 0)
       .map(([productName, stats]) => ({
         productName,
-        marginPercent: round2(((stats.revenue - stats.cmv) / stats.revenue) * 100),
+        marginPercent: round2(((stats.revenue - stats.cmv - stats.fees) / stats.revenue) * 100),
       }))
       .sort((a, b) => a.marginPercent - b.marginPercent)
       .slice(0, 10);
@@ -298,8 +330,8 @@ export class ReportsService {
         productName,
         quantity: stats.quantity,
         revenue: round2(stats.revenue),
-        profit: round2(stats.revenue - stats.cmv),
-        marginPercent: stats.revenue > 0 ? round2(((stats.revenue - stats.cmv) / stats.revenue) * 100) : 0,
+        profit: round2(stats.revenue - stats.cmv - stats.fees),
+        marginPercent: stats.revenue > 0 ? round2(((stats.revenue - stats.cmv - stats.fees) / stats.revenue) * 100) : 0,
       }))
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 50);

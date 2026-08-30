@@ -20,7 +20,8 @@
     "recompute-order-totals": "npm run recompute-order-totals --workspace=@ecommerce-manager/api",
     "backfill-tiktok-product-details": "npm run backfill-tiktok-product-details --workspace=@ecommerce-manager/api",
     "check-marketplace-fees": "npm run check-marketplace-fees --workspace=@ecommerce-manager/api",
-    "check-failed-jobs": "npm run check-failed-jobs --workspace=@ecommerce-manager/api"
+    "check-failed-jobs": "npm run check-failed-jobs --workspace=@ecommerce-manager/api",
+    "check-unmatched-sku": "npm run check-unmatched-sku --workspace=@ecommerce-manager/api"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",

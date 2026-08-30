@@ -47,6 +47,7 @@ function makeFakePrisma(config: FakePrismaConfig): PrismaService {
         count: async () => config.unmappedOrdersCount,
       },
       refund: { aggregate: async () => ({ _sum: { amount: config.returnsAmount } }) },
+      marketplaceFee: { groupBy: async () => [] },
       inventory: { findMany: async () => config.inventories },
       integration: { findMany: async () => config.integrations },
       syncJob: { count: async () => config.syncJobFailedCount },
