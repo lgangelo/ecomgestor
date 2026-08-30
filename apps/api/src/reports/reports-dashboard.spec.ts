@@ -6,6 +6,8 @@ interface FakeOrder {
   id: string;
   total: number;
   discount: number;
+  subtotal: number;
+  shipping: number;
   status: string;
   orderDate: Date;
   channelId: string;
@@ -61,6 +63,8 @@ function order(overrides: Partial<FakeOrder>): FakeOrder {
     id: 'order-1',
     total: 100,
     discount: 0,
+    subtotal: 100,
+    shipping: 0,
     status: 'DELIVERED',
     orderDate: new Date('2026-08-10T12:00:00Z'),
     channelId: 'ch-1',
@@ -77,9 +81,13 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     const orders = [
       order({
         id: 'o1',
-        total: 200,
+        total: 195,
         discount: 10,
-        items: [{ quantity: 2, unitPrice: 100, sellerDiscount: 0, platformDiscount: 0, unitCost: 40, productNameAtSale: 'Bolsa' }],
+        subtotal: 200,
+        shipping: 0,
+        // platformDiscount (5) é a promoção que a TikTok bancou — o vendedor recebe esse valor
+        // de volta no repasse, então não deve reduzir a receita (só sellerDiscount reduz).
+        items: [{ quantity: 2, unitPrice: 100, sellerDiscount: 10, platformDiscount: 5, unitCost: 40, productNameAtSale: 'Bolsa' }],
       }),
     ];
     const prisma = makeFakePrisma({
@@ -96,7 +104,7 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     const result = await service.getDashboard('company-1', { dateFrom: '2026-08-01', dateTo: '2026-08-31' });
     const cards = (result as { cards: Record<string, number> }).cards;
 
-    // netRevenue = 200 (total) - 10 (discount) - 20 (devoluções) = 170
+    // netRevenue = 200 (subtotal+frete) - 10 (desconto do vendedor, NUNCA o da TikTok) - 20 (devoluções) = 170
     expect(cards.netRevenue).toBe(170);
     // cmv = 2 * 40 = 80; lucro estimado = netRevenue - cmv = 90
     expect(cards.estimatedProfit).toBe(90);

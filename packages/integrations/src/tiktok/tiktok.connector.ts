@@ -156,7 +156,12 @@ export class TikTokConnector implements MarketplaceConnector {
       : params.orderId
         ? TIKTOK_PATHS.financeOrderTransactions(params.orderId)
         : TIKTOK_PATHS.financeStatements;
-    const raw = await this.client.request<RawPage>('GET', path, { query: buildPageQuery(params) });
+    // Mesma exigência de sort_field/sort_order confirmada em "Get Statements" — ainda não
+    // confirmado se esta busca de transações também exige (nem se `create_time` é o valor
+    // aceito); se o erro mudar depois do deploy, o texto novo diz exatamente o que corrigir.
+    const raw = await this.client.request<RawPage>('GET', path, {
+      query: { ...buildPageQuery(params), sort_field: 'create_time', sort_order: 'DESC' },
+    });
     const items = raw.transactions ?? raw.items ?? [];
     return {
       items: items.map((item) => normalizeTransaction(item, params.statementId)),

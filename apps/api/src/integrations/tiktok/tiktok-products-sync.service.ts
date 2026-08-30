@@ -102,10 +102,21 @@ export class TikTokProductsSyncService {
    * (mais correto que cache, já que estoque/catálogo mudam constantemente do lado da TikTok).
    * Este método existe para validar a conectividade em segundo plano e alimentar o checkpoint
    * exibido no painel de saúde (seção 8/28), sem bloquear o request HTTP que disparou a importação.
+   *
+   * Também dispara `syncLinkedProducts` (preço/estoque/imagem dos produtos já vinculados) —
+   * antes disso só rodava com um clique manual separado na aba de Produtos da integração, o que
+   * confundia o operador ("rodei a sincronização e nada mudou"). Roda melhor-esforço: uma falha
+   * aqui nunca derruba a checagem de não-vinculados nem o checkpoint.
    */
   async runProductsCheck(companyId: string): Promise<{ unmatchedCount: number }> {
     const integration = await this.credentialsService.requireIntegration(companyId);
     const unmatched = await this.listUnmatched(companyId);
+
+    try {
+      await this.syncLinkedProducts(companyId, null);
+    } catch {
+      // best-effort — a checagem de não-vinculados/checkpoint abaixo nunca deve ser bloqueada.
+    }
 
     const checkpoints = (integration.syncCheckpoints as Record<string, string> | null) ?? {};
     await this.prisma.client.integration.update({
@@ -356,7 +367,7 @@ export class TikTokProductsSyncService {
    */
   async syncLinkedProducts(
     companyId: string,
-    userId: string,
+    userId: string | null,
   ): Promise<{ updated: number; unchanged: number; notFoundOnTikTok: number; failed: Array<{ externalSku: string; error: string }> }> {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) throw new BadRequestException('Canal TikTok Shop ainda não conectado');

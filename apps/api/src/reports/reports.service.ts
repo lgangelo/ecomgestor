@@ -248,8 +248,8 @@ export class ReportsService {
         const name = item.productNameAtSale;
         const entry = productStats.get(name) ?? { quantity: 0, revenue: 0, cmv: 0 };
         entry.quantity += item.quantity;
-        entry.revenue +=
-          Number(item.unitPrice) * item.quantity - Number(item.sellerDiscount) - Number(item.platformDiscount);
+        // Só o desconto do vendedor reduz a receita — o da plataforma volta no repasse.
+        entry.revenue += Number(item.unitPrice) * item.quantity - Number(item.sellerDiscount);
         entry.cmv += Number(item.unitCost) * item.quantity;
         productStats.set(name, entry);
       }
@@ -404,7 +404,8 @@ export class SalesExportService {
       'Produto',
       'Quantidade',
       'Preco',
-      'Desconto',
+      'Desconto vendedor',
+      'Desconto TikTok',
       'Receita liquida',
       'CMV',
       'Taxas',
@@ -418,7 +419,9 @@ export class SalesExportService {
       const orderFees = feesByOrder.get(order.id) ?? 0;
       const nfe = order.fiscalDocuments[0]?.number ?? '';
       for (const item of order.items) {
-        const netRevenue = Number(item.unitPrice) * item.quantity - Number(item.sellerDiscount) - Number(item.platformDiscount);
+        // Só o desconto do vendedor reduz a receita — o da plataforma volta no repasse, por
+        // isso sai como coluna informativa separada em vez de entrar nesta conta.
+        const netRevenue = Number(item.unitPrice) * item.quantity - Number(item.sellerDiscount);
         const cmv = Number(item.unitCost) * item.quantity;
         const itemShareOfFees = order.items.length > 0 ? orderFees / order.items.length : 0;
         const profit = netRevenue - cmv - itemShareOfFees;
@@ -432,7 +435,8 @@ export class SalesExportService {
             item.productNameAtSale,
             String(item.quantity),
             Number(item.unitPrice).toFixed(2),
-            (Number(item.sellerDiscount) + Number(item.platformDiscount)).toFixed(2),
+            Number(item.sellerDiscount).toFixed(2),
+            Number(item.platformDiscount).toFixed(2),
             netRevenue.toFixed(2),
             cmv.toFixed(2),
             itemShareOfFees.toFixed(2),

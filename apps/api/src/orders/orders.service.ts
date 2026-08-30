@@ -152,8 +152,10 @@ export class OrdersService {
         shippingCost: item.shippingCost,
         marketplaceFee: item.marketplaceFee,
         unitCost: item.unitCost,
-        lineTotal:
-          Number(item.unitPrice) * item.quantity - Number(item.sellerDiscount) - Number(item.platformDiscount),
+        // Só o desconto do VENDEDOR reduz o valor da venda — o desconto que a TikTok bancou
+        // (promoção da plataforma) volta pro vendedor no repasse, então nunca deveria sair
+        // daqui (confirmado explicitamente pelo usuário).
+        lineTotal: Number(item.unitPrice) * item.quantity - Number(item.sellerDiscount),
       })),
       payments: order.payments,
       statusHistory: order.statusHistory,
@@ -357,10 +359,11 @@ export class OrdersService {
     const initialStatus = statusKnown ? (normalized.internalStatus as OrderStatus) : OrderStatus.CREATED;
 
     const subtotal = normalized.items.reduce((sum, i) => sum + Number(i.unitPrice) * i.quantity, 0);
-    const discount = normalized.items.reduce(
-      (sum, i) => sum + Number(i.sellerDiscount ?? 0) + Number(i.platformDiscount ?? 0),
-      0,
-    );
+    // Só o desconto do VENDEDOR reduz o valor do pedido — o desconto que a TikTok bancou
+    // (promoção da plataforma) volta pro vendedor no repasse, então nunca deveria sair do
+    // `total` (confirmado explicitamente pelo usuário). `platformDiscount` continua gravado por
+    // item, só não entra nesta soma.
+    const discount = normalized.items.reduce((sum, i) => sum + Number(i.sellerDiscount ?? 0), 0);
 
     const orderId = await this.prisma.client.$transaction(async (tx) => {
       const resolvedItems = await Promise.all(

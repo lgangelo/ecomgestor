@@ -445,8 +445,9 @@ export class ProductsService {
     const suggestedPrices = variants.map((v) => Number(v.suggestedPrice));
 
     const unitsSold30d = recentItems.reduce((sum, i) => sum + i.quantity, 0);
+    // Só o desconto do vendedor reduz a receita — o da plataforma volta no repasse.
     const revenue30d = recentItems.reduce(
-      (sum, i) => sum + Number(i.unitPrice) * i.quantity - Number(i.sellerDiscount) - Number(i.platformDiscount),
+      (sum, i) => sum + Number(i.unitPrice) * i.quantity - Number(i.sellerDiscount),
       0,
     );
     const cmv30d = recentItems.reduce((sum, i) => sum + Number(i.unitCost) * i.quantity, 0);
