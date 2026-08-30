@@ -205,11 +205,12 @@ export class TikTokConnector implements MarketplaceConnector {
       : params.orderId
         ? TIKTOK_PATHS.financeOrderTransactions(params.orderId)
         : TIKTOK_PATHS.financeStatements;
-    // Confirmado em produção (erro exato da API): "SortField is invalid, allowed values:
-    // statement_time" — mesmo valor de "Get Statements", `create_time` (chute anterior) não é
-    // aceito aqui.
+    // Confirmado em produção (erro exato da API, depois de já ter corrigido o path para o
+    // endpoint certo): "SortField is invalid, allowed values: order_create_time" — nem
+    // `create_time` nem `statement_time` (chutes anteriores) são aceitos aqui; este endpoint
+    // (transações por statement/pedido) ordena por data de criação do PEDIDO, não do statement.
     const raw = await this.client.request<RawPage>('GET', path, {
-      query: { ...buildPageQuery(params), sort_field: 'statement_time', sort_order: 'DESC' },
+      query: { ...buildPageQuery(params), sort_field: 'order_create_time', sort_order: 'DESC' },
     });
     const items = raw.transactions ?? raw.statement_transactions ?? raw.items ?? [];
     if (items.length === 0) {
