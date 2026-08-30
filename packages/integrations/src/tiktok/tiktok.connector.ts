@@ -138,8 +138,12 @@ export class TikTokConnector implements MarketplaceConnector {
 
   async getStatements(companyId: string, params: PageParams & { updatedAfter?: Date }): Promise<ExternalStatementPage> {
     void companyId;
+    // Falha confirmada em produção sem isto: "SortField is a required field and has not been
+    // provided" — a TikTok exige sort_field/sort_order em "Get Statements". `statement_time` é o
+    // único campo de data do recurso; ainda não confirmado 100% contra a lista de valores aceitos
+    // pela API (a tela de Jobs mostra o erro exato se o valor estiver errado).
     const raw = await this.client.request<RawPage>('GET', TIKTOK_PATHS.financeStatements, {
-      query: buildPageQuery(params),
+      query: { ...buildPageQuery(params), sort_field: 'statement_time', sort_order: 'DESC' },
     });
     const items = raw.statements ?? raw.items ?? [];
     return { items: items.map(normalizeStatement), nextPageToken: raw.next_page_token };

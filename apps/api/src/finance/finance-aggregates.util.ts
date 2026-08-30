@@ -58,10 +58,23 @@ export async function computeFinanceAggregates(
     status: { not: 'CANCELLED' as const },
   };
 
-  const [orderAgg, refundAgg, feeAgg, orderItems, expenses, taxRate] = await Promise.all([
+  const [orderAgg, discountAgg, refundAgg, feeAgg, orderItems, expenses, taxRate] = await Promise.all([
+    // `subtotal + shipping` (nunca `total`) é o valor bruto ANTES de qualquer desconto — `total`
+    // já vem líquido dos dois descontos (seção 15 do mapper), então usá-lo aqui subtrairia o
+    // desconto do vendedor duas vezes e ainda descontaria o da TikTok, que não deveria sair da
+    // receita (ver comentário de `discountAgg` abaixo).
     prisma.client.order.aggregate({
       where: orderWhere,
-      _sum: { total: true, discount: true },
+      _sum: { subtotal: true, shipping: true },
+    }),
+    // Só o desconto dado pelo PRÓPRIO vendedor reduz a receita gerencial — o desconto que a
+    // TikTok bancou (promoção da plataforma) o vendedor recebe de volta no repasse, então nunca
+    // deveria sair da receita aqui (pedido explícito do usuário: "os da plataforma não, pq a
+    // gente recebe o valor do desconto na plataforma"). `order.discount` combina os dois e por
+    // isso não serve para esta conta — soma-se `sellerDiscount` direto do item.
+    prisma.client.orderItem.aggregate({
+      where: { order: orderWhere },
+      _sum: { sellerDiscount: true },
     }),
     prisma.client.refund.aggregate({
       where: { return: { order: { companyId, orderDate: { gte: start, lt: end } } } },
@@ -82,8 +95,8 @@ export async function computeFinanceAggregates(
     getVigentTaxRate(prisma, companyId, start),
   ]);
 
-  const grossRevenue = Number(orderAgg._sum.total ?? 0);
-  const discounts = Number(orderAgg._sum.discount ?? 0);
+  const grossRevenue = Number(orderAgg._sum.subtotal ?? 0) + Number(orderAgg._sum.shipping ?? 0);
+  const discounts = Number(discountAgg._sum.sellerDiscount ?? 0);
   const returnsAmount = Number(refundAgg._sum.amount ?? 0);
   const fees = Number(feeAgg._sum.amount ?? 0);
 

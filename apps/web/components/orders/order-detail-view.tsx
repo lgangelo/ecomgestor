@@ -84,6 +84,12 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         </Card>
         <Card>
           <CardHeader className="pb-2">
+            <CardTitle>Taxas da plataforma</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 text-lg font-semibold">{formatBRL(order.marketplaceFeesTotal)}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
             <CardTitle>Lucro estimado</CardTitle>
           </CardHeader>
           <CardContent className="pt-0">

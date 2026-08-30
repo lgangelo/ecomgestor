@@ -98,7 +98,12 @@ export function normalizeOrder(raw: unknown): ExternalOrder {
     // Quando o status externo não é reconhecido, o chamador (OrdersService) preserva o
     // último status interno válido e registra `integrationIssue` — nunca adivinha aqui.
     internalStatus: mapped ?? '',
-    customerName: str(order, 'buyer_name'),
+    // `buyer_name` nunca apareceu preenchido em produção (confirmado: 100% dos pedidos
+    // importados vieram com cliente "—") — a TikTok tipicamente mascara a identidade real do
+    // comprador por privacidade. `recipient_address.name` (nome de quem recebe a entrega) é o
+    // único identificador de pessoa que a API realmente expõe, e serve ao mesmo propósito
+    // (saber "quem é" o cliente) — ainda não confirmado 100% contra o payload real desta loja.
+    customerName: str(order, 'buyer_name') || str(asRecord(order.recipient_address), 'name'),
     orderDate: unixDate(order, 'create_time') ?? new Date(),
     paidAt: unixDate(order, 'paid_time'),
     externalUpdatedAt: unixDate(order, 'update_time'),

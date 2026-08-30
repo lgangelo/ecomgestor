@@ -9,6 +9,8 @@ interface PeriodOrder {
   id: string;
   total: Prisma.Decimal;
   discount: Prisma.Decimal;
+  subtotal: Prisma.Decimal;
+  shipping: Prisma.Decimal;
   status: OrderStatus;
   orderDate: Date;
   channel: { name: string };
@@ -145,8 +147,17 @@ export class ReportsService {
 
   private computeCards(orders: PeriodOrder[], returnsAmount: number) {
     const active = orders.filter((o) => o.status !== OrderStatus.CANCELLED);
-    const revenue = active.reduce((sum, o) => sum + Number(o.total), 0);
-    const discounts = active.reduce((sum, o) => sum + Number(o.discount), 0);
+    // `subtotal + shipping` (nunca `total`) é o valor bruto antes de qualquer desconto — `total`
+    // já vem líquido dos dois descontos, então usá-lo aqui subtrairia o desconto do vendedor
+    // duas vezes. Só o desconto do VENDEDOR entra como dedução: o desconto que a TikTok bancou
+    // (promoção da plataforma) o vendedor recebe de volta no repasse, então nunca deveria sair
+    // da receita (pedido explícito do usuário — `order.discount` combina os dois e por isso não
+    // serve aqui, soma-se `sellerDiscount` item a item).
+    const revenue = active.reduce((sum, o) => sum + Number(o.subtotal) + Number(o.shipping), 0);
+    const discounts = active.reduce(
+      (sum, o) => sum + o.items.reduce((s, i) => s + Number(i.sellerDiscount), 0),
+      0,
+    );
     const netRevenue = revenue - discounts - returnsAmount;
     const orderCount = active.length;
     const averageTicket = orderCount > 0 ? revenue / orderCount : 0;
