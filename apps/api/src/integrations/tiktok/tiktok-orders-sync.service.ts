@@ -60,15 +60,34 @@ export class TikTokOrdersSyncService {
     const startedAt = new Date();
     let imported = 0;
     let updated = 0;
-    // Nenhum item é descartado nesta etapa — `OrdersService.importExternalOrder` sempre cria
-    // ou atualiza (mesmo com SKU sem vínculo, seção 15); mantido para consistência de forma
-    // com o restante da API de sincronização, que pode ter itens pulados por outros motivos.
-    const skipped = 0;
+    // Pedidos CANCELADOS que a gente ainda não conhece nunca viram registro aqui — a grande
+    // maioria é a TikTok cancelando sozinha após 24h sem pagamento (o cliente nunca chegou a
+    // comprar de verdade), sem valor nenhum de negócio. Um pedido cancelado que JÁ existe no
+    // nosso sistema (ex.: foi pago e cancelado/estornado depois) continua sendo atualizado
+    // normalmente — só a CRIAÇÃO de um pedido novo já nascendo cancelado é que é pulada.
+    let skipped = 0;
     let pageToken: string | undefined;
 
     for (let page = 0; page < MAX_PAGES; page++) {
       const result = await connector.getOrders(companyId, { pageSize: 50, pageToken, updatedAfter, createdAfter });
       for (const order of result.items) {
+        if (order.status.toUpperCase() === 'CANCELLED') {
+          const alreadyKnown = await this.prisma.client.order.findUnique({
+            where: {
+              companyId_channelId_externalOrderId: {
+                companyId,
+                channelId: integration.channelId,
+                externalOrderId: order.externalOrderId,
+              },
+            },
+            select: { id: true },
+          });
+          if (!alreadyKnown) {
+            skipped++;
+            continue;
+          }
+        }
+
         const { created } = await this.ordersService.importExternalOrder(
           companyId,
           integration.channelId,
