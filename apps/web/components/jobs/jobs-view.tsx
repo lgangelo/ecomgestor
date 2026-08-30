@@ -89,6 +89,14 @@ function JobRow({ job }: { job: JobListItem }) {
               <p className="sm:col-span-2">
                 <span className="text-muted-foreground">Erro:</span> {job.error ?? '—'}
               </p>
+              {job.result && (
+                <p className="sm:col-span-2">
+                  <span className="text-muted-foreground">Resultado:</span>{' '}
+                  {Object.entries(job.result)
+                    .map(([key, value]) => `${key}: ${value}`)
+                    .join(' · ')}
+                </p>
+              )}
             </div>
           </TableCell>
         </TableRow>

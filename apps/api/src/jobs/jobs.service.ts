@@ -16,6 +16,7 @@ interface RawSyncJob {
   maxAttempts: number;
   errorCategory: string | null;
   error: string | null;
+  result: unknown;
   createdAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -39,6 +40,7 @@ function toJobItem(job: RawSyncJob) {
     maxAttempts: job.maxAttempts,
     errorCategory: job.errorCategory,
     error: job.error,
+    result: job.result,
     createdAt: job.createdAt,
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,

@@ -39,7 +39,15 @@ export class TikTokJobsService {
       const result = await fn();
       await this.prisma.client.syncJob.update({
         where: { id: record.id },
-        data: { status: 'COMPLETED', finishedAt: new Date(), error: null },
+        data: {
+          status: 'COMPLETED',
+          finishedAt: new Date(),
+          error: null,
+          // Nem todo job retorna algo (ex.: envio de webhook) — só grava quando há resultado de
+          // verdade, pra tela de Jobs mostrar o que aconteceu (seção pedida pelo usuário: "saber
+          // o que importou/atualizou", não só sucesso/falha).
+          ...(result !== undefined ? { result: result as unknown as Prisma.InputJsonValue } : {}),
+        },
       });
       return result;
     } catch (error) {

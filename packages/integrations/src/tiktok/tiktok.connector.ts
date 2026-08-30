@@ -94,8 +94,12 @@ export class TikTokConnector implements MarketplaceConnector {
         ...(params.status ? { order_status: params.status } : {}),
       },
     });
-    const items = raw.orders ?? raw.items ?? [];
-    return { items: items.map(normalizeOrder), nextPageToken: raw.next_page_token };
+    const rawOrders = raw.orders ?? raw.items ?? [];
+    // TEMPORÁRIO — remover depois de confirmar em produção que o campo `id` (não `order_id`)
+    // resolve o externalOrderId e que os demais campos (line_items, payment) batem.
+    if (rawOrders[0]) console.log('[tiktok-order-debug]', JSON.stringify(rawOrders[0]));
+    const items = rawOrders.map(normalizeOrder);
+    return { items, nextPageToken: raw.next_page_token };
   }
 
   async getOrder(companyId: string, externalOrderId: string) {

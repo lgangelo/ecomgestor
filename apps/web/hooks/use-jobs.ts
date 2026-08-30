@@ -16,6 +16,7 @@ export interface JobListItem {
   maxAttempts: number;
   errorCategory: string | null;
   error: string | null;
+  result: Record<string, unknown> | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;

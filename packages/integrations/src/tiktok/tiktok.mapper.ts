@@ -89,7 +89,11 @@ export function normalizeOrder(raw: unknown): ExternalOrder {
   const items = Array.isArray(order.line_items) ? (order.line_items as unknown[]) : [];
 
   return {
-    externalOrderId: requiredStr(order, 'order_id'),
+    // Confirmado em produção: o campo real é `id` (igual ao produto — "id" no nível do recurso,
+    // não "<recurso>_id"), não `order_id`. Com o nome errado, TODO pedido normalizava para
+    // externalOrderId "" e colidia com o mesmo registro no banco — 226 pedidos buscados viravam
+    // 226 "atualizações" do único pedido existente, nunca uma criação nova.
+    externalOrderId: requiredStr(order, 'id') || requiredStr(order, 'order_id'),
     status: rawStatus,
     // Quando o status externo não é reconhecido, o chamador (OrdersService) preserva o
     // último status interno válido e registra `integrationIssue` — nunca adivinha aqui.

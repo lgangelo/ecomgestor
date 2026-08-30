@@ -1119,6 +1119,10 @@ model SyncJob {
   startedAt         DateTime? @map("started_at") @db.Timestamptz
   finishedAt        DateTime? @map("finished_at") @db.Timestamptz
   error             String?
+  // Resumo do que aconteceu numa execução COMPLETED (ex.: { imported, updated, skipped } de uma
+  // sincronização de pedidos) — nunca dado sensível, ao contrário de `payload`; existe só para a
+  // tela de Jobs mostrar o resultado real, não só sucesso/falha.
+  result            Json?
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   integration Integration @relation(fields: [integrationId], references: [id])
