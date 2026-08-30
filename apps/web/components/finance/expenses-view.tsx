@@ -17,6 +17,7 @@ import { formatDate } from '@/lib/format';
 import { useExpenseCategories, useExpenses } from '@/hooks/use-finance';
 import { ExpenseFormDialog } from './expense-form-dialog';
 import { ExpenseEditDialog } from './expense-edit-dialog';
+import { ExpenseCategoryManageDialog } from './expense-category-manage-dialog';
 import { RecurringExpensesPanel } from './recurring-expenses-panel';
 import { TaxConfigPanel } from './tax-config-panel';
 
@@ -31,25 +32,28 @@ function ExpensesList() {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
         <div className="space-y-1.5">
           <Label>Categoria</Label>
-          <Select
-            value={categoryId ?? 'all'}
-            onValueChange={(v) => {
-              setCategoryId(v === 'all' ? undefined : v);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-56">
-              <SelectValue placeholder="Todas as categorias" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as categorias</SelectItem>
-              {categories?.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex gap-2">
+            <Select
+              value={categoryId ?? 'all'}
+              onValueChange={(v) => {
+                setCategoryId(v === 'all' ? undefined : v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-56">
+                <SelectValue placeholder="Todas as categorias" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as categorias</SelectItem>
+                {categories?.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <ExpenseCategoryManageDialog />
+          </div>
         </div>
         <ExpenseFormDialog
           trigger={
@@ -73,8 +77,8 @@ function ExpensesList() {
             <TableRow>
               <TableHead>Data</TableHead>
               <TableHead>Competência</TableHead>
-              <TableHead>Categoria</TableHead>
               <TableHead>Descrição</TableHead>
+              <TableHead>Categoria</TableHead>
               <TableHead>Forma de pagamento</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Valor</TableHead>
@@ -86,7 +90,6 @@ function ExpensesList() {
               <TableRow key={expense.id}>
                 <TableCell>{formatDate(expense.date)}</TableCell>
                 <TableCell>{formatDate(expense.competenceDate)}</TableCell>
-                <TableCell>{expense.categoryName}</TableCell>
                 <TableCell>
                   {expense.description}
                   {expense.isRecurring && (
@@ -95,6 +98,7 @@ function ExpensesList() {
                     </Badge>
                   )}
                 </TableCell>
+                <TableCell>{expense.categoryName}</TableCell>
                 <TableCell>{expense.paymentMethod ?? '—'}</TableCell>
                 <TableCell>{expense.status}</TableCell>
                 <TableCell>{formatBRL(expense.amount)}</TableCell>

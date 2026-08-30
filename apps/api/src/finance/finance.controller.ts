@@ -5,6 +5,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { FinanceService } from './finance.service';
 import { CreateExpenseCategoryDto } from './dto/create-expense-category.dto';
+import { UpdateExpenseCategoryDto } from './dto/update-expense-category.dto';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { ListExpensesQueryDto } from './dto/list-expenses-query.dto';
@@ -28,6 +29,16 @@ export class FinanceController {
   @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
   createExpenseCategory(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateExpenseCategoryDto) {
     return this.financeService.createExpenseCategory(user.companyId, user.userId, dto);
+  }
+
+  @Patch('expense-categories/:id')
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  updateExpenseCategory(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateExpenseCategoryDto,
+  ) {
+    return this.financeService.updateExpenseCategory(id, user.companyId, user.userId, dto);
   }
 
   @Get('expenses')

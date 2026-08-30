@@ -5,6 +5,7 @@ import { FiscalService } from '../fiscal/fiscal.service';
 import { paginate, type PaginatedResult } from '../common/dto/pagination.dto';
 import { endOfDayExclusive } from '../common/date/day-range.util';
 import { CreateExpenseCategoryDto } from './dto/create-expense-category.dto';
+import { UpdateExpenseCategoryDto } from './dto/update-expense-category.dto';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { ListExpensesQueryDto } from './dto/list-expenses-query.dto';
@@ -65,6 +66,28 @@ export class FinanceService {
       action: 'CREATE',
       entity: 'expense_category',
       entityId: category.id,
+      newValue: category,
+    });
+
+    return { id: category.id, name: category.name };
+  }
+
+  async updateExpenseCategory(id: string, companyId: string, userId: string, dto: UpdateExpenseCategoryDto) {
+    const existing = await this.prisma.client.expenseCategory.findFirst({ where: { id, companyId } });
+    if (!existing) throw new NotFoundException('Categoria de despesa não encontrada.');
+
+    const category = await this.prisma.client.expenseCategory.update({
+      where: { id },
+      data: { name: dto.name },
+    });
+
+    await this.audit.log({
+      companyId,
+      userId,
+      action: 'UPDATE',
+      entity: 'expense_category',
+      entityId: category.id,
+      oldValue: existing,
       newValue: category,
     });
 

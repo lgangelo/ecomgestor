@@ -138,6 +138,20 @@ export function useCreateExpenseCategory() {
   });
 }
 
+export function useUpdateExpenseCategory(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string }) =>
+      apiFetch<ExpenseCategory>(`/finance/expense-categories/${id}`, { method: 'PATCH', body: data }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expense-categories'] });
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      toast({ title: 'Categoria de despesa atualizada.' });
+    },
+    onError: onErrorToast('Não foi possível atualizar a categoria'),
+  });
+}
+
 export function useExpenses(filters: { dateFrom?: string; dateTo?: string; categoryId?: string; page?: number; pageSize?: number }) {
   const query = buildQueryString({ page: filters.page ?? 1, pageSize: filters.pageSize ?? 20, ...filters });
   return useQuery({
