@@ -12,8 +12,11 @@ class BulkCreateTikTokProductItemDto {
   @IsString()
   name!: string;
 
+  /** Opcional — sem SKU do vendedor informado, o backend gera um placeholder sequencial
+   * ("0001", "0002", ...) para o operador corrigir depois. */
+  @IsOptional()
   @IsString()
-  sku!: string;
+  sku?: string;
 
   @Matches(/^\d+(\.\d{1,2})?$/, { message: 'price deve ser um valor decimal válido' })
   price!: string;

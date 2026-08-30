@@ -141,11 +141,14 @@ export function normalizeProduct(raw: unknown): ExternalProduct {
   };
 }
 
-/** SKU do vendedor (seller_sku) — usado só para o match automático (seção 11), não persistido. */
+/** SKU do vendedor (seller_sku) — usado só para o match automático (seção 11), não persistido.
+ * A TikTok às vezes manda `seller_sku` como string vazia (campo presente, sem valor real) — trata
+ * como ausente, senão vira um SKU inválido/duplicado em qualquer lugar que use este valor. */
 export function extractSellerSku(rawProduct: unknown): string | undefined {
   const product = asRecord(rawProduct);
   const skus = Array.isArray(product.skus) ? (product.skus as unknown[]) : [];
-  return str(asRecord(skus[0]), 'seller_sku');
+  const sellerSku = str(asRecord(skus[0]), 'seller_sku');
+  return sellerSku ? sellerSku : undefined;
 }
 
 export function normalizeReturn(raw: unknown): ExternalReturn {

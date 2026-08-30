@@ -54,7 +54,9 @@ export function TikTokProductsTab() {
         externalSku: p.externalSku,
         externalProductId: p.externalProductId,
         name: p.name,
-        sku: p.sellerSku ?? p.externalSku,
+        // Sem SKU do vendedor, deixa em branco — o backend gera um placeholder sequencial
+        // (0001, 0002, ...) em vez de usar o SKU (numérico e pouco legível) da própria TikTok.
+        sku: p.sellerSku,
         price: p.price,
       }));
     bulkCreate.mutate(items, { onSuccess: () => setSelected(new Set()) });

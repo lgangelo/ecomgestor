@@ -136,7 +136,7 @@ export interface BulkCreateTikTokProductsResult {
 export function useBulkCreateTikTokProducts() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (items: Array<{ externalSku: string; externalProductId?: string; name: string; sku: string; price: string }>) =>
+    mutationFn: (items: Array<{ externalSku: string; externalProductId?: string; name: string; sku?: string; price: string }>) =>
       apiFetch<BulkCreateTikTokProductsResult>('/integrations/tiktok/products/bulk-create', {
         method: 'POST',
         body: { items },

@@ -213,27 +213,41 @@ export class TikTokProductsSyncService {
    * inviável). Cada item é criado de forma independente: um SKU duplicado ou qualquer outro erro
    * num item nunca aborta os demais, só entra na lista de falhas para o operador corrigir depois
    * (o SKU pode ser ajustado a qualquer momento na tela de edição da variação).
+   *
+   * `sku` é opcional por item: sem SKU do vendedor informado pela TikTok, gera um placeholder
+   * sequencial ("0001", "0002", ...) continuando do maior SKU puramente numérico já existente da
+   * empresa — nunca reaproveita um número já usado, mesmo entre lotes diferentes.
    */
   async createInternalProductsBulk(
     companyId: string,
     userId: string,
-    items: Array<{ externalSku: string; externalProductId?: string; name: string; sku: string; price: string }>,
+    items: Array<{ externalSku: string; externalProductId?: string; name: string; sku?: string; price: string }>,
   ): Promise<{ created: number; failed: Array<{ externalSku: string; error: string }> }> {
+    const existingVariants = await this.prisma.client.productVariant.findMany({
+      where: { product: { companyId } },
+      select: { sku: true },
+    });
+    let placeholderCounter = existingVariants.reduce(
+      (max, v) => (/^\d+$/.test(v.sku) ? Math.max(max, parseInt(v.sku, 10)) : max),
+      0,
+    );
+
     let created = 0;
     const failed: Array<{ externalSku: string; error: string }> = [];
 
     for (const item of items) {
+      const sku = item.sku?.trim() ? item.sku.trim() : String(++placeholderCounter).padStart(4, '0');
       try {
         await this.createInternalProduct(companyId, userId, item.externalSku, item.externalProductId, {
           name: item.name,
-          sku: item.sku,
+          sku,
           price: item.price,
         });
         created++;
       } catch (error) {
         const message =
           error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
-            ? `Já existe um produto/variante com o SKU "${item.sku}"`
+            ? `Já existe um produto/variante com o SKU "${sku}"`
             : error instanceof Error
               ? error.message
               : 'Erro desconhecido';
