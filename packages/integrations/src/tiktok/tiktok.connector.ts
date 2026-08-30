@@ -90,6 +90,7 @@ export class TikTokConnector implements MarketplaceConnector {
       query: buildPageQuery(params),
       body: {
         ...(params.updatedAfter ? { update_time_ge: toUnixSeconds(params.updatedAfter) } : {}),
+        ...(params.createdAfter ? { create_time_ge: toUnixSeconds(params.createdAfter) } : {}),
         ...(params.status ? { order_status: params.status } : {}),
       },
     });

@@ -41,7 +41,13 @@ export interface ExternalProduct {
 export type ExternalProductPage = Page<ExternalProduct>;
 
 export interface OrderSyncParams extends PageParams {
+  /** Filtra por última atualização — correto para reconciliação periódica incremental (só o que
+   * mudou desde o checkpoint). Nunca serve para uma carga histórica: um pedido antigo, entregue
+   * e nunca mais tocado, tem update_time antigo mesmo se create_time for recente o bastante. */
   updatedAfter?: Date;
+  /** Filtra por data de criação — usar para carga histórica/backfill explícito ("Pedidos desde"),
+   * nunca para reconciliação incremental (senão reprocessaria o histórico inteiro a cada rodada). */
+  createdAfter?: Date;
   status?: string;
 }
 

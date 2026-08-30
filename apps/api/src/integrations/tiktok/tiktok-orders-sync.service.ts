@@ -48,7 +48,14 @@ export class TikTokOrdersSyncService {
     const { connector } = await this.connectorFactory.forCompany(companyId);
     const checkpoints = (integration.syncCheckpoints as SyncCheckpoints | null) ?? {};
     const lastSync = checkpoints.ordersSyncAt ? new Date(checkpoints.ordersSyncAt) : undefined;
-    const updatedAfter = explicitSince ?? (lastSync ? new Date(lastSync.getTime() - OVERLAP_MS) : undefined);
+    // `explicitSince` (o "Pedidos desde" do assistente de importação) filtra por DATA DE
+    // CRIAÇÃO — é uma carga histórica, e um pedido antigo entregue e nunca mais tocado tem
+    // update_time antigo mesmo sendo exatamente o que se quer trazer (confirmado em produção:
+    // filtrar isso por update_time_ge excluía silenciosamente o histórico real da loja). Sem
+    // data explícita, a reconciliação automática continua por ÚLTIMA ATUALIZAÇÃO desde o
+    // checkpoint — histórico já importado, só o que mudou de status.
+    const createdAfter = explicitSince;
+    const updatedAfter = explicitSince ? undefined : lastSync ? new Date(lastSync.getTime() - OVERLAP_MS) : undefined;
 
     const startedAt = new Date();
     let imported = 0;
@@ -60,7 +67,7 @@ export class TikTokOrdersSyncService {
     let pageToken: string | undefined;
 
     for (let page = 0; page < MAX_PAGES; page++) {
-      const result = await connector.getOrders(companyId, { pageSize: 50, pageToken, updatedAfter });
+      const result = await connector.getOrders(companyId, { pageSize: 50, pageToken, updatedAfter, createdAfter });
       for (const order of result.items) {
         const { created } = await this.ordersService.importExternalOrder(
           companyId,
