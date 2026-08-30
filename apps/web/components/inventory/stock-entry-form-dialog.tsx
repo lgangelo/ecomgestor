@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { toDateInputValue } from '@/lib/format';
 import { useSuppliers } from '@/hooks/use-suppliers';
@@ -36,6 +37,7 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactNode }) 
   const [shippingCost, setShippingCost] = React.useState('0');
   const [otherCosts, setOtherCosts] = React.useState('0');
   const [allocationMethod, setAllocationMethod] = React.useState<'BY_VALUE' | 'BY_QUANTITY'>('BY_VALUE');
+  const [skipStockMovement, setSkipStockMovement] = React.useState(false);
   const [rows, setRows] = React.useState<Row[]>([]);
 
   const itemsValue = rows.reduce((sum, r) => sum + Number(r.quantity || 0) * Number(r.unitCost || 0), 0);
@@ -63,6 +65,7 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactNode }) 
       otherCosts: Number(otherCosts || 0),
       allocationMethod,
       status,
+      skipStockMovement,
       items: rows.map((r) => ({
         variantId: r.variantId,
         quantity: Number(r.quantity),
@@ -199,6 +202,19 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactNode }) 
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="flex items-start gap-2 rounded-md border border-border p-3">
+            <Checkbox
+              id="skipStockMovement"
+              checked={skipStockMovement}
+              onCheckedChange={(checked) => setSkipStockMovement(checked === true)}
+            />
+            <Label htmlFor="skipStockMovement" className="text-sm font-normal leading-snug">
+              Só registrar o custo, sem movimentar o estoque físico — use quando o saldo já vem de
+              outra origem (ex.: carga inicial via TikTok Shop) e uma entrada normal duplicaria a
+              quantidade.
+            </Label>
           </div>
 
           <DialogFooter>

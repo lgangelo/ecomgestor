@@ -62,6 +62,7 @@ export class StockEntriesService {
       otherCosts: entry.otherCosts,
       allocationMethod: entry.allocationMethod,
       status: entry.status,
+      skipStockMovement: entry.skipStockMovement,
       supplier: entry.supplier,
       items: entry.items.map((item) => ({
         id: item.id,
@@ -100,6 +101,7 @@ export class StockEntriesService {
           otherCosts,
           allocationMethod,
           status: 'DRAFT',
+          skipStockMovement: dto.skipStockMovement ?? false,
           items: {
             create: dto.items.map((item) => ({
               variantId: item.variantId,
@@ -149,18 +151,24 @@ export class StockEntriesService {
     const entry = await tx.stockEntry.findFirstOrThrow({ where: { id: stockEntryId } });
 
     for (const item of items) {
-      await this.ledger.purchase(
-        tx,
-        {
-          companyId,
-          variantId: item.variantId,
-          referenceType: 'stock_entry',
-          referenceId: stockEntryId,
-          userId,
-          note: entry.invoiceNumber ? `Confirmação de entrada — NF ${entry.invoiceNumber}` : 'Confirmação de entrada de estoque',
-        },
-        item.quantity,
-      );
+      // `skipStockMovement`: registra só o custo de aquisição, sem tocar no saldo físico — usado
+      // para produtos cujo estoque já veio de outra origem (ex.: carga TikTok Shop), onde uma
+      // entrada normal duplicaria a quantidade. A entrada em si (fornecedor, NF, custo) continua
+      // existindo normalmente para consulta/auditoria.
+      if (!entry.skipStockMovement) {
+        await this.ledger.purchase(
+          tx,
+          {
+            companyId,
+            variantId: item.variantId,
+            referenceType: 'stock_entry',
+            referenceId: stockEntryId,
+            userId,
+            note: entry.invoiceNumber ? `Confirmação de entrada — NF ${entry.invoiceNumber}` : 'Confirmação de entrada de estoque',
+          },
+          item.quantity,
+        );
+      }
 
       const cost = item.effectiveUnitCost ?? item.unitCost;
       await tx.productCostHistory.create({

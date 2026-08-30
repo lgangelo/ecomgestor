@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsISO8601,
   IsNumber,
@@ -65,6 +66,12 @@ export class CreateStockEntryDto {
   @IsOptional()
   @IsIn(STOCK_ENTRY_STATUSES)
   status?: (typeof STOCK_ENTRY_STATUSES)[number];
+
+  /** Registra o custo (histórico de custo) sem mexer no saldo físico — para popular o custo de
+   * aquisição de produtos cujo estoque já existe de outra origem (ex.: carga TikTok Shop). */
+  @IsOptional()
+  @IsBoolean()
+  skipStockMovement?: boolean;
 
   @IsArray()
   @ArrayMinSize(1)

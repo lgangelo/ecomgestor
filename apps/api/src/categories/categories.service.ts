@@ -97,4 +97,29 @@ export class CategoriesService {
       throw error;
     }
   }
+
+  /** Nunca exclui silenciosamente uma categoria com produtos ou subcategorias vinculadas — o
+   * operador precisa mover/desvincular esses itens primeiro (sem exclusão em cascata). */
+  async remove(id: string, companyId: string) {
+    const category = await this.findByIdOrThrow(id, companyId);
+
+    const [childCount, productCount] = await Promise.all([
+      this.prisma.client.category.count({ where: { parentId: id } }),
+      this.prisma.client.product.count({ where: { categoryId: id } }),
+    ]);
+
+    if (childCount > 0) {
+      throw new ConflictException(
+        `Não é possível excluir: existem ${childCount} categoria(s) filha(s) vinculada(s). Mova-as ou exclua-as primeiro.`,
+      );
+    }
+    if (productCount > 0) {
+      throw new ConflictException(
+        `Não é possível excluir: ${productCount} produto(s) estão vinculados a esta categoria. Mova-os para outra categoria primeiro.`,
+      );
+    }
+
+    await this.prisma.client.category.delete({ where: { id } });
+    return category;
+  }
 }

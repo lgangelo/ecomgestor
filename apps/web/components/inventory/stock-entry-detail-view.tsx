@@ -44,6 +44,9 @@ export function StockEntryDetailView({ id }: { id: string }) {
 
       <div className="mb-6 flex flex-wrap items-center gap-4">
         <StatusBadge status={entry.status} map={STOCK_ENTRY_STATUS_PRESENTATION} />
+        {entry.skipStockMovement && (
+          <span className="text-sm font-medium text-warning">Só custo — não movimenta o estoque físico</span>
+        )}
         {entry.invoiceNumber && <span className="text-sm text-muted-foreground">NF: {entry.invoiceNumber}</span>}
         {Number(entry.shippingCost) > 0 && (
           <span className="text-sm text-muted-foreground">Frete: {formatBRL(entry.shippingCost)}</span>

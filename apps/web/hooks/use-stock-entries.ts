@@ -11,6 +11,9 @@ import { formatBRL } from '@ecommerce-manager/shared';
  * genérico: mostra unidades e o novo custo (unitário, já com rateio de frete/outros custos). */
 function describeConfirmedEntry(entry: StockEntryDetail): string | undefined {
   if (entry.status !== 'CONFIRMED' || entry.items.length === 0) return undefined;
+  if (entry.skipStockMovement) {
+    return `Custo registrado para ${entry.items.length} produto(s) — estoque físico não foi alterado.`;
+  }
   const totalQuantity = entry.items.reduce((sum, item) => sum + item.quantity, 0);
   if (entry.items.length === 1) {
     const item = entry.items[0];
@@ -48,6 +51,7 @@ export interface StockEntryDetail {
   otherCosts: string;
   allocationMethod: 'BY_VALUE' | 'BY_QUANTITY';
   status: 'DRAFT' | 'CONFIRMED' | 'CANCELLED';
+  skipStockMovement: boolean;
   supplier: { id: string; name: string } | null;
   items: StockEntryItem[];
 }
@@ -85,6 +89,7 @@ export function useCreateStockEntry() {
       otherCosts?: number;
       allocationMethod?: 'BY_VALUE' | 'BY_QUANTITY';
       status?: 'DRAFT' | 'CONFIRMED';
+      skipStockMovement?: boolean;
       items: Array<{ variantId: string; quantity: number; unitCost: number }>;
     }) => apiFetch<StockEntryDetail>('/stock-entries', { method: 'POST', body: data }),
     onSuccess: (entry) => {

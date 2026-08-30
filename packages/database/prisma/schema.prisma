@@ -432,6 +432,10 @@ model StockEntry {
   otherCosts       Decimal              @default(0) @map("other_costs") @db.Decimal(14, 2)
   allocationMethod CostAllocationMethod @default(BY_VALUE) @map("allocation_method")
   status           StockEntryStatus     @default(DRAFT)
+  // Registra o custo (histórico de custo do item) sem mexer no saldo físico — usado para
+  // popular o custo de aquisição de produtos cujo estoque já existe de outra origem (ex.:
+  // carga inicial via TikTok Shop), onde uma entrada normal duplicaria a quantidade em estoque.
+  skipStockMovement Boolean             @default(false) @map("skip_stock_movement")
   createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz
 
   company  Company          @relation(fields: [companyId], references: [id])
