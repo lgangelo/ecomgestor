@@ -111,10 +111,10 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   <TableRow>
                     <TableHead>Produto</TableHead>
                     <TableHead>Qtd.</TableHead>
-                    <TableHead>Preço</TableHead>
+                    <TableHead>Preço unitário</TableHead>
                     <TableHead>Desconto vendedor</TableHead>
-                    <TableHead>Desconto TikTok</TableHead>
-                    <TableHead>Total</TableHead>
+                    <TableHead>Desconto TikTok (reembolsado)</TableHead>
+                    <TableHead>Valor do pedido</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
