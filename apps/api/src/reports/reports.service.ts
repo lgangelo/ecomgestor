@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { OrderStatus, Prisma } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { csvEscape } from '../common/csv.util';
+import { endOfDayExclusive } from '../common/date/day-range.util';
 import { FiscalService } from '../fiscal/fiscal.service';
 import { DashboardQueryDto } from './dto/dashboard-query.dto';
 
@@ -108,7 +109,7 @@ export class ReportsService {
     const agg = await this.prisma.client.refund.aggregate({
       where: {
         return: {
-          order: { companyId, orderDate: { gte: start, lte: end }, ...(channelId ? { channelId } : {}) },
+          order: { companyId, orderDate: { gte: start, lt: end }, ...(channelId ? { channelId } : {}) },
         },
       },
       _sum: { amount: true },
@@ -117,7 +118,9 @@ export class ReportsService {
   }
 
   private resolvePeriod(dateFrom?: string, dateTo?: string): { start: Date; end: Date } {
-    const end = dateTo ? new Date(dateTo) : new Date();
+    // `end` já é o limite EXCLUSIVO (início do dia seguinte) — todo uso deve ser `lt`, nunca
+    // `lte` com a data crua (excluiria tudo criado depois da meia-noite do próprio dia "Até").
+    const end = dateTo ? endOfDayExclusive(dateTo) : new Date();
     const start = dateFrom ? new Date(dateFrom) : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
     return { start, end };
   }
@@ -131,7 +134,7 @@ export class ReportsService {
     return this.prisma.client.order.findMany({
       where: {
         companyId,
-        orderDate: { gte: start, lte: end },
+        orderDate: { gte: start, lt: end },
         ...(channelId ? { channelId } : {}),
       },
       include: {
@@ -375,7 +378,7 @@ export class SalesExportService {
           ? {
               orderDate: {
                 ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
-                ...(dateTo ? { lte: new Date(dateTo) } : {}),
+                ...(dateTo ? { lt: endOfDayExclusive(dateTo) } : {}),
               },
             }
           : {}),

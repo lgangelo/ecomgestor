@@ -94,6 +94,21 @@ function onErrorToast(title: string) {
     toast({ title, description: error instanceof ApiError ? error.message : undefined, variant: 'destructive' });
 }
 
+/** Ação manual explícita (pedido do usuário) — recalcula unitCost de todos os itens de pedido a
+ * partir do custo ATUAL, para quando o custo só foi cadastrado depois de produtos/pedidos já
+ * importados. Nunca roda sozinha. */
+export function useRecalculateOrderCosts() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<{ checked: number; updated: number }>('/orders/recalculate-costs', { method: 'POST' }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      toast({ title: `${result.updated} item(ns) de pedido atualizado(s) de ${result.checked} verificado(s).` });
+    },
+    onError: onErrorToast('Não foi possível recalcular os custos'),
+  });
+}
+
 export function useUpdateOrderStatus(id: string) {
   const queryClient = useQueryClient();
   return useMutation({

@@ -10,12 +10,14 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCompany, useUpdateCompany } from '@/hooks/use-company';
+import { useRecalculateOrderCosts } from '@/hooks/use-orders';
 
 const TIMEZONES = ['America/Sao_Paulo', 'America/Manaus', 'America/Rio_Branco', 'America/Noronha'];
 
 export function CompanyView() {
   const { data: company, isLoading } = useCompany();
   const updateCompany = useUpdateCompany();
+  const recalculateCosts = useRecalculateOrderCosts();
 
   const [form, setForm] = React.useState({
     name: '',
@@ -154,6 +156,26 @@ export function CompanyView() {
             também da configuração do servidor (<code>TIKTOK_INVENTORY_PUSH_ENABLED</code>) — com qualquer um dos
             dois desligado, a sincronização continua manual.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Recalcular custo dos pedidos</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
+          <p className="text-xs text-muted-foreground">
+            Atualiza o custo (CMV) de todos os itens de pedido já importados usando o custo mais recente
+            cadastrado agora em cada variação — útil quando o custo só foi registrado depois de produtos/pedidos
+            já terem sido importados. Nunca altera o total ou o desconto do pedido, só o custo unitário.
+          </p>
+          <Button
+            variant="outline"
+            disabled={recalculateCosts.isPending}
+            onClick={() => recalculateCosts.mutate()}
+          >
+            {recalculateCosts.isPending ? 'Recalculando...' : 'Recalcular custos agora'}
+          </Button>
         </CardContent>
       </Card>
     </div>

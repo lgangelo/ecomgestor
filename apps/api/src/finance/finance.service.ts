@@ -3,6 +3,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { FiscalService } from '../fiscal/fiscal.service';
 import { paginate, type PaginatedResult } from '../common/dto/pagination.dto';
+import { endOfDayExclusive } from '../common/date/day-range.util';
 import { CreateExpenseCategoryDto } from './dto/create-expense-category.dto';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { ListExpensesQueryDto } from './dto/list-expenses-query.dto';
@@ -79,7 +80,7 @@ export class FinanceService {
         ? {
             date: {
               ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-              ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+              ...(query.dateTo ? { lt: endOfDayExclusive(query.dateTo) } : {}),
             },
           }
         : {}),
@@ -165,7 +166,7 @@ export class FinanceService {
         ? {
             createdAt: {
               ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-              ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+              ...(query.dateTo ? { lt: endOfDayExclusive(query.dateTo) } : {}),
             },
           }
         : {}),

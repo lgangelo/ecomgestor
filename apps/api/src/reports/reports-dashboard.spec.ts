@@ -34,9 +34,9 @@ interface FakePrismaConfig {
 }
 
 function makeFakePrisma(config: FakePrismaConfig): PrismaService {
-  const orderFindMany = async ({ where }: { where: { orderDate: { gte: Date; lte: Date }; channelId?: string } }) => {
+  const orderFindMany = async ({ where }: { where: { orderDate: { gte: Date; lt: Date }; channelId?: string } }) => {
     return config.orders
-      .filter((o) => o.orderDate >= where.orderDate.gte && o.orderDate <= where.orderDate.lte)
+      .filter((o) => o.orderDate >= where.orderDate.gte && o.orderDate < where.orderDate.lt)
       .filter((o) => !where.channelId || o.channelId === where.channelId);
   };
 

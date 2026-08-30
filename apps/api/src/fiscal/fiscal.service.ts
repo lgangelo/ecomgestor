@@ -6,6 +6,7 @@ import type { Prisma } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
 import { getMonthRangeFromReference } from '../common/date/month-range.util';
+import { endOfDayExclusive } from '../common/date/day-range.util';
 import { ListFiscalDocumentsQueryDto } from './dto/list-fiscal-documents-query.dto';
 import { UploadFiscalDocumentDto } from './dto/upload-fiscal-document.dto';
 import { AssociateFiscalDocumentDto } from './dto/associate-fiscal-document.dto';
@@ -71,7 +72,7 @@ export class FiscalService {
         ? {
             issueDate: {
               ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-              ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+              ...(query.dateTo ? { lt: endOfDayExclusive(query.dateTo) } : {}),
             },
           }
         : {}),

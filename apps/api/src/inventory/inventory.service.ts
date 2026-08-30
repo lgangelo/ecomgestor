@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
+import { endOfDayExclusive } from '../common/date/day-range.util';
 import { QueryInventoryDto } from './dto/query-inventory.dto';
 import { QueryMovementsDto } from './dto/query-movements.dto';
 import { CreateMovementDto } from './dto/create-movement.dto';
@@ -245,7 +246,7 @@ export class InventoryService {
         ? {
             createdAt: {
               ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-              ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+              ...(query.dateTo ? { lt: endOfDayExclusive(query.dateTo) } : {}),
             },
           }
         : {}),

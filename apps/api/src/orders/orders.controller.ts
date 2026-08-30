@@ -37,6 +37,25 @@ export class OrdersController {
     return order;
   }
 
+  /** Recalcula o custo (unitCost) de todos os itens de pedido a partir do histórico de custo
+   * ATUAL — para quando o custo só foi cadastrado depois de produtos/pedidos já importados
+   * (pedido explícito do usuário: uma ação manual, não automática). Nunca mexe em total/desconto
+   * do pedido, só no unitCost de cada item — CMV/margem em qualquer tela que já lê isso ao vivo
+   * refletem o novo valor automaticamente. */
+  @Post('recalculate-costs')
+  @RequirePermissions(PERMISSIONS.ORDER_UPDATE)
+  async recalculateCosts(@CurrentUser() user: AuthenticatedUser) {
+    const result = await this.ordersService.recalculateOrderCosts(user.companyId);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'RECALCULATE_COSTS',
+      entity: 'order_item',
+      newValue: result,
+    });
+    return result;
+  }
+
   @Get(':id')
   @RequirePermissions(PERMISSIONS.ORDER_READ)
   findOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {

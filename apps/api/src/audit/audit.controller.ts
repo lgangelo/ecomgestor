@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { AuditLogQueryDto } from './dto/audit-log-query.dto';
 import { paginate } from '../common/dto/pagination.dto';
+import { endOfDayExclusive } from '../common/date/day-range.util';
 import type { Prisma } from '@ecommerce-manager/database';
 
 @Controller('audit-logs')
@@ -24,7 +25,7 @@ export class AuditController {
         ? {
             createdAt: {
               ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-              ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+              ...(query.dateTo ? { lt: endOfDayExclusive(query.dateTo) } : {}),
             },
           }
         : {}),

@@ -3,6 +3,7 @@ import { ChannelType, ChannelMappingSyncStatus, OrderStatus, Prisma } from '@eco
 import type { ExternalOrder } from '@ecommerce-manager/integrations';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
+import { endOfDayExclusive } from '../common/date/day-range.util';
 import { InventoryLedgerService, MovementContext } from '../inventory/ledger.service';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
@@ -67,7 +68,7 @@ export class OrdersService {
         ? {
             orderDate: {
               ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
-              ...(query.dateTo ? { lte: new Date(query.dateTo) } : {}),
+              ...(query.dateTo ? { lt: endOfDayExclusive(query.dateTo) } : {}),
             },
           }
         : {}),
@@ -541,6 +542,48 @@ export class OrdersService {
    * apropriado ao status ATUAL do pedido — sem repetir movimentos já feitos para itens que já
    * estavam mapeados.
    */
+  /**
+   * Recalcula o custo (unitCost) de todos os itens de pedido da empresa a partir do custo ATUAL
+   * (mais recente por variação) — ação manual explícita (pedido do usuário), não roda sozinha em
+   * lugar nenhum. Existe porque o custo às vezes só é cadastrado depois de produtos/pedidos já
+   * importados, deixando `unitCost` travado em 0 (ou desatualizado) para esses pedidos antigos.
+   * Nunca mexe em total/desconto do pedido — CMV/margem em qualquer tela que já lê `unitCost` ao
+   * vivo refletem o novo valor automaticamente, sem precisar de mais nenhuma mudança.
+   */
+  async recalculateOrderCosts(companyId: string): Promise<{ checked: number; updated: number }> {
+    const items = await this.prisma.client.orderItem.findMany({
+      where: { order: { companyId }, variantId: { not: null } },
+      select: { id: true, variantId: true, unitCost: true },
+    });
+    if (items.length === 0) return { checked: 0, updated: 0 };
+
+    const variantIds = [...new Set(items.map((i) => i.variantId!))];
+    const costEntries = await this.prisma.client.productCostHistory.findMany({
+      where: { variantId: { in: variantIds } },
+      orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }],
+      select: { variantId: true, cost: true },
+    });
+    // A lista já vem ordenada da mais recente para a mais antiga (globalmente) — a primeira
+    // ocorrência de cada variantId encontrada ao iterar é, por construção, a mais recente PARA
+    // aquela variação especificamente.
+    const latestCostByVariant = new Map<string, number>();
+    for (const entry of costEntries) {
+      if (!latestCostByVariant.has(entry.variantId)) {
+        latestCostByVariant.set(entry.variantId, Number(entry.cost));
+      }
+    }
+
+    let updated = 0;
+    for (const item of items) {
+      const latestCost = latestCostByVariant.get(item.variantId!);
+      if (latestCost === undefined || latestCost === Number(item.unitCost)) continue;
+      await this.prisma.client.orderItem.update({ where: { id: item.id }, data: { unitCost: latestCost } });
+      updated++;
+    }
+
+    return { checked: items.length, updated };
+  }
+
   async reprocessOrder(orderId: string, companyId: string, userId: string): Promise<{ resolvedItems: number }> {
     const order = await this.prisma.client.order.findFirst({
       where: { id: orderId, companyId },
