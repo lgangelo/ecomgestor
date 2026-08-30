@@ -164,14 +164,25 @@ function extractMainImageUrl(product: Record<string, unknown>): string | undefin
   return typeof url === 'string' && url ? url : undefined;
 }
 
+// `main_images` nunca veio preenchido em produção (confirmado: veio `undefined` em ~150
+// produtos diferentes) — a suposição de nome de campo estava errada. Loga o produto bruto
+// completo (só do primeiro processado no processo, pra não inundar o log) para achar o campo
+// real de imagem, em vez de adivinhar de novo.
+let loggedFullProductForImageDebug = false;
+
 export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
   const product = asRecord(raw);
   const skus = Array.isArray(product.skus) ? (product.skus as unknown[]) : [];
   const externalProductId = requiredStr(product, 'id');
   const name = requiredStr(product, 'title') || requiredStr(product, 'product_name');
   const imageUrl = extractMainImageUrl(product);
+  if (!loggedFullProductForImageDebug) {
+    loggedFullProductForImageDebug = true;
+    // eslint-disable-next-line no-console -- debug temporário, remover após confirmar o campo real de imagem em produção
+    console.log('[tiktok-product-image-debug-full]', JSON.stringify(product));
+  }
   // eslint-disable-next-line no-console -- debug temporário, remover após confirmar o campo real de imagem em produção
-  console.log('[tiktok-product-image-debug]', JSON.stringify({ id: externalProductId, main_images: product.main_images, resolved: imageUrl }));
+  console.log('[tiktok-product-image-debug]', JSON.stringify({ id: externalProductId, keys: Object.keys(product), resolved: imageUrl }));
 
   if (skus.length === 0) {
     // Nunca visto em produção até agora, mas não deveria acontecer de verdade — mantém como
