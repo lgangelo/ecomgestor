@@ -168,6 +168,11 @@ export class ProductsService {
     }
   }
 
+  /**
+   * Trocar o SKU base renumera as variações automaticamente — "{baseSku}-1", "{baseSku}-2", ...
+   * (ordem de criação) quando há mais de uma; com uma única variação, ela recebe o próprio SKU
+   * base direto, sem sufixo (não faz sentido "-1" para algo que não é realmente uma "variação").
+   */
   async update(id: string, companyId: string, dto: UpdateProductDto) {
     const existing = await this.findProductOrThrow(id, companyId);
 
@@ -175,23 +180,40 @@ export class ProductsService {
       await this.assertCategoryBelongsToCompany(dto.categoryId, companyId);
     }
 
+    const baseSkuChanged = dto.baseSku !== undefined && dto.baseSku !== existing.baseSku;
+
     try {
-      const updated = await this.prisma.client.product.update({
-        where: { id },
-        data: {
-          ...(dto.name !== undefined ? { name: dto.name } : {}),
-          ...(dto.description !== undefined ? { description: dto.description } : {}),
-          ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
-          ...(dto.brand !== undefined ? { brand: dto.brand } : {}),
-          ...(dto.baseSku !== undefined ? { baseSku: dto.baseSku } : {}),
-          ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl } : {}),
-          ...(dto.status !== undefined ? { status: dto.status } : {}),
-        },
+      const updated = await this.prisma.client.$transaction(async (tx) => {
+        const updatedProduct = await tx.product.update({
+          where: { id },
+          data: {
+            ...(dto.name !== undefined ? { name: dto.name } : {}),
+            ...(dto.description !== undefined ? { description: dto.description } : {}),
+            ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
+            ...(dto.brand !== undefined ? { brand: dto.brand } : {}),
+            ...(dto.baseSku !== undefined ? { baseSku: dto.baseSku } : {}),
+            ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl } : {}),
+            ...(dto.status !== undefined ? { status: dto.status } : {}),
+          },
+        });
+
+        if (baseSkuChanged) {
+          const variants = await tx.productVariant.findMany({ where: { productId: id }, orderBy: { createdAt: 'asc' } });
+          if (variants.length === 1) {
+            await tx.productVariant.update({ where: { id: variants[0].id }, data: { sku: dto.baseSku! } });
+          } else {
+            for (let i = 0; i < variants.length; i++) {
+              await tx.productVariant.update({ where: { id: variants[i].id }, data: { sku: `${dto.baseSku}-${i + 1}` } });
+            }
+          }
+        }
+
+        return updatedProduct;
       });
       return { old: existing, updated };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('Já existe um produto com esse SKU base');
+        throw new ConflictException('Já existe um produto ou variante com esse SKU');
       }
       throw error;
     }

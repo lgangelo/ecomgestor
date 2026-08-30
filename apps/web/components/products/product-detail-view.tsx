@@ -26,6 +26,7 @@ import { VariantFormDialog } from './variant-form-dialog';
 import { VariantEditDialog } from './variant-edit-dialog';
 import { CostHistoryDialog } from './cost-history-dialog';
 import { ProductDeleteDialog } from './product-delete-dialog';
+import { ProductEditDialog } from './product-edit-dialog';
 
 export function ProductDetailView({ productId }: { productId: string }) {
   const { data: product, isLoading } = useProduct(productId);
@@ -50,6 +51,15 @@ export function ProductDetailView({ productId }: { productId: string }) {
         description={`SKU base: ${product.baseSku}${product.category ? ` · Categoria: ${product.category.name}` : ''}`}
         actions={
           <div className="flex gap-2">
+            <ProductEditDialog
+              product={product}
+              trigger={
+                <Button variant="outline">
+                  <Pencil className="h-4 w-4" />
+                  Editar produto
+                </Button>
+              }
+            />
             <VariantFormDialog
               productId={productId}
               trigger={
