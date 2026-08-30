@@ -65,6 +65,15 @@ export class TikTokFinanceSyncService {
       const statementPage = await connector.getStatements(companyId, { pageSize: 50, pageToken });
 
       for (const stmt of statementPage.items) {
+        // Confirmado em produção: um extrato sem `id` nem `statement_id` grava com chave vazia —
+        // como a chave de upsert é (channelId, externalStatementId), TODO extrato sem id colide
+        // na MESMA linha (nunca duas linhas distintas), sobrescrevendo silenciosamente o extrato
+        // anterior sem id. Melhor pular esse extrato (loga um aviso) do que corromper a tabela.
+        if (!stmt.externalStatementId) {
+          this.logger.warn('tiktok_statement_missing_id', { operation: 'sync_statements', periodStart: stmt.periodStart.toISOString() });
+          continue;
+        }
+
         const settlement = await this.prisma.client.settlement.upsert({
           where: { channelId_externalStatementId: { channelId: integration.channelId, externalStatementId: stmt.externalStatementId } },
           create: {
