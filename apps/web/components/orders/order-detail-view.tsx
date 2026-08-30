@@ -15,6 +15,7 @@ import { useOrder } from '@/hooks/use-orders';
 import { useReprocessTikTokOrder, useTikTokOrderReconciliation } from '@/hooks/use-tiktok';
 import { UpdateStatusDialog } from './update-status-dialog';
 import { RegisterReturnDialog } from './register-return-dialog';
+import { CreateProductFromOrderItemButton } from './create-product-from-item-dialog';
 
 export function OrderDetailView({ orderId }: { orderId: string }) {
   const { data: order, isLoading } = useOrder(orderId);
@@ -115,6 +116,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                     <TableHead>Desc. vendedor</TableHead>
                     <TableHead>Desc. plataforma</TableHead>
                     <TableHead>Valor total</TableHead>
+                    {order.items.some((i) => !i.variantId) && <TableHead />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -131,6 +133,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                       <TableCell>{formatBRL(item.sellerDiscount)}</TableCell>
                       <TableCell>{formatBRL(item.platformDiscount)}</TableCell>
                       <TableCell>{formatBRL(item.lineTotal)}</TableCell>
+                      {order.items.some((i) => !i.variantId) && (
+                        <TableCell>
+                          <CreateProductFromOrderItemButton item={item} />
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>

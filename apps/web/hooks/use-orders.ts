@@ -20,6 +20,7 @@ export interface OrderListItem {
 export interface OrderItemDetail {
   id: string;
   variantId: string | null;
+  externalSku: string | null;
   sku: string;
   productName: string;
   quantity: number;

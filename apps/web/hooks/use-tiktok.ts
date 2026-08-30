@@ -26,7 +26,7 @@ export interface TikTokStatus {
 }
 
 export interface UnmatchedTikTokProduct {
-  externalProductId: string;
+  externalProductId?: string;
   externalSku: string;
   sellerSku?: string;
   name: string;
@@ -136,7 +136,7 @@ export function useCreateTikTokProduct() {
     imageUrl?: string;
     color?: string;
     size?: string;
-  }>('/integrations/tiktok/products/create', [['tiktok', 'products', 'unmatched']]);
+  }>('/integrations/tiktok/products/create', [['tiktok', 'products', 'unmatched'], ['orders']]);
 }
 
 export interface BulkCreateTikTokProductsResult {

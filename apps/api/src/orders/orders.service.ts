@@ -146,6 +146,10 @@ export class OrdersService {
       items: order.items.map((item) => ({
         id: item.id,
         variantId: item.variantId,
+        // Só preenchido quando o item ainda não tem vínculo (`variantId` nulo) — permite criar o
+        // produto interno manualmente a partir do próprio pedido quando o produto some do
+        // catálogo da TikTok (nunca mais aparece na aba Produtos pra "Vincular"/"Criar" de lá).
+        externalSku: item.externalSku,
         sku: item.skuAtSale,
         productName: item.productNameAtSale,
         quantity: item.quantity,
