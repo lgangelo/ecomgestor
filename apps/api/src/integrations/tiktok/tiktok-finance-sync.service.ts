@@ -8,6 +8,11 @@ import { TikTokCredentialsService } from './tiktok-credentials.service';
 
 const MAX_PAGES = 10;
 
+// Debug temporário: marketplace_fees continua vazia mesmo com transactionsSynced > 0 — loga só a
+// primeira transação processada no processo para ver exatamente onde a condição de gravação
+// falha (pedido não encontrado? amount zero? id da transação ausente?), sem inundar o log.
+let loggedFirstTxDiagnostic = false;
+
 interface SyncCheckpoints {
   ordersSyncAt?: string;
   productsSyncAt?: string;
@@ -110,6 +115,22 @@ export class TikTokFinanceSyncService {
               where: { companyId_channelId_externalOrderId: { companyId, channelId, externalOrderId: tx.externalOrderId } },
             })
           : null;
+
+        if (!loggedFirstTxDiagnostic) {
+          loggedFirstTxDiagnostic = true;
+          // eslint-disable-next-line no-console -- debug temporário: marketplace_fees continua vazia mesmo com transactionsSynced > 0
+          console.log(
+            '[tiktok-fee-write-debug]',
+            JSON.stringify({
+              externalTransactionId: tx.externalTransactionId,
+              externalOrderId: tx.externalOrderId,
+              amount: tx.amount,
+              orderFound: Boolean(order),
+              orderId: order?.id ?? null,
+              willWriteFee: Boolean(order) && Number(tx.amount) !== 0 && Boolean(tx.externalTransactionId),
+            }),
+          );
+        }
 
         const data = {
           settlementId,
