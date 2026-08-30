@@ -124,30 +124,48 @@ function numericStr(obj: Record<string, unknown>, key: string): string | undefin
   return Number.isFinite(n) ? n.toFixed(2) : undefined;
 }
 
-export function normalizeProduct(raw: unknown): ExternalProduct {
+/**
+ * Um "produto" da TikTok pode ter várias SKUs (cor/tamanho) — cada uma vira um `ExternalProduct`
+ * próprio (mesmo `externalProductId`, `externalSku`/preço/estoque individuais), igual ao nosso
+ * modelo interno (1 Produto → N Variantes). Corrigido depois de confirmado em produção: a
+ * versão anterior só processava `skus[0]`, descartando as demais variações silenciosamente.
+ * Preço é por SKU (`skus[].price.amount` — confirmado contra o anúncio oficial "Product API now
+ * supports two prices" do Partner Center: preço vem como objeto `{currency, amount}`, não um
+ * campo `sale_price` — diferente do item de pedido, que usa `sale_price` plano).
+ */
+export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
   const product = asRecord(raw);
   const skus = Array.isArray(product.skus) ? (product.skus as unknown[]) : [];
-  const firstSku = asRecord(skus[0]);
-  const inventoryList = Array.isArray(firstSku.inventory) ? (firstSku.inventory as unknown[]) : [];
-  const stock = inventoryList.reduce((sum: number, entry) => sum + Number(asRecord(entry).quantity ?? 0), 0);
+  const externalProductId = requiredStr(product, 'product_id');
+  const name = requiredStr(product, 'product_name') || requiredStr(product, 'title');
 
-  return {
-    externalProductId: requiredStr(product, 'product_id'),
-    externalSku: requiredStr(firstSku, 'id'),
-    name: requiredStr(product, 'product_name') || requiredStr(product, 'title'),
-    price: numericStr(asRecord(product.price), 'sale_price') ?? '0',
-    stock,
-    raw,
-  };
+  if (skus.length === 0) {
+    // Nunca visto em produção até agora, mas não deveria acontecer de verdade — mantém como
+    // um único item em vez de descartar o produto inteiro silenciosamente.
+    return [{ externalProductId, externalSku: externalProductId, name, price: '0', stock: 0, raw }];
+  }
+
+  return skus.map((rawSku) => {
+    const sku = asRecord(rawSku);
+    const inventoryList = Array.isArray(sku.inventory) ? (sku.inventory as unknown[]) : [];
+    const stock = inventoryList.reduce((sum: number, entry) => sum + Number(asRecord(entry).quantity ?? 0), 0);
+    return {
+      externalProductId,
+      externalSku: requiredStr(sku, 'id'),
+      name,
+      price: numericStr(asRecord(sku.price), 'amount') ?? '0',
+      stock,
+      raw: rawSku,
+    };
+  });
 }
 
 /** SKU do vendedor (seller_sku) — usado só para o match automático (seção 11), não persistido.
+ * Recebe o `raw` de uma única SKU (não do produto inteiro — ver `normalizeProductSkus`).
  * A TikTok às vezes manda `seller_sku` como string vazia (campo presente, sem valor real) — trata
  * como ausente, senão vira um SKU inválido/duplicado em qualquer lugar que use este valor. */
-export function extractSellerSku(rawProduct: unknown): string | undefined {
-  const product = asRecord(rawProduct);
-  const skus = Array.isArray(product.skus) ? (product.skus as unknown[]) : [];
-  const sellerSku = str(asRecord(skus[0]), 'seller_sku');
+export function extractSellerSku(rawSku: unknown): string | undefined {
+  const sellerSku = str(asRecord(rawSku), 'seller_sku');
   return sellerSku ? sellerSku : undefined;
 }
 

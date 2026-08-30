@@ -122,10 +122,14 @@ export function useIgnoreTikTokProduct() {
 }
 
 export function useCreateTikTokProduct() {
-  return useTikTokMutation<{ externalSku: string; externalProductId?: string; name: string; sku: string; price: string }>(
-    '/integrations/tiktok/products/create',
-    [['tiktok', 'products', 'unmatched']],
-  );
+  return useTikTokMutation<{
+    externalSku: string;
+    externalProductId?: string;
+    name: string;
+    sku: string;
+    price: string;
+    stock?: number;
+  }>('/integrations/tiktok/products/create', [['tiktok', 'products', 'unmatched']]);
 }
 
 export interface BulkCreateTikTokProductsResult {
@@ -136,7 +140,9 @@ export interface BulkCreateTikTokProductsResult {
 export function useBulkCreateTikTokProducts() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (items: Array<{ externalSku: string; externalProductId?: string; name: string; sku?: string; price: string }>) =>
+    mutationFn: (
+      items: Array<{ externalSku: string; externalProductId?: string; name: string; sku?: string; price: string; stock?: number }>,
+    ) =>
       apiFetch<BulkCreateTikTokProductsResult>('/integrations/tiktok/products/bulk-create', {
         method: 'POST',
         body: { items },
@@ -153,6 +159,37 @@ export function useBulkCreateTikTokProducts() {
     },
     onError: (error) => {
       toast({ title: error instanceof ApiError ? error.message : 'Não foi possível concluir a criação em lote.' });
+    },
+  });
+}
+
+export interface SyncLinkedTikTokProductsResult {
+  updated: number;
+  unchanged: number;
+  notFoundOnTikTok: number;
+  failed: Array<{ externalSku: string; error: string }>;
+}
+
+/** Atualiza (nunca cria) preço/estoque dos produtos já vinculados a partir dos dados atuais da
+ * TikTok — usa o SKU externo já gravado no vínculo, não duplica nada. */
+export function useSyncLinkedTikTokProducts() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<SyncLinkedTikTokProductsResult>('/integrations/tiktok/products/sync-linked', { method: 'POST' }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['tiktok', 'products', 'unmatched'] });
+      toast({
+        title:
+          result.failed.length === 0
+            ? `${result.updated} atualizado(s), ${result.unchanged} já estavam em dia.`
+            : `${result.updated} atualizado(s), ${result.failed.length} falharam.`,
+        variant: result.failed.length === 0 ? undefined : 'destructive',
+      });
+    },
+    onError: (error) => {
+      toast({ title: error instanceof ApiError ? error.message : 'Não foi possível sincronizar os produtos vinculados.' });
     },
   });
 }

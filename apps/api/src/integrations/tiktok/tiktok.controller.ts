@@ -62,6 +62,7 @@ export class TikTokController {
       name: dto.name,
       sku: dto.sku,
       price: dto.price,
+      stock: dto.stock,
     });
   }
 
@@ -70,6 +71,14 @@ export class TikTokController {
   @RequirePermissions(PERMISSIONS.INTEGRATION_TIKTOK_SYNC)
   bulkCreateProducts(@CurrentUser() user: AuthenticatedUser, @Body() dto: BulkCreateTikTokProductsDto) {
     return this.productsSync.createInternalProductsBulk(user.companyId, user.userId, dto.items);
+  }
+
+  /** Atualiza (nunca cria) preço/estoque dos produtos já vinculados, usando o SKU externo já
+   * gravado no vínculo como chave — seção 10. */
+  @Post('products/sync-linked')
+  @RequirePermissions(PERMISSIONS.INTEGRATION_TIKTOK_SYNC)
+  syncLinkedProducts(@CurrentUser() user: AuthenticatedUser) {
+    return this.productsSync.syncLinkedProducts(user.companyId, user.userId);
   }
 
   /** Wizard de importação inicial (seção 9) — enfileira e retorna na hora, nunca bloqueia. */

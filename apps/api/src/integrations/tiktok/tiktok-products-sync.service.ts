@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ChannelMappingSyncStatus, Prisma, ProductStatus, VariantStatus } from '@ecommerce-manager/database';
-import { extractSellerSku } from '@ecommerce-manager/integrations';
+import { extractSellerSku, type ExternalProduct } from '@ecommerce-manager/integrations';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { InventoryLedgerService } from '../../inventory/ledger.service';
 import { TikTokConnectorFactory } from './tiktok-connector.factory';
 import { TikTokCredentialsService } from './tiktok-credentials.service';
 
@@ -33,13 +34,28 @@ export class TikTokProductsSyncService {
     private readonly credentialsService: TikTokCredentialsService,
     private readonly connectorFactory: TikTokConnectorFactory,
     private readonly audit: AuditService,
+    private readonly ledger: InventoryLedgerService,
   ) {}
+
+  /** Busca o catálogo inteiro da TikTok (todas as páginas) — reusado tanto para achar produtos
+   * não vinculados quanto para sincronizar os que já têm vínculo confirmado. */
+  private async fetchAllExternalProducts(companyId: string): Promise<ExternalProduct[]> {
+    const { connector } = await this.connectorFactory.forCompany(companyId);
+    const all: ExternalProduct[] = [];
+    let pageToken: string | undefined;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const result = await connector.getProducts(companyId, { pageSize: 50, pageToken });
+      all.push(...result.items);
+      if (!result.nextPageToken) break;
+      pageToken = result.nextPageToken;
+    }
+    return all;
+  }
 
   async listUnmatched(companyId: string): Promise<UnmatchedTikTokProduct[]> {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) return [];
 
-    const { connector } = await this.connectorFactory.forCompany(companyId);
     const existingMappings = await this.prisma.client.channelProductMapping.findMany({
       where: { channelId: integration.channelId },
     });
@@ -56,28 +72,23 @@ export class TikTokProductsSyncService {
       variantBySku.set(variant.sku, list);
     }
 
+    const externalProducts = await this.fetchAllExternalProducts(companyId);
     const unmatched: UnmatchedTikTokProduct[] = [];
-    let pageToken: string | undefined;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const result = await connector.getProducts(companyId, { pageSize: 50, pageToken });
-      for (const product of result.items) {
-        if (mappedSkus.has(product.externalSku)) continue;
-        const sellerSku = extractSellerSku(product.raw);
-        const candidates = sellerSku ? (variantBySku.get(sellerSku) ?? []) : [];
-        unmatched.push({
-          externalProductId: product.externalProductId,
-          externalSku: product.externalSku,
-          sellerSku,
-          name: product.name,
-          price: product.price,
-          stock: product.stock,
-          suggestedVariantId: candidates.length === 1 ? candidates[0] : undefined,
-          suggestedSku: candidates.length === 1 ? sellerSku : undefined,
-          ambiguous: candidates.length > 1,
-        });
-      }
-      if (!result.nextPageToken) break;
-      pageToken = result.nextPageToken;
+    for (const product of externalProducts) {
+      if (mappedSkus.has(product.externalSku)) continue;
+      const sellerSku = extractSellerSku(product.raw);
+      const candidates = sellerSku ? (variantBySku.get(sellerSku) ?? []) : [];
+      unmatched.push({
+        externalProductId: product.externalProductId,
+        externalSku: product.externalSku,
+        sellerSku,
+        name: product.name,
+        price: product.price,
+        stock: product.stock,
+        suggestedVariantId: candidates.length === 1 ? candidates[0] : undefined,
+        suggestedSku: candidates.length === 1 ? sellerSku : undefined,
+        ambiguous: candidates.length > 1,
+      });
     }
 
     return unmatched;
@@ -169,13 +180,19 @@ export class TikTokProductsSyncService {
     return mapping;
   }
 
-  /** Cria um produto interno novo a partir dos dados do produto TikTok (seção 10, ação "Criar produto interno"). */
+  /**
+   * Cria um produto interno novo a partir dos dados do produto TikTok (seção 10, ação "Criar
+   * produto interno"). Se `stock` vier preenchido (> 0), já semeia o saldo inicial via
+   * `InventoryLedgerService.adjust` — mesmo mecanismo usado por qualquer outra entrada/ajuste de
+   * estoque no sistema (nunca escreve direto na tabela de saldo, sempre com movimentação
+   * registrada), para a carga inicial já vir com estoque de verdade em vez de zerada.
+   */
   async createInternalProduct(
     companyId: string,
     userId: string,
     externalSku: string,
     externalProductId: string | undefined,
-    input: { name: string; sku: string; price: string },
+    input: { name: string; sku: string; price: string; stock?: number },
   ) {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) throw new BadRequestException('Canal TikTok Shop ainda não conectado');
@@ -196,13 +213,30 @@ export class TikTokProductsSyncService {
     const variant = product.variants[0];
     const mapping = await this.link(companyId, userId, externalSku, externalProductId, variant.id);
 
+    if (input.stock && input.stock > 0) {
+      await this.prisma.client.$transaction((tx) =>
+        this.ledger.adjust(
+          tx,
+          {
+            companyId,
+            variantId: variant.id,
+            referenceType: 'tiktok_import',
+            referenceId: externalSku,
+            userId,
+            reason: 'Carga inicial via TikTok Shop',
+          },
+          input.stock!,
+        ),
+      );
+    }
+
     await this.audit.log({
       companyId,
       userId,
       action: 'TIKTOK_PRODUCT_CREATED',
       entity: 'product',
       entityId: product.id,
-      newValue: { externalSku, sku: input.sku },
+      newValue: { externalSku, sku: input.sku, stock: input.stock ?? 0 },
     });
 
     return { product, mapping };
@@ -221,7 +255,7 @@ export class TikTokProductsSyncService {
   async createInternalProductsBulk(
     companyId: string,
     userId: string,
-    items: Array<{ externalSku: string; externalProductId?: string; name: string; sku?: string; price: string }>,
+    items: Array<{ externalSku: string; externalProductId?: string; name: string; sku?: string; price: string; stock?: number }>,
   ): Promise<{ created: number; failed: Array<{ externalSku: string; error: string }> }> {
     const existingVariants = await this.prisma.client.productVariant.findMany({
       where: { product: { companyId } },
@@ -242,6 +276,7 @@ export class TikTokProductsSyncService {
           name: item.name,
           sku,
           price: item.price,
+          stock: item.stock,
         });
         created++;
       } catch (error) {
@@ -256,5 +291,97 @@ export class TikTokProductsSyncService {
     }
 
     return { created, failed };
+  }
+
+  /**
+   * Sincroniza (nunca cria) produtos já vinculados: atualiza preço e estoque a partir dos dados
+   * atuais da TikTok, usando o SKU externo já gravado no vínculo (`channel_product_mapping`)
+   * como chave de comparação — não depende de nome nem de posição, só do SKU. Só toca vínculos
+   * CONFIRMED; nunca cria produto novo (isso é `createInternalProduct(sBulk)`, uma ação
+   * separada e explícita). Cada item é atualizado de forma independente — um erro num item
+   * (ex.: o estoque da TikTok agora é menor que o já reservado aqui) nunca aborta os demais.
+   */
+  async syncLinkedProducts(
+    companyId: string,
+    userId: string,
+  ): Promise<{ updated: number; unchanged: number; notFoundOnTikTok: number; failed: Array<{ externalSku: string; error: string }> }> {
+    const integration = await this.credentialsService.requireIntegration(companyId);
+    if (!integration.channelId) throw new BadRequestException('Canal TikTok Shop ainda não conectado');
+
+    const mappings = await this.prisma.client.channelProductMapping.findMany({
+      where: { channelId: integration.channelId, syncStatus: ChannelMappingSyncStatus.CONFIRMED, variantId: { not: null } },
+    });
+    if (mappings.length === 0) {
+      return { updated: 0, unchanged: 0, notFoundOnTikTok: 0, failed: [] };
+    }
+
+    const externalProducts = await this.fetchAllExternalProducts(companyId);
+    const bySku = new Map(externalProducts.map((p) => [p.externalSku, p]));
+
+    let updated = 0;
+    let unchanged = 0;
+    let notFoundOnTikTok = 0;
+    const failed: Array<{ externalSku: string; error: string }> = [];
+
+    for (const mapping of mappings) {
+      const externalSku = mapping.externalSku ?? '';
+      const externalProduct = externalSku ? bySku.get(externalSku) : undefined;
+      if (!externalProduct || !mapping.variantId) {
+        notFoundOnTikTok++;
+        continue;
+      }
+
+      try {
+        const variant = await this.prisma.client.productVariant.findUniqueOrThrow({
+          where: { id: mapping.variantId },
+          include: { inventory: true },
+        });
+
+        let changed = false;
+
+        if (Number(variant.suggestedPrice) !== Number(externalProduct.price)) {
+          await this.prisma.client.productVariant.update({
+            where: { id: variant.id },
+            data: { suggestedPrice: externalProduct.price },
+          });
+          changed = true;
+        }
+
+        const currentOnHand = variant.inventory?.onHand ?? 0;
+        const delta = externalProduct.stock - currentOnHand;
+        if (delta !== 0) {
+          await this.prisma.client.$transaction((tx) =>
+            this.ledger.adjust(
+              tx,
+              {
+                companyId,
+                variantId: variant.id,
+                referenceType: 'tiktok_sync',
+                referenceId: externalSku,
+                userId,
+                reason: 'Sincronização com TikTok Shop',
+              },
+              delta,
+            ),
+          );
+          changed = true;
+        }
+
+        if (changed) updated++;
+        else unchanged++;
+      } catch (error) {
+        failed.push({ externalSku, error: error instanceof Error ? error.message : 'Erro desconhecido' });
+      }
+    }
+
+    await this.audit.log({
+      companyId,
+      userId,
+      action: 'TIKTOK_PRODUCTS_SYNCED',
+      entity: 'channel_product_mapping',
+      newValue: { updated, unchanged, notFoundOnTikTok, failedCount: failed.length },
+    });
+
+    return { updated, unchanged, notFoundOnTikTok, failed };
   }
 }

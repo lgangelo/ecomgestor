@@ -46,6 +46,7 @@ export function TikTokCreateProductDialog({
         name: form.name,
         sku: form.sku,
         price: form.price,
+        stock: product.stock,
       },
       { onSuccess: () => onOpenChange(false) },
     );

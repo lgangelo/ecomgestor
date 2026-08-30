@@ -8,7 +8,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useTikTokUnmatchedProducts, useIgnoreTikTokProduct, useBulkCreateTikTokProducts } from '@/hooks/use-tiktok';
+import {
+  useTikTokUnmatchedProducts,
+  useIgnoreTikTokProduct,
+  useBulkCreateTikTokProducts,
+  useSyncLinkedTikTokProducts,
+} from '@/hooks/use-tiktok';
 import type { UnmatchedTikTokProduct } from '@/hooks/use-tiktok';
 import { TikTokLinkProductDialog } from './tiktok-link-product-dialog';
 import { TikTokCreateProductDialog } from './tiktok-create-product-dialog';
@@ -17,6 +22,7 @@ export function TikTokProductsTab() {
   const { data, isLoading } = useTikTokUnmatchedProducts(true);
   const ignore = useIgnoreTikTokProduct();
   const bulkCreate = useBulkCreateTikTokProducts();
+  const syncLinked = useSyncLinkedTikTokProducts();
   const [linking, setLinking] = React.useState<UnmatchedTikTokProduct | null>(null);
   const [creating, setCreating] = React.useState<UnmatchedTikTokProduct | null>(null);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -58,16 +64,22 @@ export function TikTokProductsTab() {
         // (0001, 0002, ...) em vez de usar o SKU (numérico e pouco legível) da própria TikTok.
         sku: p.sellerSku,
         price: p.price,
+        stock: p.stock,
       }));
     bulkCreate.mutate(items, { onSuccess: () => setSelected(new Set()) });
   }
 
   return (
     <div>
-      <p className="mb-4 text-sm text-muted-foreground">
-        Produtos TikTok não vinculados. Um vínculo só é confirmado por uma ação explícita — a sugestão automática
-        nunca é efetivada sozinha quando há mais de um candidato.
-      </p>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <p className="text-sm text-muted-foreground">
+          Produtos TikTok não vinculados. Um vínculo só é confirmado por uma ação explícita — a sugestão automática
+          nunca é efetivada sozinha quando há mais de um candidato.
+        </p>
+        <Button size="sm" variant="outline" disabled={syncLinked.isPending} onClick={() => syncLinked.mutate()}>
+          {syncLinked.isPending ? 'Sincronizando...' : 'Sincronizar produtos já vinculados'}
+        </Button>
+      </div>
 
       {isLoading || !data ? (
         <div className="rounded-lg border border-border">

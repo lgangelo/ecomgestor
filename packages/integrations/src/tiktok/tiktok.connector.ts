@@ -18,10 +18,18 @@ import {
 } from '../index';
 import { TikTokClient } from './tiktok.client';
 import { TIKTOK_PATHS } from './tiktok.types';
-import { normalizeOrder, normalizeProduct, normalizeReturn, normalizeStatement, normalizeTransaction } from './tiktok.mapper';
+import { normalizeOrder, normalizeProductSkus, normalizeReturn, normalizeStatement, normalizeTransaction } from './tiktok.mapper';
 
+/**
+ * `TikTokClient.request` já devolve o `data` do envelope `{code, message, data}` desembrulhado
+ * (ver isTikTokEnvelope em tiktok.client.ts) — `next_page_token`/`total_count` vêm direto neste
+ * nível, não dentro de outro `data` aninhado. Usar `raw.data?.next_page_token` (bug corrigido)
+ * fazia a paginação nunca avançar: toda busca parava sempre na primeira página, mesmo havendo
+ * mais itens — confirmado em produção (só 50 de um catálogo maior apareciam na aba Produtos).
+ */
 interface RawPage {
-  data?: { next_page_token?: string; total_count?: number };
+  next_page_token?: string;
+  total_count?: number;
   items?: unknown[];
   orders?: unknown[];
   returns?: unknown[];
@@ -71,8 +79,12 @@ export class TikTokConnector implements MarketplaceConnector {
       query: buildPageQuery(params),
       body: params.updatedAfter ? { update_time_ge: toUnixSeconds(params.updatedAfter) } : {},
     });
-    const items = raw.products ?? raw.items ?? [];
-    return { items: items.map(normalizeProduct), nextPageToken: raw.data?.next_page_token };
+    const rawProducts = raw.products ?? raw.items ?? [];
+    // TEMPORÁRIO — remover depois de confirmar em produção o formato real do preço por SKU
+    // (skus[].price.amount, conforme o anúncio "Product API now supports two prices").
+    if (rawProducts[0]) console.log('[tiktok-product-debug]', JSON.stringify(rawProducts[0]));
+    const items = rawProducts.flatMap(normalizeProductSkus);
+    return { items, nextPageToken: raw.next_page_token };
   }
 
   async getOrders(companyId: string, params: OrderSyncParams): Promise<ExternalOrderPage> {
@@ -85,7 +97,7 @@ export class TikTokConnector implements MarketplaceConnector {
       },
     });
     const items = raw.orders ?? raw.items ?? [];
-    return { items: items.map(normalizeOrder), nextPageToken: raw.data?.next_page_token };
+    return { items: items.map(normalizeOrder), nextPageToken: raw.next_page_token };
   }
 
   async getOrder(companyId: string, externalOrderId: string) {
@@ -102,7 +114,7 @@ export class TikTokConnector implements MarketplaceConnector {
       body: params.externalSkus?.length ? { seller_skus: params.externalSkus } : {},
     });
     const items = raw.products ?? raw.items ?? [];
-    return items.map(normalizeProduct).map((product) => ({ externalSku: product.externalSku, available: product.stock }));
+    return items.flatMap(normalizeProductSkus).map((product) => ({ externalSku: product.externalSku, available: product.stock }));
   }
 
   async updateInventory(companyId: string, updates: InventoryUpdate[]): Promise<void> {
@@ -119,7 +131,7 @@ export class TikTokConnector implements MarketplaceConnector {
       body: params.updatedAfter ? { update_time_ge: toUnixSeconds(params.updatedAfter) } : {},
     });
     const items = raw.returns ?? raw.items ?? [];
-    return { items: items.map(normalizeReturn), nextPageToken: raw.data?.next_page_token };
+    return { items: items.map(normalizeReturn), nextPageToken: raw.next_page_token };
   }
 
   async getStatements(companyId: string, params: PageParams & { updatedAfter?: Date }): Promise<ExternalStatementPage> {
@@ -128,7 +140,7 @@ export class TikTokConnector implements MarketplaceConnector {
       query: buildPageQuery(params),
     });
     const items = raw.statements ?? raw.items ?? [];
-    return { items: items.map(normalizeStatement), nextPageToken: raw.data?.next_page_token };
+    return { items: items.map(normalizeStatement), nextPageToken: raw.next_page_token };
   }
 
   async getTransactions(companyId: string, params: TransactionSyncParams): Promise<ExternalTransactionPage> {
@@ -142,7 +154,7 @@ export class TikTokConnector implements MarketplaceConnector {
     const items = raw.transactions ?? raw.items ?? [];
     return {
       items: items.map((item) => normalizeTransaction(item, params.statementId)),
-      nextPageToken: raw.data?.next_page_token,
+      nextPageToken: raw.next_page_token,
     };
   }
 }

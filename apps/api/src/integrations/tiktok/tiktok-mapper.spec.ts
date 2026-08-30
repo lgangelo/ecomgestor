@@ -1,7 +1,7 @@
 import {
   mapOrderStatus,
   normalizeOrder,
-  normalizeProduct,
+  normalizeProductSkus,
   normalizeTransactionType,
   extractSellerSku,
 } from '@ecommerce-manager/integrations';
@@ -54,18 +54,31 @@ describe('TikTok Shop — mapper (seção 16/29, docs/integrations/tiktok-data-m
     expect(normalized.status).toBe('ALGO_NOVO');
   });
 
-  it('normaliza produto e extrai o seller_sku separadamente (nunca persistido como externalSku)', () => {
+  it('normaliza um produto com múltiplas SKUs (cor/tamanho) — uma por variação, não só a primeira', () => {
     const raw = {
       product_id: 'p-1',
       product_name: 'Camiseta Azul',
-      price: { sale_price: '49.90' },
-      skus: [{ id: 'sku-ext-1', seller_sku: 'CAM-AZUL-M', inventory: [{ quantity: 10 }, { quantity: 5 }] }],
+      skus: [
+        {
+          id: 'sku-ext-1',
+          seller_sku: 'CAM-AZUL-M',
+          price: { amount: '49.90', currency: 'BRL' },
+          inventory: [{ quantity: 10 }, { quantity: 5 }],
+        },
+        {
+          id: 'sku-ext-2',
+          seller_sku: 'CAM-AZUL-G',
+          price: { amount: '54.90', currency: 'BRL' },
+          inventory: [{ quantity: 3 }],
+        },
+      ],
     };
-    const product = normalizeProduct(raw);
-    expect(product.externalSku).toBe('sku-ext-1');
-    expect(product.name).toBe('Camiseta Azul');
-    expect(product.stock).toBe(15);
-    expect(extractSellerSku(raw)).toBe('CAM-AZUL-M');
+    const products = normalizeProductSkus(raw);
+    expect(products).toHaveLength(2);
+    expect(products[0]).toMatchObject({ externalProductId: 'p-1', externalSku: 'sku-ext-1', name: 'Camiseta Azul', price: '49.90', stock: 15 });
+    expect(products[1]).toMatchObject({ externalProductId: 'p-1', externalSku: 'sku-ext-2', name: 'Camiseta Azul', price: '54.90', stock: 3 });
+    expect(extractSellerSku(raw.skus[0])).toBe('CAM-AZUL-M');
+    expect(extractSellerSku(raw.skus[1])).toBe('CAM-AZUL-G');
   });
 
   it('normaliza categorias financeiras conhecidas e cai em OTHER para categorias não reconhecidas', () => {
