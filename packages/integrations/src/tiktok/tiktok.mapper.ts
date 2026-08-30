@@ -183,11 +183,17 @@ export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
     return [{ externalProductId, externalSku: externalProductId, name, price: '0', stock: 0, imageUrl, raw }];
   }
 
+  if (skus.length > 1) {
+    // eslint-disable-next-line no-console -- debug temporário, remover após confirmar o campo real de cor/tamanho em produção
+    console.log('[tiktok-sku-attributes-debug]', JSON.stringify({ externalProductId, skus }));
+  }
+
   return skus.map((rawSku) => {
     const sku = asRecord(rawSku);
     const inventoryList = Array.isArray(sku.inventory) ? (sku.inventory as unknown[]) : [];
     const stock = inventoryList.reduce((sum: number, entry) => sum + Number(asRecord(entry).quantity ?? 0), 0);
     const skuPrice = asRecord(sku.price);
+    const { color, size } = extractSkuAttributes(sku);
     return {
       externalProductId,
       externalSku: requiredStr(sku, 'id'),
@@ -195,9 +201,33 @@ export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
       price: numericStr(skuPrice, 'tax_inclusive_price') ?? numericStr(skuPrice, 'tax_exclusive_price') ?? '0',
       stock,
       imageUrl,
+      color,
+      size,
       raw: rawSku,
     };
   });
+}
+
+/**
+ * Cor/tamanho da SKU — ainda não confirmado contra um payload real com múltiplas SKUs desta loja
+ * (o único payload bruto logado até agora era de um produto com 1 SKU só). Suposição baseada no
+ * padrão público da TikTok Shop Open API: `sales_attributes: [{ attribute_name, value_name }]`
+ * por SKU. Log de debug temporário em `normalizeProductSkus` (só quando há mais de 1 SKU) até
+ * confirmar. Nunca inventa — campo não reconhecido fica de fora, nunca vira "cor" por padrão.
+ */
+function extractSkuAttributes(sku: Record<string, unknown>): { color?: string; size?: string } {
+  const attributes = Array.isArray(sku.sales_attributes) ? (sku.sales_attributes as unknown[]) : [];
+  let color: string | undefined;
+  let size: string | undefined;
+  for (const rawAttr of attributes) {
+    const attr = asRecord(rawAttr);
+    const attributeName = str(attr, 'attribute_name')?.toLowerCase() ?? '';
+    const valueName = str(attr, 'value_name');
+    if (!valueName) continue;
+    if (attributeName.includes('cor') || attributeName.includes('color')) color = valueName;
+    else if (attributeName.includes('tamanho') || attributeName.includes('size')) size = valueName;
+  }
+  return { color, size };
 }
 
 /** SKU do vendedor (seller_sku) — usado só para o match automático (seção 11), não persistido.

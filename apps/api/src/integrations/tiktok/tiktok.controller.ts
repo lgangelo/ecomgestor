@@ -64,6 +64,8 @@ export class TikTokController {
       price: dto.price,
       stock: dto.stock,
       imageUrl: dto.imageUrl,
+      color: dto.color,
+      size: dto.size,
     });
   }
 

@@ -66,6 +66,8 @@ export function TikTokProductsTab() {
         price: p.price,
         stock: p.stock,
         imageUrl: p.imageUrl,
+        color: p.color,
+        size: p.size,
       }));
     bulkCreate.mutate(items, { onSuccess: () => setSelected(new Set()) });
   }
@@ -123,6 +125,7 @@ export function TikTokProductsTab() {
                 <TableHead>Produto TikTok</TableHead>
                 <TableHead>SKU TikTok</TableHead>
                 <TableHead>SKU vendedor</TableHead>
+                <TableHead>Cor / Tamanho</TableHead>
                 <TableHead>Estoque TikTok</TableHead>
                 <TableHead>Vínculo</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
@@ -149,6 +152,7 @@ export function TikTokProductsTab() {
                   <TableCell>{product.name}</TableCell>
                   <TableCell>{product.externalSku}</TableCell>
                   <TableCell>{product.sellerSku ?? '—'}</TableCell>
+                  <TableCell>{[product.color, product.size].filter(Boolean).join(' / ') || '—'}</TableCell>
                   <TableCell>{product.stock}</TableCell>
                   <TableCell>
                     {product.ambiguous ? (

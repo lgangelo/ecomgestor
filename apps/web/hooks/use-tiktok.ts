@@ -33,6 +33,8 @@ export interface UnmatchedTikTokProduct {
   price: string;
   stock: number;
   imageUrl?: string;
+  color?: string;
+  size?: string;
   suggestedVariantId?: string;
   suggestedSku?: string;
   ambiguous: boolean;
@@ -131,6 +133,8 @@ export function useCreateTikTokProduct() {
     price: string;
     stock?: number;
     imageUrl?: string;
+    color?: string;
+    size?: string;
   }>('/integrations/tiktok/products/create', [['tiktok', 'products', 'unmatched']]);
 }
 
@@ -151,6 +155,8 @@ export function useBulkCreateTikTokProducts() {
         price: string;
         stock?: number;
         imageUrl?: string;
+        color?: string;
+        size?: string;
       }>,
     ) =>
       apiFetch<BulkCreateTikTokProductsResult>('/integrations/tiktok/products/bulk-create', {

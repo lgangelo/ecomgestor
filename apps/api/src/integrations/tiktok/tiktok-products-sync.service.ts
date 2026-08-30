@@ -18,6 +18,8 @@ export interface UnmatchedTikTokProduct {
   price: string;
   stock: number;
   imageUrl?: string;
+  color?: string;
+  size?: string;
   suggestedVariantId?: string;
   suggestedSku?: string;
   ambiguous: boolean;
@@ -91,6 +93,8 @@ export class TikTokProductsSyncService {
         price: product.price,
         stock: product.stock,
         imageUrl: product.imageUrl,
+        color: product.color,
+        size: product.size,
         suggestedVariantId: candidates.length === 1 ? candidates[0] : undefined,
         suggestedSku: candidates.length === 1 ? sellerSku : undefined,
         ambiguous: candidates.length > 1,
@@ -238,7 +242,7 @@ export class TikTokProductsSyncService {
     userId: string,
     externalSku: string,
     externalProductId: string | undefined,
-    input: { name: string; sku: string; price: string; stock?: number; imageUrl?: string },
+    input: { name: string; sku: string; price: string; stock?: number; imageUrl?: string; color?: string; size?: string },
   ) {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) throw new BadRequestException('Canal TikTok Shop ainda não conectado');
@@ -252,7 +256,14 @@ export class TikTokProductsSyncService {
 
     if (existingProductId) {
       const variant = await this.prisma.client.productVariant.create({
-        data: { productId: existingProductId, sku: input.sku, suggestedPrice: input.price, status: VariantStatus.ACTIVE },
+        data: {
+          productId: existingProductId,
+          sku: input.sku,
+          suggestedPrice: input.price,
+          color: input.color ?? null,
+          size: input.size ?? null,
+          status: VariantStatus.ACTIVE,
+        },
       });
       productId = existingProductId;
       variantId = variant.id;
@@ -278,7 +289,15 @@ export class TikTokProductsSyncService {
           imageUrl: imageUrl ?? null,
           status: ProductStatus.DRAFT,
           variants: {
-            create: [{ sku: input.sku, suggestedPrice: input.price, status: VariantStatus.ACTIVE }],
+            create: [
+              {
+                sku: input.sku,
+                suggestedPrice: input.price,
+                color: input.color ?? null,
+                size: input.size ?? null,
+                status: VariantStatus.ACTIVE,
+              },
+            ],
           },
         },
         include: { variants: true },
@@ -344,6 +363,8 @@ export class TikTokProductsSyncService {
       price: string;
       stock?: number;
       imageUrl?: string;
+      color?: string;
+      size?: string;
     }>,
   ): Promise<{ created: number; failed: Array<{ externalSku: string; error: string }> }> {
     const existingVariants = await this.prisma.client.productVariant.findMany({
@@ -367,6 +388,8 @@ export class TikTokProductsSyncService {
           price: item.price,
           stock: item.stock,
           imageUrl: item.imageUrl,
+          color: item.color,
+          size: item.size,
         });
         created++;
       } catch (error) {
@@ -441,6 +464,16 @@ export class TikTokProductsSyncService {
             where: { id: variant.id },
             data: { suggestedPrice: externalProduct.price },
           });
+          changed = true;
+        }
+
+        // Variações criadas antes deste campo ser extraído nunca ganhavam cor/tamanho depois —
+        // só preenche quando ainda está vazio, nunca sobrescreve o que o operador já editou.
+        const variantAttrUpdate: { color?: string; size?: string } = {};
+        if (!variant.color && externalProduct.color) variantAttrUpdate.color = externalProduct.color;
+        if (!variant.size && externalProduct.size) variantAttrUpdate.size = externalProduct.size;
+        if (Object.keys(variantAttrUpdate).length > 0) {
+          await this.prisma.client.productVariant.update({ where: { id: variant.id }, data: variantAttrUpdate });
           changed = true;
         }
 

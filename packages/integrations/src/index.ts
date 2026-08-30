@@ -39,6 +39,9 @@ export interface ExternalProduct {
    * arquivo baixado/salvo localmente: o servidor nunca deve depender de um diretório local para
    * imagens de produto). `undefined` quando o canal não informa nenhuma imagem. */
   imageUrl?: string;
+  /** Atributos de variação da SKU (cor/tamanho) — quando o canal os informa. */
+  color?: string;
+  size?: string;
   raw: unknown;
 }
 
