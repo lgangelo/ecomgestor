@@ -8,8 +8,8 @@
     "dev:worker": "ts-node -r tsconfig-paths/register src/worker.ts",
     "start": "node dist/main.js",
     "start:worker": "node dist/worker.js",
-    "create-admin": "ts-node -r tsconfig-paths/register src/cli/create-admin.ts",
-    "recompute-order-totals": "ts-node -r tsconfig-paths/register src/cli/recompute-order-totals.ts",
+    "create-admin": "node dist/cli/create-admin.js",
+    "recompute-order-totals": "node dist/cli/recompute-order-totals.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
