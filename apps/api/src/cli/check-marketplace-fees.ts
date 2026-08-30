@@ -10,6 +10,10 @@
  * tem `MarketplaceFee` (prova de que a taxa foi gravada). Isso separa "a sincronização nunca
  * buscou esse pedido" de "buscou mas não gravou a taxa".
  *
+ * Também mede a cobertura real: de todos os pedidos DELIVERED da TikTok Shop, quantos têm pelo
+ * menos uma MarketplaceFee gravada — separa "é só um pedido isolado com atraso" de "a maioria dos
+ * pedidos entregues não tem taxa" (bug sistêmico de cobertura do sync financeiro).
+ *
  * Uso:
  *   npm run check-marketplace-fees
  *   npm run check-marketplace-fees -- 585708424139409308
@@ -29,6 +33,31 @@ async function main() {
   });
   for (const row of sample) {
     console.log(JSON.stringify(row, (_key, value) => (typeof value === 'bigint' ? value.toString() : value)));
+  }
+
+  console.log('----------------------------------------------------');
+  console.log('Cobertura: pedidos DELIVERED com/sem MarketplaceFee gravada (TikTok Shop):');
+  const deliveredOrders = await prisma.order.findMany({
+    where: { status: 'DELIVERED', channel: { type: 'TIKTOK_SHOP' } },
+    select: { id: true, externalOrderId: true, orderDate: true },
+  });
+  const feesByOrder = await prisma.marketplaceFee.groupBy({
+    by: ['orderId'],
+    where: { orderId: { in: deliveredOrders.map((o) => o.id) } },
+    _count: { _all: true },
+  });
+  const orderIdsWithFee = new Set(feesByOrder.map((f) => f.orderId));
+  const withFee = deliveredOrders.filter((o) => orderIdsWithFee.has(o.id));
+  const withoutFee = deliveredOrders.filter((o) => !orderIdsWithFee.has(o.id));
+  console.log(`  Total DELIVERED: ${deliveredOrders.length}`);
+  console.log(`  Com MarketplaceFee: ${withFee.length}`);
+  console.log(`  SEM MarketplaceFee: ${withoutFee.length}`);
+  if (withoutFee.length > 0) {
+    console.log('  Amostra dos SEM MarketplaceFee (até 10, mais antigos primeiro):');
+    withoutFee
+      .sort((a, b) => a.orderDate.getTime() - b.orderDate.getTime())
+      .slice(0, 10)
+      .forEach((o) => console.log(`    externalOrderId=${o.externalOrderId} orderDate=${o.orderDate.toISOString()}`));
   }
 
   const externalOrderId = process.argv[2];

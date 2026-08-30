@@ -168,6 +168,14 @@ export function extractMainImageUrl(product: Record<string, unknown>): string | 
   return typeof url === 'string' && url ? url : undefined;
 }
 
+/** Descrição do produto (só disponível em "Get Product", nunca em "Search Products") — usada
+ * para deixar o cadastro interno já populado, de olho em futuramente reenviar o cadastro para
+ * outras plataformas. Best-effort: campo ausente ou vazio nunca deve travar o sync. */
+export function extractDescription(product: Record<string, unknown>): string | undefined {
+  const value = product.description;
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
 export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
   const product = asRecord(raw);
   const skus = Array.isArray(product.skus) ? (product.skus as unknown[]) : [];

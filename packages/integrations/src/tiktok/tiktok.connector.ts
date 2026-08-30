@@ -21,6 +21,7 @@ import { TIKTOK_PATHS } from './tiktok.types';
 import {
   extractMainImageUrl,
   extractSkuAttributes,
+  extractDescription,
   normalizeOrder,
   normalizeProductSkus,
   normalizeReturn,
@@ -128,19 +129,25 @@ export class TikTokConnector implements MarketplaceConnector {
   }
 
   /**
-   * Busca sob demanda a imagem principal E os atributos (cor/tamanho) de cada SKU de UM produto
-   * ("Get Product") — "Search Products" (usado para listar/sincronizar em massa) confirmadamente
-   * não traz nenhum dos dois, então esta chamada extra só é feita na criação/vínculo de um
-   * produto específico, nunca durante a listagem em massa (evita multiplicar centenas de
-   * chamadas por sync) — e uma única chamada já resolve imagem + atributos juntos, nunca duas
+   * Busca sob demanda a imagem principal, a descrição E os atributos (cor/tamanho) de cada SKU
+   * de UM produto ("Get Product") — "Search Products" (usado para listar/sincronizar em massa)
+   * confirmadamente não traz nenhum dos três, então esta chamada extra só é feita na
+   * criação/vínculo de um produto específico, nunca durante a listagem em massa (evita
+   * multiplicar centenas de chamadas por sync) — e uma única chamada já resolve tudo junto, nunca
    * chamadas separadas para o mesmo produto. Nunca lança: falha silenciosamente com valores
-   * vazios — imagem/atributos são "nice to have", nunca devem travar a criação do produto.
-   * `main_images`/`sales_attributes` confirmados contra payload real de produção.
+   * vazios — todos os três são "nice to have", nunca devem travar a criação do produto.
+   * `main_images`/`sales_attributes` confirmados contra payload real de produção; `description`
+   * ainda não foi confirmado contra um payload real — verificar após o primeiro deploy se o
+   * campo popula com o texto certo (nome do campo pode precisar de ajuste).
    */
   async getProductDetail(
     companyId: string,
     externalProductId: string,
-  ): Promise<{ imageUrl?: string; skus: Array<{ externalSku: string; color?: string; size?: string }> }> {
+  ): Promise<{
+    imageUrl?: string;
+    description?: string;
+    skus: Array<{ externalSku: string; color?: string; size?: string }>;
+  }> {
     void companyId;
     try {
       const raw = await this.client.request<Record<string, unknown>>(
@@ -153,11 +160,11 @@ export class TikTokConnector implements MarketplaceConnector {
         const { color, size } = extractSkuAttributes(sku);
         return { externalSku: String(sku.id ?? ''), color, size };
       });
-      return { imageUrl: extractMainImageUrl(raw), skus };
+      return { imageUrl: extractMainImageUrl(raw), description: extractDescription(raw), skus };
     } catch (error) {
       // eslint-disable-next-line no-console -- diagnóstico best-effort, nunca deve travar a criação do produto
       console.warn('[tiktok-product-detail-error]', (error as Error).message);
-      return { imageUrl: undefined, skus: [] };
+      return { imageUrl: undefined, description: undefined, skus: [] };
     }
   }
 

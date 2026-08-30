@@ -252,22 +252,24 @@ export class TikTokProductsSyncService {
       : undefined;
 
     // "Search Products" (fonte de `input.imageUrl`/`input.color`/`input.size`) confirmadamente
-    // não traz nenhum dos três — busca sob demanda via "Get Product" (uma única chamada resolve
-    // imagem + atributos de TODAS as SKUs do produto). Melhor-esforço: nunca trava a criação se
-    // a busca falhar.
+    // não traz nenhum dos três nem a descrição — busca tudo sob demanda via "Get Product" (uma
+    // única chamada resolve imagem + descrição + atributos de TODAS as SKUs do produto).
+    // Melhor-esforço: nunca trava a criação se a busca falhar.
     let imageUrl = input.imageUrl;
     let color = input.color;
     let size = input.size;
+    let description: string | undefined;
     if ((!imageUrl || (!color && !size)) && externalProductId) {
       try {
         const { connector } = await this.connectorFactory.forCompany(companyId);
         const detail = await connector.getProductDetail(companyId, externalProductId);
         imageUrl = imageUrl ?? detail.imageUrl;
+        description = detail.description;
         const skuAttrs = detail.skus.find((s) => s.externalSku === externalSku);
         color = color ?? skuAttrs?.color;
         size = size ?? skuAttrs?.size;
       } catch {
-        // best-effort — segue sem imagem/atributos.
+        // best-effort — segue sem imagem/descrição/atributos.
       }
     }
 
@@ -292,6 +294,7 @@ export class TikTokProductsSyncService {
         data: {
           companyId,
           name: input.name,
+          description: description ?? null,
           baseSku: input.sku,
           imageUrl: imageUrl ?? null,
           status: ProductStatus.DRAFT,
@@ -465,7 +468,7 @@ export class TikTokProductsSyncService {
       try {
         const variant = await this.prisma.client.productVariant.findUniqueOrThrow({
           where: { id: mapping.variantId },
-          include: { inventory: true, product: { select: { id: true, imageUrl: true } } },
+          include: { inventory: true, product: { select: { id: true, imageUrl: true, description: true } } },
         });
 
         let changed = false;
@@ -478,21 +481,30 @@ export class TikTokProductsSyncService {
           changed = true;
         }
 
-        // Produtos/variações criados antes destes campos serem extraídos (ou sem imagem/atributo
-        // resolvido na criação) nunca ganhavam isso depois — só preenche quando ainda está vazio,
-        // nunca sobrescreve o que o operador já editou manualmente. Nenhum dos três (imagem, cor,
-        // tamanho) vem de "Search Products" (confirmado) — busca tudo junto sob demanda via "Get
-        // Product" quando falta algo, best-effort (nunca aborta a sincronização do resto).
+        // Produtos/variações criados antes destes campos serem extraídos (ou sem imagem/atributo/
+        // descrição resolvidos na criação) nunca ganhavam isso depois — só preenche quando ainda
+        // está vazio, nunca sobrescreve o que o operador já editou manualmente. Nenhum dos quatro
+        // (imagem, cor, tamanho, descrição) vem de "Search Products" (confirmado para os 3
+        // primeiros) — busca tudo junto sob demanda via "Get Product" quando falta algo,
+        // best-effort (nunca aborta a sincronização do resto).
         const missingImage = !variant.product.imageUrl;
         const missingAttrs = !variant.color || !variant.size;
-        if ((missingImage || missingAttrs) && mapping.externalProductId && detailFetchesThisRun < detailFetchLimit) {
+        const missingDescription = !variant.product.description;
+        if (
+          (missingImage || missingAttrs || missingDescription) &&
+          mapping.externalProductId &&
+          detailFetchesThisRun < detailFetchLimit
+        ) {
           detailFetchesThisRun++;
           try {
             const detail = await connector.getProductDetail(companyId, mapping.externalProductId);
-            if (missingImage && detail.imageUrl) {
+            if ((missingImage && detail.imageUrl) || (missingDescription && detail.description)) {
               await this.prisma.client.product.update({
                 where: { id: variant.product.id },
-                data: { imageUrl: detail.imageUrl },
+                data: {
+                  ...(missingImage && detail.imageUrl ? { imageUrl: detail.imageUrl } : {}),
+                  ...(missingDescription && detail.description ? { description: detail.description } : {}),
+                },
               });
               changed = true;
             }
