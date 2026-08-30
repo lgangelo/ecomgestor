@@ -18,7 +18,14 @@ import {
 } from '../index';
 import { TikTokClient } from './tiktok.client';
 import { TIKTOK_PATHS } from './tiktok.types';
-import { normalizeOrder, normalizeProductSkus, normalizeReturn, normalizeStatement, normalizeTransaction } from './tiktok.mapper';
+import {
+  extractMainImageUrl,
+  normalizeOrder,
+  normalizeProductSkus,
+  normalizeReturn,
+  normalizeStatement,
+  normalizeTransaction,
+} from './tiktok.mapper';
 
 /**
  * `TikTokClient.request` já devolve o `data` do envelope `{code, message, data}` desembrulhado
@@ -107,6 +114,31 @@ export class TikTokConnector implements MarketplaceConnector {
     const raw = await this.client.request<RawPage>('GET', `${TIKTOK_PATHS.orderDetail}/${externalOrderId}`);
     const item = (raw.orders ?? raw.items ?? [raw])[0];
     return normalizeOrder(item);
+  }
+
+  /**
+   * Busca sob demanda a imagem principal de UM produto ("Get Product") — "Search Products" (usado
+   * para listar/sincronizar em massa) confirmadamente não traz nenhum campo de imagem, então esta
+   * chamada extra só é feita na criação/vínculo de um produto específico, nunca durante a
+   * listagem em massa (evita multiplicar centenas de chamadas por sync). Nunca lança: falha
+   * silenciosamente com `undefined` — a imagem é um "nice to have", não deve travar a criação do
+   * produto. Debug temporário até confirmar `main_images` contra o payload real deste endpoint.
+   */
+  async getProductDetail(companyId: string, externalProductId: string): Promise<{ imageUrl?: string }> {
+    void companyId;
+    try {
+      const raw = await this.client.request<Record<string, unknown>>(
+        'GET',
+        TIKTOK_PATHS.productDetail(externalProductId),
+      );
+      // eslint-disable-next-line no-console -- debug temporário, remover após confirmar o campo real de imagem em produção
+      console.log('[tiktok-product-detail-debug]', JSON.stringify(raw));
+      return { imageUrl: extractMainImageUrl(raw) };
+    } catch (error) {
+      // eslint-disable-next-line no-console -- diagnóstico best-effort, nunca deve travar a criação do produto
+      console.warn('[tiktok-product-detail-error]', (error as Error).message);
+      return { imageUrl: undefined };
+    }
   }
 
   async getInventory(companyId: string, params: InventorySyncParams): Promise<ExternalInventory[]> {

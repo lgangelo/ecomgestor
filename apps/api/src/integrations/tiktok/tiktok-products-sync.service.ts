@@ -257,12 +257,25 @@ export class TikTokProductsSyncService {
       productId = existingProductId;
       variantId = variant.id;
     } else {
+      // "Search Products" (fonte de `input.imageUrl`) nunca traz imagem — busca sob demanda via
+      // "Get Product" só na criação de um produto novo (nunca ao só adicionar variação a um já
+      // existente). Melhor-esforço: nunca trava a criação do produto se a busca falhar.
+      let imageUrl = input.imageUrl;
+      if (!imageUrl && externalProductId) {
+        try {
+          const { connector } = await this.connectorFactory.forCompany(companyId);
+          imageUrl = (await connector.getProductDetail(companyId, externalProductId)).imageUrl;
+        } catch {
+          // best-effort — segue sem imagem.
+        }
+      }
+
       const product = await this.prisma.client.product.create({
         data: {
           companyId,
           name: input.name,
           baseSku: input.sku,
-          imageUrl: input.imageUrl ?? null,
+          imageUrl: imageUrl ?? null,
           status: ProductStatus.DRAFT,
           variants: {
             create: [{ sku: input.sku, suggestedPrice: input.price, status: VariantStatus.ACTIVE }],
@@ -426,13 +439,23 @@ export class TikTokProductsSyncService {
 
         // Produtos criados antes deste campo existir (ou sem imagem resolvida na criação) nunca
         // ganhavam a foto depois — só preenche quando ainda está vazia, nunca sobrescreve uma
-        // capa que o operador já tenha definido manualmente.
-        if (!variant.product.imageUrl && externalProduct.imageUrl) {
-          await this.prisma.client.product.update({
-            where: { id: variant.product.id },
-            data: { imageUrl: externalProduct.imageUrl },
-          });
-          changed = true;
+        // capa que o operador já tenha definido manualmente. `externalProduct.imageUrl` vem de
+        // "Search Products", que nunca traz imagem (confirmado) — por isso busca sob demanda via
+        // "Get Product" quando ainda falta, best-effort (nunca aborta a sincronização do resto).
+        if (!variant.product.imageUrl && mapping.externalProductId) {
+          try {
+            const { connector } = await this.connectorFactory.forCompany(companyId);
+            const detail = await connector.getProductDetail(companyId, mapping.externalProductId);
+            if (detail.imageUrl) {
+              await this.prisma.client.product.update({
+                where: { id: variant.product.id },
+                data: { imageUrl: detail.imageUrl },
+              });
+              changed = true;
+            }
+          } catch {
+            // best-effort — segue sem imagem, tenta de novo na próxima sincronização.
+          }
         }
 
         const currentOnHand = variant.inventory?.onHand ?? 0;

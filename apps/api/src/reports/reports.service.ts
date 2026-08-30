@@ -248,8 +248,8 @@ export class ReportsService {
         const name = item.productNameAtSale;
         const entry = productStats.get(name) ?? { quantity: 0, revenue: 0, cmv: 0 };
         entry.quantity += item.quantity;
-        // Só o desconto do vendedor reduz a receita — o da plataforma volta no repasse.
-        entry.revenue += Number(item.unitPrice) * item.quantity - Number(item.sellerDiscount);
+        // `unitPrice` já vem líquido dos dois descontos — soma-se de volta o da TikTok.
+        entry.revenue += Number(item.unitPrice) * item.quantity + Number(item.platformDiscount);
         entry.cmv += Number(item.unitCost) * item.quantity;
         productStats.set(name, entry);
       }
@@ -419,9 +419,10 @@ export class SalesExportService {
       const orderFees = feesByOrder.get(order.id) ?? 0;
       const nfe = order.fiscalDocuments[0]?.number ?? '';
       for (const item of order.items) {
-        // Só o desconto do vendedor reduz a receita — o da plataforma volta no repasse, por
-        // isso sai como coluna informativa separada em vez de entrar nesta conta.
-        const netRevenue = Number(item.unitPrice) * item.quantity - Number(item.sellerDiscount);
+        // `unitPrice` já vem líquido dos dois descontos — soma-se de volta o da TikTok (o do
+        // vendedor já está embutido). "Desconto vendedor"/"Desconto TikTok" saem como colunas
+        // informativas separadas, não entram nesta conta.
+        const netRevenue = Number(item.unitPrice) * item.quantity + Number(item.platformDiscount);
         const cmv = Number(item.unitCost) * item.quantity;
         const itemShareOfFees = order.items.length > 0 ? orderFees / order.items.length : 0;
         const profit = netRevenue - cmv - itemShareOfFees;

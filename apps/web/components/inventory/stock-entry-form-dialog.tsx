@@ -20,6 +20,7 @@ import { toDateInputValue } from '@/lib/format';
 import { useSuppliers } from '@/hooks/use-suppliers';
 import { useCreateStockEntry } from '@/hooks/use-stock-entries';
 import { VariantPickerDialog, type PickedVariant } from '@/components/shared/variant-picker-dialog';
+import { SupplierFormDialog } from './supplier-form-dialog';
 
 interface Row extends PickedVariant {
   quantity: string;
@@ -90,18 +91,28 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactNode }) 
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-1.5">
               <Label>Fornecedor</Label>
-              <Select value={supplierId} onValueChange={setSupplierId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers?.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select value={supplierId} onValueChange={setSupplierId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers?.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <SupplierFormDialog
+                  onCreated={(supplier) => setSupplierId(supplier.id)}
+                  trigger={
+                    <Button type="button" variant="outline" size="icon" aria-label="Novo fornecedor">
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="entryDate">Data</Label>

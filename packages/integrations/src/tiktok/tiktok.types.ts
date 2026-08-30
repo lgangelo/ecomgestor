@@ -31,6 +31,11 @@ export const TIKTOK_PATHS = {
   activeShopList: `/seller/${API_VERSION}/shops`,
   /** A confirmar no Partner Center. */
   productsSearch: `/product/${API_VERSION}/products/search`,
+  /** "Get Product" — detalhe completo de UM produto. Confirmado em produção que "Search
+   * Products" acima NÃO traz nenhum campo de imagem (payload bruto logado, sem main_images
+   * nem qualquer outro campo de imagem) — este é o único jeito de obter a foto do produto,
+   * uma chamada por produto. Path a confirmar no Partner Center (segue o padrão público). */
+  productDetail: (productId: string) => `/product/${API_VERSION}/products/${productId}`,
   /** A confirmar no Partner Center. */
   inventoryUpdate: `/product/${API_VERSION}/products/inventory/update`,
   /** A confirmar no Partner Center. */

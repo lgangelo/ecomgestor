@@ -152,10 +152,11 @@ export class OrdersService {
         shippingCost: item.shippingCost,
         marketplaceFee: item.marketplaceFee,
         unitCost: item.unitCost,
-        // Só o desconto do VENDEDOR reduz o valor da venda — o desconto que a TikTok bancou
-        // (promoção da plataforma) volta pro vendedor no repasse, então nunca deveria sair
-        // daqui (confirmado explicitamente pelo usuário).
-        lineTotal: Number(item.unitPrice) * item.quantity - Number(item.sellerDiscount),
+        // `unitPrice` já vem líquido dos dois descontos (confirmado contra o extrato real da
+        // TikTok) — o desconto do vendedor NÃO se subtrai de novo. O desconto que a TikTok
+        // bancou volta pro vendedor no repasse, então soma-se de volta: lineTotal =
+        // unitPrice*qty + platformDiscount (bate com a "Receita total" do extrato da TikTok).
+        lineTotal: Number(item.unitPrice) * item.quantity + Number(item.platformDiscount),
       })),
       payments: order.payments,
       statusHistory: order.statusHistory,
@@ -358,11 +359,22 @@ export class OrdersService {
     const statusKnown = KNOWN_ORDER_STATUSES.has(normalized.internalStatus);
     const initialStatus = statusKnown ? (normalized.internalStatus as OrderStatus) : OrderStatus.CREATED;
 
-    const subtotal = normalized.items.reduce((sum, i) => sum + Number(i.unitPrice) * i.quantity, 0);
+    // Confirmado contra o extrato real da TikTok (print do usuário, pedido 585794478920270934):
+    // `unitPrice` (sale_price) já vem LÍQUIDO dos dois descontos — não é o preço de tabela.
+    // Exemplo real: subtotal antes de descontos R$144, desconto vendedor -R$45, desconto TikTok
+    // (implícito) -R$19,80 => sale_price R$79,20; "Receita total" da TikTok é R$99 = 79,20 +
+    // 19,80 (só o desconto do vendedor sai da receita; o da TikTok volta no repasse). Por isso o
+    // subtotal "antes de descontos" precisa somar os dois descontos de volta ao invés de assumir
+    // que unitPrice já é o preço cheio.
+    const subtotal = normalized.items.reduce(
+      (sum, i) => sum + Number(i.unitPrice) * i.quantity + Number(i.sellerDiscount ?? 0) + Number(i.platformDiscount ?? 0),
+      0,
+    );
     // Só o desconto do VENDEDOR reduz o valor do pedido — o desconto que a TikTok bancou
     // (promoção da plataforma) volta pro vendedor no repasse, então nunca deveria sair do
-    // `total` (confirmado explicitamente pelo usuário). `platformDiscount` continua gravado por
-    // item, só não entra nesta soma.
+    // `total` (confirmado explicitamente pelo usuário e pelo extrato real). Com `subtotal` já
+    // somando os dois descontos de volta, `total = subtotal - discount + shipping` resulta em
+    // `unitPrice*qty + platformDiscount + shipping` — exatamente a "Receita total" da TikTok.
     const discount = normalized.items.reduce((sum, i) => sum + Number(i.sellerDiscount ?? 0), 0);
 
     const orderId = await this.prisma.client.$transaction(async (tx) => {

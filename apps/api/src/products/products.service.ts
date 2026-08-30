@@ -445,9 +445,11 @@ export class ProductsService {
     const suggestedPrices = variants.map((v) => Number(v.suggestedPrice));
 
     const unitsSold30d = recentItems.reduce((sum, i) => sum + i.quantity, 0);
-    // Só o desconto do vendedor reduz a receita — o da plataforma volta no repasse.
+    // `unitPrice` já vem líquido dos dois descontos (confirmado contra o extrato real da TikTok)
+    // — soma-se de volta o desconto que a TikTok bancou (o do vendedor já está embutido e nunca
+    // se subtrai de novo).
     const revenue30d = recentItems.reduce(
-      (sum, i) => sum + Number(i.unitPrice) * i.quantity - Number(i.sellerDiscount),
+      (sum, i) => sum + Number(i.unitPrice) * i.quantity + Number(i.platformDiscount),
       0,
     );
     const cmv30d = recentItems.reduce((sum, i) => sum + Number(i.unitCost) * i.quantity, 0);
