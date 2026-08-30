@@ -55,20 +55,23 @@ describe('TikTok Shop — mapper (seção 16/29, docs/integrations/tiktok-data-m
   });
 
   it('normaliza um produto com múltiplas SKUs (cor/tamanho) — uma por variação, não só a primeira', () => {
+    // Campos conferidos contra um payload real (product-level "id", não "product_id"; preço em
+    // skus[].price.tax_exclusive_price/.tax_inclusive_price, não .amount) — ver comentário em
+    // normalizeProductSkus.
     const raw = {
-      product_id: 'p-1',
-      product_name: 'Camiseta Azul',
+      id: 'p-1',
+      title: 'Camiseta Azul',
       skus: [
         {
           id: 'sku-ext-1',
           seller_sku: 'CAM-AZUL-M',
-          price: { amount: '49.90', currency: 'BRL' },
+          price: { tax_exclusive_price: '49.90', currency: 'BRL' },
           inventory: [{ quantity: 10 }, { quantity: 5 }],
         },
         {
           id: 'sku-ext-2',
           seller_sku: 'CAM-AZUL-G',
-          price: { amount: '54.90', currency: 'BRL' },
+          price: { tax_inclusive_price: '54.90', tax_exclusive_price: '52.00', currency: 'BRL' },
           inventory: [{ quantity: 3 }],
         },
       ],

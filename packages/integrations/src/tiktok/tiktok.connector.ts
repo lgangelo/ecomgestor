@@ -80,9 +80,6 @@ export class TikTokConnector implements MarketplaceConnector {
       body: params.updatedAfter ? { update_time_ge: toUnixSeconds(params.updatedAfter) } : {},
     });
     const rawProducts = raw.products ?? raw.items ?? [];
-    // TEMPORÁRIO — remover depois de confirmar em produção o formato real do preço por SKU
-    // (skus[].price.amount, conforme o anúncio "Product API now supports two prices").
-    if (rawProducts[0]) console.log('[tiktok-product-debug]', JSON.stringify(rawProducts[0]));
     const items = rawProducts.flatMap(normalizeProductSkus);
     return { items, nextPageToken: raw.next_page_token };
   }

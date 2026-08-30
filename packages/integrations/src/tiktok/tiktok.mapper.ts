@@ -129,15 +129,20 @@ function numericStr(obj: Record<string, unknown>, key: string): string | undefin
  * próprio (mesmo `externalProductId`, `externalSku`/preço/estoque individuais), igual ao nosso
  * modelo interno (1 Produto → N Variantes). Corrigido depois de confirmado em produção: a
  * versão anterior só processava `skus[0]`, descartando as demais variações silenciosamente.
- * Preço é por SKU (`skus[].price.amount` — confirmado contra o anúncio oficial "Product API now
- * supports two prices" do Partner Center: preço vem como objeto `{currency, amount}`, não um
- * campo `sale_price` — diferente do item de pedido, que usa `sale_price` plano).
+ *
+ * Confirmado contra o payload real (logado uma vez via debug temporário, já removido):
+ * - O id do produto é o campo `id` no nível do produto — não `product_id`. Colide de propósito
+ *   com o campo `id` de cada SKU (nível diferente, mesmo nome); usar o nome errado fazia
+ *   `externalProductId` sair sempre vazio, quebrando o agrupamento de variações do mesmo produto.
+ * - Preço é por SKU, em `skus[].price.tax_exclusive_price` (ou `.tax_inclusive_price`, quando a
+ *   TikTok manda os dois — anúncio "Product API now supports two prices" do Partner Center) —
+ *   nunca um campo `sale_price`/`amount` (isso é do item de pedido, schema diferente).
  */
 export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
   const product = asRecord(raw);
   const skus = Array.isArray(product.skus) ? (product.skus as unknown[]) : [];
-  const externalProductId = requiredStr(product, 'product_id');
-  const name = requiredStr(product, 'product_name') || requiredStr(product, 'title');
+  const externalProductId = requiredStr(product, 'id');
+  const name = requiredStr(product, 'title') || requiredStr(product, 'product_name');
 
   if (skus.length === 0) {
     // Nunca visto em produção até agora, mas não deveria acontecer de verdade — mantém como
@@ -149,11 +154,12 @@ export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
     const sku = asRecord(rawSku);
     const inventoryList = Array.isArray(sku.inventory) ? (sku.inventory as unknown[]) : [];
     const stock = inventoryList.reduce((sum: number, entry) => sum + Number(asRecord(entry).quantity ?? 0), 0);
+    const skuPrice = asRecord(sku.price);
     return {
       externalProductId,
       externalSku: requiredStr(sku, 'id'),
       name,
-      price: numericStr(asRecord(sku.price), 'amount') ?? '0',
+      price: numericStr(skuPrice, 'tax_inclusive_price') ?? numericStr(skuPrice, 'tax_exclusive_price') ?? '0',
       stock,
       raw: rawSku,
     };
