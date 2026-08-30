@@ -156,6 +156,9 @@ export class OrdersService {
         shippingCost: item.shippingCost,
         marketplaceFee: item.marketplaceFee,
         unitCost: item.unitCost,
+        // Preço de tabela (antes de qualquer desconto) — só para exibição, não entra em nenhum
+        // cálculo de receita/lucro (esses continuam baseados em `unitPrice`, já líquido).
+        listPrice: Number(item.unitPrice) * item.quantity + Number(item.sellerDiscount) + Number(item.platformDiscount),
         // `unitPrice` já vem líquido dos dois descontos (confirmado contra o extrato real da
         // TikTok) — o desconto do vendedor NÃO se subtrai de novo. O desconto que a TikTok
         // bancou volta pro vendedor no repasse, então soma-se de volta: lineTotal =

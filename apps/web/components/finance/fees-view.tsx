@@ -41,7 +41,7 @@ export function FeesView() {
           <TableBody>
             {data.items.map((fee) => (
               <TableRow key={fee.id}>
-                <TableCell>{formatDate(fee.createdAt)}</TableCell>
+                <TableCell>{formatDate(fee.date)}</TableCell>
                 <TableCell>{fee.channelName}</TableCell>
                 <TableCell>{fee.feeType}</TableCell>
                 <TableCell>{formatBRL(fee.amount)}</TableCell>

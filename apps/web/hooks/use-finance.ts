@@ -110,7 +110,7 @@ export interface FeeListItem {
   orderId: string | null;
   feeType: string;
   amount: string;
-  createdAt: string;
+  date: string;
 }
 
 function onErrorToast(title: string) {

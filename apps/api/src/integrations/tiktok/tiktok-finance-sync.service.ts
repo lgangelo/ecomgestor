@@ -89,7 +89,13 @@ export class TikTokFinanceSyncService {
         });
         statementsSynced++;
 
-        transactionsSynced += await this.syncTransactionsForStatement(companyId, integration.channelId, settlement.id, stmt.externalStatementId);
+        transactionsSynced += await this.syncTransactionsForStatement(
+          companyId,
+          integration.channelId,
+          settlement.id,
+          settlement.periodEnd,
+          stmt.externalStatementId,
+        );
       }
 
       if (!statementPage.nextPageToken) break;
@@ -109,6 +115,7 @@ export class TikTokFinanceSyncService {
     companyId: string,
     channelId: string,
     settlementId: string,
+    settlementPeriodEnd: Date,
     externalStatementId: string,
   ): Promise<number> {
     const { connector } = await this.connectorFactory.forCompany(companyId);
@@ -177,8 +184,10 @@ export class TikTokFinanceSyncService {
               feeType: 'PLATFORM_FEE',
               amount: Math.abs(Number(tx.amount)),
               externalTransactionId: tx.externalTransactionId,
+              settlementId,
+              feeDate: settlementPeriodEnd,
             },
-            update: { amount: Math.abs(Number(tx.amount)) },
+            update: { amount: Math.abs(Number(tx.amount)), settlementId, feeDate: settlementPeriodEnd },
           });
         }
         synced++;

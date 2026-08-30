@@ -726,6 +726,7 @@ model Settlement {
   company      Company                 @relation(fields: [companyId], references: [id])
   channel      SalesChannel            @relation(fields: [channelId], references: [id])
   transactions SettlementTransaction[]
+  marketplaceFees MarketplaceFee[]
 
   @@unique([channelId, externalStatementId])
   @@index([companyId, channelId])
@@ -764,9 +765,17 @@ model MarketplaceFee {
   // quando esta linha veio de um sync automático (TikTok Finance API) — permite upsert idempotente
   // em vez de duplicar a taxa a cada re-sync do mesmo statement. Nulo para lançamentos manuais.
   externalTransactionId String? @unique @map("external_transaction_id")
+  // Extrato (Settlement) de origem — usado só para rastreabilidade/depuração; a data exibida na
+  // tela de Taxas usa `feeDate`, não esta relação diretamente.
+  settlementId String? @map("settlement_id")
+  // Data real da taxa (fim do período do extrato de liquidação da TikTok), preenchida no
+  // momento da gravação — nunca a data em que ESTE registro foi sincronizado (`createdAt`),
+  // que é só quando nosso sistema buscou o dado, não quando a taxa realmente ocorreu.
+  feeDate DateTime @default(now()) @map("fee_date") @db.Timestamptz
 
-  channel SalesChannel @relation(fields: [channelId], references: [id])
-  order   Order?       @relation(fields: [orderId], references: [id])
+  channel    SalesChannel @relation(fields: [channelId], references: [id])
+  order      Order?       @relation(fields: [orderId], references: [id])
+  settlement Settlement?  @relation(fields: [settlementId], references: [id])
 
   @@map("marketplace_fees")
 }

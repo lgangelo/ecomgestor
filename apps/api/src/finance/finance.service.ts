@@ -244,7 +244,7 @@ export class FinanceService {
       ...(query.channelId ? { channelId: query.channelId } : {}),
       ...(query.dateFrom || query.dateTo
         ? {
-            createdAt: {
+            feeDate: {
               ...(query.dateFrom ? { gte: new Date(query.dateFrom) } : {}),
               ...(query.dateTo ? { lt: endOfDayExclusive(query.dateTo) } : {}),
             },
@@ -256,7 +256,7 @@ export class FinanceService {
       this.prisma.client.marketplaceFee.findMany({
         where,
         include: { channel: { select: { name: true } } },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { feeDate: 'desc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
       }),
@@ -269,7 +269,7 @@ export class FinanceService {
       orderId: item.orderId,
       feeType: item.feeType,
       amount: item.amount,
-      createdAt: item.createdAt,
+      date: item.feeDate,
     }));
 
     return paginate(mapped, total, query.page, query.pageSize);

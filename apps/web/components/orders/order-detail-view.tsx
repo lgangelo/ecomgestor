@@ -111,9 +111,9 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   <TableRow>
                     <TableHead>Produto</TableHead>
                     <TableHead>Qtd.</TableHead>
-                    <TableHead>Preço unit.</TableHead>
+                    <TableHead>Preço</TableHead>
                     <TableHead>Desc. vendedor</TableHead>
-                    <TableHead>Desconto TikTok</TableHead>
+                    <TableHead>Desc. plataforma</TableHead>
                     <TableHead>Valor total</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -127,7 +127,7 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                         <p className="text-xs text-muted-foreground">{item.sku}</p>
                       </TableCell>
                       <TableCell>{item.quantity}</TableCell>
-                      <TableCell>{formatBRL(item.unitPrice)}</TableCell>
+                      <TableCell>{formatBRL(item.listPrice)}</TableCell>
                       <TableCell>{formatBRL(item.sellerDiscount)}</TableCell>
                       <TableCell>{formatBRL(item.platformDiscount)}</TableCell>
                       <TableCell>{formatBRL(item.lineTotal)}</TableCell>

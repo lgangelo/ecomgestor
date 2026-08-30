@@ -30,6 +30,7 @@ export interface OrderItemDetail {
   shippingCost: string;
   marketplaceFee: string;
   unitCost: string;
+  listPrice: number;
   lineTotal: number;
 }
 
