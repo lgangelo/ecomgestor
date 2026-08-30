@@ -184,15 +184,36 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
               <CardTitle>Pagamentos</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 pt-0">
-              {order.payments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhum pagamento registrado.</p>
-              ) : (
+              {order.payments.length > 0 ? (
                 order.payments.map((p) => (
                   <div key={p.id} className="flex items-center justify-between text-sm">
                     <span>{p.method}</span>
                     <span className="font-medium">{formatBRL(p.amount)}</span>
                   </div>
                 ))
+              ) : isTikTok ? (
+                // A TikTok não gera um "pagamento" no sentido tradicional — o repasse só chega
+                // dias depois da entrega, então mostra o status real da liquidação em vez de um
+                // "Nenhum pagamento registrado" que sugere falta de dado.
+                reconciliation?.settled ? (
+                  <div className="text-sm">
+                    <div className="flex items-center justify-between">
+                      <span>TikTok Shop</span>
+                      <span className="font-medium">{formatBRL(reconciliation.netRevenue ?? 0)}</span>
+                    </div>
+                    {reconciliation.paidAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Pago pela TikTok em {formatDate(reconciliation.paidAt, true)}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Pendente de liquidação pela TikTok — o repasse costuma sair alguns dias após a entrega.
+                  </p>
+                )
+              ) : (
+                <p className="text-sm text-muted-foreground">Nenhum pagamento registrado.</p>
               )}
             </CardContent>
           </Card>
@@ -219,6 +240,12 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                       <span>Receita líquida</span>
                       <span>{formatBRL(reconciliation.netRevenue ?? 0)}</span>
                     </div>
+                    {reconciliation.paidAt && (
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Pago em</span>
+                        <span>{formatDate(reconciliation.paidAt, true)}</span>
+                      </div>
+                    )}
                   </>
                 )}
               </CardContent>

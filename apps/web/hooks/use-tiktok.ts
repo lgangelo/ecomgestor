@@ -75,6 +75,7 @@ export interface TikTokOrderReconciliation {
   settlementPayout?: number;
   other?: number;
   netRevenue?: number | null;
+  paidAt?: string | null;
 }
 
 function connectUrl(): string {

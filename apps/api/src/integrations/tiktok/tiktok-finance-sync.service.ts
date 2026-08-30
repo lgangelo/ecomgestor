@@ -219,13 +219,22 @@ export class TikTokFinanceSyncService {
     if (!order) throw new NotFoundException('Pedido não encontrado');
 
     if (order.settlementTx.length === 0) {
-      return { settled: false, grossSale: null, fees: null, netRevenue: null };
+      return { settled: false, grossSale: null, fees: null, netRevenue: null, paidAt: null };
     }
 
     const fees = order.settlementTx.reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
     const grossSale = Number(order.subtotal);
     const netRevenue = Number(order.total) - fees;
 
-    return { settled: true, grossSale, fees, netRevenue };
+    // A TikTok só deposita dias depois da entrega — `feeDate` (fim do período do extrato de
+    // liquidação) é a melhor data disponível para "quando isso foi pago", já que a API de
+    // transações não devolve uma data de pagamento por transação, só por extrato.
+    const fee = await this.prisma.client.marketplaceFee.findFirst({
+      where: { orderId },
+      orderBy: { feeDate: 'desc' },
+      select: { feeDate: true },
+    });
+
+    return { settled: true, grossSale, fees, netRevenue, paidAt: fee?.feeDate ?? null };
   }
 }
