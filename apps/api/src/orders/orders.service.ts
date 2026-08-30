@@ -325,6 +325,7 @@ export class OrdersService {
     channelId: string,
     userId: string | null,
     normalized: ExternalOrder,
+    options?: { skipStockMovement?: boolean },
   ): Promise<{ orderId: string; created: boolean }> {
     const existing = await this.prisma.client.order.findUnique({
       where: {
@@ -409,7 +410,13 @@ export class OrdersService {
         },
       });
 
-      if (statusKnown) {
+      // `skipStockMovement`: carga histórica de pedidos ANTIGOS (seção pedida pelo usuário) —
+      // o estoque atual já foi sincronizado do canal externo e já reflete essas vendas antigas;
+      // aplicar a movimentação de novo debitaria o mesmo estoque uma segunda vez, podendo levar
+      // o saldo a negativo (confirmado em produção: "Saldo insuficiente... estoque físico
+      // negativo"). Pedido vindo de webhook/reconciliação ao vivo continua movimentando estoque
+      // normalmente — só a importação retroativa explícita pula isso.
+      if (statusKnown && !options?.skipStockMovement) {
         await this.initializeStockForNewOrder(
           tx,
           { companyId, userId, referenceId: order.id, reason: 'Importação de pedido externo' },

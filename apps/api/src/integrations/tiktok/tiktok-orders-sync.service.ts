@@ -39,7 +39,7 @@ export class TikTokOrdersSyncService {
     companyId: string,
     userId: string | null,
     explicitSince?: Date,
-  ): Promise<{ imported: number; updated: number; skipped: number }> {
+  ): Promise<{ imported: number; updated: number; skipped: number; failed: number }> {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) {
       throw new BadRequestException('Canal TikTok Shop ainda não conectado.');
@@ -56,6 +56,11 @@ export class TikTokOrdersSyncService {
     // checkpoint — histórico já importado, só o que mudou de status.
     const createdAfter = explicitSince;
     const updatedAfter = explicitSince ? undefined : lastSync ? new Date(lastSync.getTime() - OVERLAP_MS) : undefined;
+    // A mesma carga histórica nunca deve mexer no saldo de estoque: o estoque atual já foi
+    // sincronizado do canal externo e já reflete essas vendas antigas — aplicar de novo
+    // debitaria o mesmo estoque duas vezes, podendo levar o saldo a negativo (confirmado em
+    // produção). Reconciliação/webhook ao vivo continua movimentando estoque normalmente.
+    const skipStockMovement = Boolean(explicitSince);
 
     const startedAt = new Date();
     let imported = 0;
@@ -66,36 +71,49 @@ export class TikTokOrdersSyncService {
     // nosso sistema (ex.: foi pago e cancelado/estornado depois) continua sendo atualizado
     // normalmente — só a CRIAÇÃO de um pedido novo já nascendo cancelado é que é pulada.
     let skipped = 0;
+    // Cada pedido é processado de forma independente — um erro num pedido específico (ex.:
+    // conflito de estoque) nunca aborta o lote inteiro, só entra na contagem de falhas.
+    let failed = 0;
     let pageToken: string | undefined;
 
     for (let page = 0; page < MAX_PAGES; page++) {
       const result = await connector.getOrders(companyId, { pageSize: 50, pageToken, updatedAfter, createdAfter });
       for (const order of result.items) {
-        if (order.status.toUpperCase() === 'CANCELLED') {
-          const alreadyKnown = await this.prisma.client.order.findUnique({
-            where: {
-              companyId_channelId_externalOrderId: {
-                companyId,
-                channelId: integration.channelId,
-                externalOrderId: order.externalOrderId,
+        try {
+          if (order.status.toUpperCase() === 'CANCELLED') {
+            const alreadyKnown = await this.prisma.client.order.findUnique({
+              where: {
+                companyId_channelId_externalOrderId: {
+                  companyId,
+                  channelId: integration.channelId,
+                  externalOrderId: order.externalOrderId,
+                },
               },
-            },
-            select: { id: true },
-          });
-          if (!alreadyKnown) {
-            skipped++;
-            continue;
+              select: { id: true },
+            });
+            if (!alreadyKnown) {
+              skipped++;
+              continue;
+            }
           }
-        }
 
-        const { created } = await this.ordersService.importExternalOrder(
-          companyId,
-          integration.channelId,
-          userId,
-          order,
-        );
-        if (created) imported++;
-        else updated++;
+          const { created } = await this.ordersService.importExternalOrder(
+            companyId,
+            integration.channelId,
+            userId,
+            order,
+            { skipStockMovement },
+          );
+          if (created) imported++;
+          else updated++;
+        } catch (error) {
+          failed++;
+          this.logger.error('tiktok_order_sync_item_failed', {
+            operation: 'sync_orders',
+            externalOrderId: order.externalOrderId,
+            errorMessage: (error as Error).message,
+          });
+        }
       }
       if (!result.nextPageToken) break;
       pageToken = result.nextPageToken;
@@ -109,7 +127,7 @@ export class TikTokOrdersSyncService {
       },
     });
 
-    this.logger.log('tiktok_orders_synced', { operation: 'sync_orders', imported, updated, skipped });
-    return { imported, updated, skipped };
+    this.logger.log('tiktok_orders_synced', { operation: 'sync_orders', imported, updated, skipped, failed });
+    return { imported, updated, skipped, failed };
   }
 }
