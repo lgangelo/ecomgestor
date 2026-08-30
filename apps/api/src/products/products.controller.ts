@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { PERMISSIONS } from '@ecommerce-manager/shared';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -88,6 +88,21 @@ export class ProductsController {
       newValue: updated,
     });
     return updated;
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @RequirePermissions(PERMISSIONS.PRODUCT_DELETE)
+  async remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    const removed = await this.productsService.remove(id, user.companyId);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'DELETE',
+      entity: 'product',
+      entityId: id,
+      oldValue: removed,
+    });
   }
 
   @Post(':id/variants')

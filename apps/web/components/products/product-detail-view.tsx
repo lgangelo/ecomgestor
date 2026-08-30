@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowLeft, History, Pencil, Plus } from 'lucide-react';
+import { ArrowLeft, History, Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import { StatCard } from '@/components/shared/stat-card';
 import { VariantFormDialog } from './variant-form-dialog';
 import { VariantEditDialog } from './variant-edit-dialog';
 import { CostHistoryDialog } from './cost-history-dialog';
+import { ProductDeleteDialog } from './product-delete-dialog';
 
 export function ProductDetailView({ productId }: { productId: string }) {
   const { data: product, isLoading } = useProduct(productId);
@@ -48,15 +49,27 @@ export function ProductDetailView({ productId }: { productId: string }) {
         title={product.name}
         description={`SKU base: ${product.baseSku}${product.category ? ` · Categoria: ${product.category.name}` : ''}`}
         actions={
-          <VariantFormDialog
-            productId={productId}
-            trigger={
-              <Button>
-                <Plus className="h-4 w-4" />
-                Nova variação
-              </Button>
-            }
-          />
+          <div className="flex gap-2">
+            <VariantFormDialog
+              productId={productId}
+              trigger={
+                <Button>
+                  <Plus className="h-4 w-4" />
+                  Nova variação
+                </Button>
+              }
+            />
+            <ProductDeleteDialog
+              productId={productId}
+              productName={product.name}
+              trigger={
+                <Button variant="destructive">
+                  <Trash2 className="h-4 w-4" />
+                  Excluir
+                </Button>
+              }
+            />
+          </div>
         }
       />
 

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
@@ -206,6 +206,49 @@ export class ProductsService {
       throw new NotFoundException('Variante não encontrada');
     }
     return variant;
+  }
+
+  /**
+   * Exclusão só local (nunca chama o marketplace — se veio de uma integração, o registro de lá
+   * não é afetado). Bloqueada quando existe histórico real (pedido, movimentação de estoque ou
+   * entrada) em qualquer variante — apagar isso seria perder dado de negócio de verdade; nesses
+   * casos o caminho é marcar o produto/variante como "Inativo", não excluir. Vínculos que são só
+   * operacionais (mapeamento de canal, saldo de estoque zerado, contagem, outbox de sincronização)
+   * são removidos junto, já que não têm significado sem o produto.
+   */
+  async remove(id: string, companyId: string) {
+    const product = await this.prisma.client.product.findFirst({
+      where: { id, companyId },
+      include: { variants: { select: { id: true } } },
+    });
+    if (!product) {
+      throw new NotFoundException('Produto não encontrado');
+    }
+
+    const variantIds = product.variants.map((v) => v.id);
+
+    const [orderItemCount, movementCount, stockEntryCount] = await Promise.all([
+      this.prisma.client.orderItem.count({ where: { variantId: { in: variantIds } } }),
+      this.prisma.client.inventoryMovement.count({ where: { variantId: { in: variantIds } } }),
+      this.prisma.client.stockEntryItem.count({ where: { variantId: { in: variantIds } } }),
+    ]);
+
+    if (orderItemCount > 0 || movementCount > 0 || stockEntryCount > 0) {
+      throw new BadRequestException(
+        'Não é possível excluir: este produto já tem pedidos, movimentações de estoque ou entradas registradas. Marque como "Inativo" em vez de excluir.',
+      );
+    }
+
+    await this.prisma.client.$transaction([
+      this.prisma.client.channelProductMapping.deleteMany({ where: { variantId: { in: variantIds } } }),
+      this.prisma.client.inventoryCountItem.deleteMany({ where: { variantId: { in: variantIds } } }),
+      this.prisma.client.stockSyncOutboxEntry.deleteMany({ where: { variantId: { in: variantIds } } }),
+      this.prisma.client.inventory.deleteMany({ where: { variantId: { in: variantIds } } }),
+      this.prisma.client.productVariant.deleteMany({ where: { productId: id } }),
+      this.prisma.client.product.delete({ where: { id } }),
+    ]);
+
+    return product;
   }
 
   async createVariant(productId: string, companyId: string, dto: CreateVariantDto) {

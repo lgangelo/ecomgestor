@@ -118,6 +118,19 @@ export function useUpdateProduct(id: string) {
   });
 }
 
+export function useDeleteProduct() {
+  const queryClient = useQueryClient();
+  const onErrorToast = useErrorToast();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/products/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast({ title: 'Produto excluído.' });
+    },
+    onError: onErrorToast('Não foi possível excluir o produto'),
+  });
+}
+
 export function useCreateVariant(productId: string) {
   const queryClient = useQueryClient();
   const onErrorToast = useErrorToast();
