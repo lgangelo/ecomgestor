@@ -10,6 +10,7 @@
     "start:worker": "node dist/worker.js",
     "create-admin": "node dist/cli/create-admin.js",
     "recompute-order-totals": "node dist/cli/recompute-order-totals.js",
+    "backfill-tiktok-product-details": "node dist/cli/backfill-tiktok-product-details.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"

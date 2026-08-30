@@ -50,6 +50,12 @@ interface RawPage {
   products?: unknown[];
 }
 
+// Debug temporário: loga só a primeira transação real vista no processo, para confirmar os
+// campos de tipo (`type`/`transaction_type`) e referência ao pedido (`order_id`) sem inundar o
+// log — 146 transações sincronizadas mas nenhuma taxa aparecendo no pedido é sinal de que um dos
+// dois nomes de campo assumidos em `normalizeTransaction`/`TRANSACTION_TYPE_MAP` está errado.
+let loggedFirstTransaction = false;
+
 /**
  * Implementação real do contrato `MarketplaceConnector` (seção 3 do pedido) para a TikTok
  * Shop. Cada instância já está associada às credenciais de UMA loja/empresa (montada pelo
@@ -213,6 +219,10 @@ export class TikTokConnector implements MarketplaceConnector {
     if (items.length === 0) {
       // eslint-disable-next-line no-console -- debug temporário: 0 transações sincronizadas em produção mesmo com >80 statements é suspeito
       console.log('[tiktok-transactions-empty-debug]', JSON.stringify({ path, keys: Object.keys(raw) }));
+    } else if (!loggedFirstTransaction) {
+      loggedFirstTransaction = true;
+      // eslint-disable-next-line no-console -- debug temporário, remover após confirmar o campo real de tipo/order_id da transação
+      console.log('[tiktok-transaction-debug]', JSON.stringify(items[0]));
     }
     return {
       items: items.map((item) => normalizeTransaction(item, params.statementId)),
