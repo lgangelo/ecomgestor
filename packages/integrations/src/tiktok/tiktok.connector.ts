@@ -163,8 +163,13 @@ function buildPageQuery(params: PageParams): Record<string, string> {
   return query;
 }
 
-function toUnixSeconds(date: Date): string {
-  return String(Math.floor(date.getTime() / 1000));
+/**
+ * Sempre usado dentro do corpo JSON (nunca na query string), onde o tipo importa de verdade —
+ * confirmado em produção: mandar como string dá "param update_time_ge type invalid. actual
+ * type:string, expected type:int64". A TikTok exige um número JSON de verdade, não um texto.
+ */
+function toUnixSeconds(date: Date): number {
+  return Math.floor(date.getTime() / 1000);
 }
 
 export interface TikTokAuthorizedShop {

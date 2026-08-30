@@ -215,6 +215,12 @@ export class ProductsService {
    * casos o caminho é marcar o produto/variante como "Inativo", não excluir. Vínculos que são só
    * operacionais (mapeamento de canal, saldo de estoque zerado, contagem, outbox de sincronização)
    * são removidos junto, já que não têm significado sem o produto.
+   *
+   * A movimentação de estoque da PRÓPRIA carga inicial da TikTok Shop (`referenceType`
+   * `tiktok_import`/`tiktok_sync`) não conta como "histórico real" aqui — sem essa exceção, todo
+   * produto criado já com estoque via importação ficaria travado pra sempre, mesmo sem nenhuma
+   * venda ou entrada de verdade (confirmado em produção: bloqueava exclusão de produtos recém
+   * importados que nunca tiveram pedido nem entrada).
    */
   async remove(id: string, companyId: string) {
     const product = await this.prisma.client.product.findFirst({
@@ -229,7 +235,9 @@ export class ProductsService {
 
     const [orderItemCount, movementCount, stockEntryCount] = await Promise.all([
       this.prisma.client.orderItem.count({ where: { variantId: { in: variantIds } } }),
-      this.prisma.client.inventoryMovement.count({ where: { variantId: { in: variantIds } } }),
+      this.prisma.client.inventoryMovement.count({
+        where: { variantId: { in: variantIds }, referenceType: { notIn: ['tiktok_import', 'tiktok_sync'] } },
+      }),
       this.prisma.client.stockEntryItem.count({ where: { variantId: { in: variantIds } } }),
     ]);
 
@@ -243,6 +251,10 @@ export class ProductsService {
       this.prisma.client.channelProductMapping.deleteMany({ where: { variantId: { in: variantIds } } }),
       this.prisma.client.inventoryCountItem.deleteMany({ where: { variantId: { in: variantIds } } }),
       this.prisma.client.stockSyncOutboxEntry.deleteMany({ where: { variantId: { in: variantIds } } }),
+      // Só sobra movimentação de carga/sincronização da TikTok aqui (a checagem acima já garante
+      // que nenhuma outra existe) — segura pra apagar junto, senão a FK bloquearia a exclusão da
+      // variante.
+      this.prisma.client.inventoryMovement.deleteMany({ where: { variantId: { in: variantIds } } }),
       this.prisma.client.inventory.deleteMany({ where: { variantId: { in: variantIds } } }),
       this.prisma.client.productVariant.deleteMany({ where: { productId: id } }),
       this.prisma.client.product.delete({ where: { id } }),
