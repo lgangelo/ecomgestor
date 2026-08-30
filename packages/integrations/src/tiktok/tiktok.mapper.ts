@@ -249,10 +249,24 @@ export function normalizeReturn(raw: unknown): ExternalReturn {
   };
 }
 
+/**
+ * Confirmado em produção (sintoma, não payload direto ainda): `externalStatementId` saía vazio
+ * — a busca de transações por statement então caía no path errado (`/finance/.../statements` em
+ * vez de `.../statements/{id}/statement_transactions`, confirmado via log), e 87 statements
+ * "sincronizados" na real colidiam num único registro (mesmo `channelId` + `externalStatementId`
+ * vazio no upsert). Segue o mesmo padrão já confirmado em produto e pedido: o campo é `id` no
+ * nível do recurso, não `<recurso>_id` — `statement_id` (chute anterior) provavelmente nunca
+ * existiu. Debug temporário até confirmar contra o payload real.
+ */
 export function normalizeStatement(raw: unknown): ExternalStatement {
   const statement = asRecord(raw);
+  const externalStatementId = requiredStr(statement, 'id') || requiredStr(statement, 'statement_id');
+  if (!externalStatementId) {
+    // eslint-disable-next-line no-console -- debug temporário, remover após confirmar o campo real de id do statement em produção
+    console.log('[tiktok-statement-id-debug]', JSON.stringify(statement));
+  }
   return {
-    externalStatementId: requiredStr(statement, 'statement_id'),
+    externalStatementId,
     periodStart: unixDate(statement, 'statement_time') ?? new Date(0),
     periodEnd: unixDate(statement, 'statement_time') ?? new Date(0),
     totalAmount: numericStr(statement, 'settlement_amount') ?? '0',

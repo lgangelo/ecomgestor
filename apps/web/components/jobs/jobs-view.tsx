@@ -17,6 +17,15 @@ import { formatDate } from '@/lib/format';
 import { useJobs, useRetryJob, type JobListItem } from '@/hooks/use-jobs';
 import { useUrlFilters } from '@/hooks/use-url-filters';
 
+// Um valor de resultado pode ser um objeto aninhado (ex.: `linkedSync: { updated, failed, ... }`
+// dentro do resultado de tiktok-import-products) — `${value}` nesse caso vira "[object Object]",
+// escondendo justamente o dado que se precisa ler para diagnosticar. Serializa como JSON em vez
+// de deixar o JS converter sozinho.
+function formatResultValue(value: unknown): string {
+  if (value !== null && typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
 const JOB_TYPES = [
   'tiktok-import-orders',
   'tiktok-import-products',
@@ -93,7 +102,7 @@ function JobRow({ job }: { job: JobListItem }) {
                 <p className="sm:col-span-2">
                   <span className="text-muted-foreground">Resultado:</span>{' '}
                   {Object.entries(job.result)
-                    .map(([key, value]) => `${key}: ${value}`)
+                    .map(([key, value]) => `${key}: ${formatResultValue(value)}`)
                     .join(' · ')}
                 </p>
               )}
