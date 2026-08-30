@@ -11,6 +11,7 @@
     "create-admin": "node dist/cli/create-admin.js",
     "recompute-order-totals": "node dist/cli/recompute-order-totals.js",
     "backfill-tiktok-product-details": "node dist/cli/backfill-tiktok-product-details.js",
+    "check-marketplace-fees": "node dist/cli/check-marketplace-fees.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
