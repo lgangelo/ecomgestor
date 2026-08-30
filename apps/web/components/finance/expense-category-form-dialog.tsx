@@ -27,6 +27,7 @@ export function ExpenseCategoryFormDialog({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    e.stopPropagation();
     const category = await createCategory.mutateAsync({ name });
     setOpen(false);
     setName('');

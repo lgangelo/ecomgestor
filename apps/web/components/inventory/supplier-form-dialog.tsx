@@ -28,6 +28,7 @@ export function SupplierFormDialog({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    e.stopPropagation();
     const supplier = await createSupplier.mutateAsync({
       name: form.name,
       document: form.document || undefined,
