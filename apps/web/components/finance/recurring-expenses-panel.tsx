@@ -23,6 +23,7 @@ import {
   useSetRecurringExpenseActive,
 } from '@/hooks/use-finance';
 import { EmptyState } from '@/components/shared/empty-state';
+import { ExpenseCategoryFormDialog } from './expense-category-form-dialog';
 
 export function RecurringExpensesPanel() {
   const { data: templates, isLoading } = useRecurringExpenses();
@@ -62,18 +63,28 @@ export function RecurringExpensesPanel() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
                 <Label>Categoria</Label>
-                <Select value={form.categoryId} onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v }))}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories?.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <Select value={form.categoryId} onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v }))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories?.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <ExpenseCategoryFormDialog
+                    onCreated={(category) => setForm((f) => ({ ...f, categoryId: category.id }))}
+                    trigger={
+                      <Button type="button" variant="outline" size="icon" aria-label="Nova categoria">
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    }
+                  />
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="description">Descrição</Label>

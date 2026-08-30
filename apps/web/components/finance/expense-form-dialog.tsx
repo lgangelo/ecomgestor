@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { Plus } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toDateInputValue } from '@/lib/format';
 import { useCreateExpense, useExpenseCategories } from '@/hooks/use-finance';
+import { ExpenseCategoryFormDialog } from './expense-category-form-dialog';
 
 export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
@@ -52,18 +54,28 @@ export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label>Categoria</Label>
-            <Select value={form.categoryId} onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories?.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <Select value={form.categoryId} onValueChange={(v) => setForm((f) => ({ ...f, categoryId: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories?.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <ExpenseCategoryFormDialog
+                onCreated={(category) => setForm((f) => ({ ...f, categoryId: category.id }))}
+                trigger={
+                  <Button type="button" variant="outline" size="icon" aria-label="Nova categoria">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                }
+              />
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="description">Descrição</Label>
