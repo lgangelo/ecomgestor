@@ -213,8 +213,8 @@ export function ProductsView() {
                     aria-label="Selecionar página"
                   />
                 </TableHead>
-                <TableHead className="w-14" />
-                <TableHead>Produto</TableHead>
+                <TableHead className="w-16" />
+                <TableHead className="max-w-xs">Produto</TableHead>
                 <TableHead>Categoria</TableHead>
                 <TableHead>Marca</TableHead>
                 <TableHead>Preço</TableHead>
@@ -235,14 +235,14 @@ export function ProductsView() {
                   <TableCell>
                     {product.imageUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo ou cadastrada manualmente
-                      <img src={product.imageUrl} alt="" className="h-10 w-10 rounded object-cover" />
+                      <img src={product.imageUrl} alt="" className="h-14 w-14 rounded object-cover" />
                     ) : (
-                      <div className="h-10 w-10 rounded bg-muted" />
+                      <div className="h-14 w-14 rounded bg-muted" />
                     )}
                   </TableCell>
-                  <TableCell className="cursor-pointer">
+                  <TableCell className="max-w-xs cursor-pointer">
                     <Link href={`/produtos/${product.id}`} className="hover:underline">
-                      <p className="font-medium">{product.name}</p>
+                      <p className="line-clamp-2 font-medium">{product.name}</p>
                       <p className="text-xs text-muted-foreground">
                         {product.baseSku} · {product.variantCount} variação(ões)
                       </p>

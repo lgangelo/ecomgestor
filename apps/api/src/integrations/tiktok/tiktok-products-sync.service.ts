@@ -387,7 +387,7 @@ export class TikTokProductsSyncService {
       try {
         const variant = await this.prisma.client.productVariant.findUniqueOrThrow({
           where: { id: mapping.variantId },
-          include: { inventory: true },
+          include: { inventory: true, product: { select: { id: true, imageUrl: true } } },
         });
 
         let changed = false;
@@ -396,6 +396,17 @@ export class TikTokProductsSyncService {
           await this.prisma.client.productVariant.update({
             where: { id: variant.id },
             data: { suggestedPrice: externalProduct.price },
+          });
+          changed = true;
+        }
+
+        // Produtos criados antes deste campo existir (ou sem imagem resolvida na criação) nunca
+        // ganhavam a foto depois — só preenche quando ainda está vazia, nunca sobrescreve uma
+        // capa que o operador já tenha definido manualmente.
+        if (!variant.product.imageUrl && externalProduct.imageUrl) {
+          await this.prisma.client.product.update({
+            where: { id: variant.product.id },
+            data: { imageUrl: externalProduct.imageUrl },
           });
           changed = true;
         }
