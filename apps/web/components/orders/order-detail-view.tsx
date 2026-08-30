@@ -111,17 +111,19 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
                   <TableRow>
                     <TableHead>Produto</TableHead>
                     <TableHead>Qtd.</TableHead>
-                    <TableHead>Preço unitário</TableHead>
-                    <TableHead>Desconto vendedor</TableHead>
-                    <TableHead>Desconto TikTok (reembolsado)</TableHead>
-                    <TableHead>Valor do pedido</TableHead>
+                    <TableHead>Preço unit.</TableHead>
+                    <TableHead>Desc. vendedor</TableHead>
+                    <TableHead>Desconto TikTok</TableHead>
+                    <TableHead>Valor total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {order.items.map((item) => (
                     <TableRow key={item.id}>
-                      <TableCell>
-                        <p className="font-medium">{item.productName}</p>
+                      <TableCell className="max-w-[220px]">
+                        <p className="line-clamp-2 font-medium" title={item.productName}>
+                          {item.productName}
+                        </p>
                         <p className="text-xs text-muted-foreground">{item.sku}</p>
                       </TableCell>
                       <TableCell>{item.quantity}</TableCell>

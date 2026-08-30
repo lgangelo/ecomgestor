@@ -83,6 +83,27 @@ async function main() {
   for (const fee of fees) {
     console.log(`  feeType=${fee.feeType} amount=${fee.amount}`);
   }
+
+  // Se não achou SettlementTransaction, verifica se sequer existe um Settlement (extrato/período
+  // de repasse da TikTok) cobrindo a data deste pedido — separa "a TikTok ainda não gerou um
+  // extrato para esse período" de "gerou, mas o MAX_PAGES=10 de getStatements/getTransactions
+  // pode ter deixado esse extrato/transação de fora da varredura".
+  if (settlementTx.length === 0) {
+    console.log('----------------------------------------------------');
+    console.log('Nenhuma SettlementTransaction para este pedido — extratos (Settlement) mais recentes:');
+    const settlements = await prisma.settlement.findMany({
+      where: { channelId: order.channelId },
+      orderBy: { periodEnd: 'desc' },
+      take: 15,
+      select: { externalStatementId: true, periodStart: true, periodEnd: true, status: true },
+    });
+    for (const s of settlements) {
+      console.log(
+        `  extrato ${s.externalStatementId} — período ${s.periodStart.toISOString()} a ${s.periodEnd.toISOString()} — status=${s.status}`,
+      );
+    }
+    console.log(`Total de extratos (Settlement) para este canal: ${await prisma.settlement.count({ where: { channelId: order.channelId } })}`);
+  }
 }
 
 main()
