@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { PERMISSIONS } from '@ecommerce-manager/shared';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -40,5 +40,21 @@ export class JobsController {
       newValue: job,
     });
     return job;
+  }
+
+  /** Limpeza de histórico (jobs de teste que deram falha não precisam ficar registrados). */
+  @Delete('failed')
+  @RequirePermissions(PERMISSIONS.INTEGRATION_JOBS_RETRY)
+  async clearFailed(@CurrentUser() user: AuthenticatedUser) {
+    const result = await this.jobsService.clearFailed(user.companyId);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'DELETE',
+      entity: 'sync_job',
+      entityId: 'bulk-failed',
+      newValue: result,
+    });
+    return result;
   }
 }

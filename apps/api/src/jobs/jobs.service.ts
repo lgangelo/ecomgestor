@@ -107,4 +107,13 @@ export class JobsService {
     await this.tiktokJobsService.retryAndRequeue(id, user);
     return this.findOne(companyId, id);
   }
+
+  /** Limpeza de histórico (muitos jobs FAILED são de teste e não precisam ficar visíveis) —
+   * remove só os jobs com status FAILED da empresa, nunca os em andamento ou concluídos. */
+  async clearFailed(companyId: string) {
+    const { count } = await this.prisma.client.syncJob.deleteMany({
+      where: { integration: { companyId }, status: 'FAILED' },
+    });
+    return { deleted: count };
+  }
 }

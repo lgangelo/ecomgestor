@@ -56,3 +56,20 @@ export function useRetryJob() {
       }),
   });
 }
+
+export function useClearFailedJobs() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<{ deleted: number }>('/jobs/failed', { method: 'DELETE' }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      toast({ title: `${result.deleted} job(s) com falha removido(s) do histórico.` });
+    },
+    onError: (error) =>
+      toast({
+        title: 'Não foi possível limpar os jobs com falha',
+        description: error instanceof ApiError ? error.message : undefined,
+        variant: 'destructive',
+      }),
+  });
+}

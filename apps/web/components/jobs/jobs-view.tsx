@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Layers } from 'lucide-react';
+import { Layers, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TableSkeleton } from '@/components/shared/table-skeleton';
@@ -16,6 +16,7 @@ import { SYNC_JOB_STATUS_PRESENTATION } from '@ecommerce-manager/ui';
 import { formatDate } from '@/lib/format';
 import { useJobs, useRetryJob, type JobListItem } from '@/hooks/use-jobs';
 import { useUrlFilters } from '@/hooks/use-url-filters';
+import { ClearFailedJobsDialog } from './clear-failed-jobs-dialog';
 
 // Um valor de resultado pode ser um objeto aninhado (ex.: `linkedSync: { updated, failed, ... }`
 // dentro do resultado de tiktok-import-products) — `${value}` nesse caso vira "[object Object]",
@@ -130,6 +131,17 @@ export function JobsView() {
   return (
     <div>
       <PageHeader title="Jobs" description="Acompanhamento das sincronizações e integrações em segundo plano." />
+
+      <div className="mb-4 flex justify-end">
+        <ClearFailedJobsDialog
+          trigger={
+            <Button variant="outline">
+              <Trash2 className="h-4 w-4" />
+              Limpar falhas
+            </Button>
+          }
+        />
+      </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-4">
         <div className="space-y-1.5">
