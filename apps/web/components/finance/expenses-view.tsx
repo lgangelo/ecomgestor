@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Receipt, Plus } from 'lucide-react';
+import { Receipt, Plus, Pencil } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TableSkeleton } from '@/components/shared/table-skeleton';
@@ -16,6 +16,7 @@ import { formatBRL } from '@ecommerce-manager/shared';
 import { formatDate } from '@/lib/format';
 import { useExpenseCategories, useExpenses } from '@/hooks/use-finance';
 import { ExpenseFormDialog } from './expense-form-dialog';
+import { ExpenseEditDialog } from './expense-edit-dialog';
 import { RecurringExpensesPanel } from './recurring-expenses-panel';
 import { TaxConfigPanel } from './tax-config-panel';
 
@@ -77,6 +78,7 @@ function ExpensesList() {
               <TableHead>Forma de pagamento</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Valor</TableHead>
+              <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -96,6 +98,17 @@ function ExpensesList() {
                 <TableCell>{expense.paymentMethod ?? '—'}</TableCell>
                 <TableCell>{expense.status}</TableCell>
                 <TableCell>{formatBRL(expense.amount)}</TableCell>
+                <TableCell className="text-right">
+                  <ExpenseEditDialog
+                    expense={expense}
+                    trigger={
+                      <Button variant="ghost" size="sm">
+                        <Pencil className="h-4 w-4" />
+                        Editar
+                      </Button>
+                    }
+                  />
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

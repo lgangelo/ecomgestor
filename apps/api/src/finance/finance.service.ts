@@ -6,6 +6,7 @@ import { paginate, type PaginatedResult } from '../common/dto/pagination.dto';
 import { endOfDayExclusive } from '../common/date/day-range.util';
 import { CreateExpenseCategoryDto } from './dto/create-expense-category.dto';
 import { CreateExpenseDto } from './dto/create-expense.dto';
+import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { ListExpensesQueryDto } from './dto/list-expenses-query.dto';
 import { ListFeesQueryDto } from './dto/list-fees-query.dto';
 import { FinancePeriodQueryDto } from './dto/finance-period-query.dto';
@@ -25,6 +26,7 @@ const MANAGEMENT_DISCLAIMER =
 
 export interface ExpenseListItem {
   id: string;
+  categoryId: string;
   categoryName: string;
   description: string;
   amount: Prisma.Decimal;
@@ -99,6 +101,7 @@ export class FinanceService {
 
     const mapped: ExpenseListItem[] = items.map((item) => ({
       id: item.id,
+      categoryId: item.categoryId,
       categoryName: item.category.name,
       description: item.description,
       amount: item.amount,
@@ -127,7 +130,7 @@ export class FinanceService {
       data: {
         companyId,
         categoryId: dto.categoryId,
-        description: dto.description?.trim() || category.name,
+        description: dto.description,
         amount: dto.amount,
         date,
         competenceDate: dto.competenceDate ? new Date(dto.competenceDate) : date,
@@ -148,6 +151,60 @@ export class FinanceService {
     return {
       id: expense.id,
       categoryName: category.name,
+      description: expense.description,
+      amount: expense.amount,
+      date: expense.date,
+      competenceDate: expense.competenceDate,
+      status: expense.status,
+      isRecurring: expense.isRecurring,
+      paymentMethod: expense.paymentMethod,
+    };
+  }
+
+  async updateExpense(id: string, companyId: string, userId: string, dto: UpdateExpenseDto) {
+    const existing = await this.prisma.client.expense.findFirst({ where: { id, companyId } });
+    if (!existing) throw new NotFoundException('Despesa não encontrada.');
+
+    if (dto.categoryId) {
+      const category = await this.prisma.client.expenseCategory.findFirst({
+        where: { id: dto.categoryId, companyId },
+      });
+      if (!category) throw new NotFoundException('Categoria de despesa não encontrada.');
+    }
+
+    const date = dto.date ? new Date(dto.date) : existing.date;
+    const competenceDate = dto.competenceDate ? new Date(dto.competenceDate) : existing.competenceDate;
+    // Bloqueia mudar uma despesa DE ou PARA um período já fechado — nunca só um dos dois lados.
+    await this.assertPeriodNotLocked(companyId, existing.competenceDate);
+    await this.assertPeriodNotLocked(companyId, competenceDate);
+
+    const expense = await this.prisma.client.expense.update({
+      where: { id },
+      data: {
+        ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
+        ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.amount !== undefined ? { amount: dto.amount } : {}),
+        ...(dto.date !== undefined ? { date } : {}),
+        ...(dto.competenceDate !== undefined ? { competenceDate } : {}),
+        ...(dto.status !== undefined ? { status: dto.status } : {}),
+        ...(dto.paymentMethod !== undefined ? { paymentMethod: dto.paymentMethod } : {}),
+      },
+      include: { category: { select: { name: true } } },
+    });
+
+    await this.audit.log({
+      companyId,
+      userId,
+      action: 'UPDATE',
+      entity: 'expense',
+      entityId: expense.id,
+      oldValue: existing,
+      newValue: expense,
+    });
+
+    return {
+      id: expense.id,
+      categoryName: expense.category.name,
       description: expense.description,
       amount: expense.amount,
       date: expense.date,
@@ -412,7 +469,7 @@ export class FinanceService {
       data: {
         companyId,
         categoryId: dto.categoryId,
-        description: dto.description?.trim() || category.name,
+        description: dto.description,
         amount: dto.amount,
         dayOfMonth: dto.dayOfMonth,
         paymentMethod: dto.paymentMethod ?? null,

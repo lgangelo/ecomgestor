@@ -87,10 +87,10 @@ export function RecurringExpensesPanel() {
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="description">Descrição (opcional)</Label>
+                <Label htmlFor="description">Descrição</Label>
                 <Input
                   id="description"
-                  placeholder="Deixe em branco para usar o nome da categoria"
+                  required
                   value={form.description}
                   onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                 />

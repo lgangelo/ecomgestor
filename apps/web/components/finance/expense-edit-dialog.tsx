@@ -15,25 +15,37 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toDateInputValue } from '@/lib/format';
-import { useCreateExpense, useExpenseCategories } from '@/hooks/use-finance';
+import { useExpenseCategories, useUpdateExpense, type ExpenseListItem } from '@/hooks/use-finance';
 import { ExpenseCategoryFormDialog } from './expense-category-form-dialog';
 
-export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
+export function ExpenseEditDialog({ expense, trigger }: { expense: ExpenseListItem; trigger: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const { data: categories } = useExpenseCategories();
-  const createExpense = useCreateExpense();
+  const updateExpense = useUpdateExpense(expense.id);
 
   const [form, setForm] = React.useState({
-    categoryId: '',
-    description: '',
-    amount: '',
-    date: toDateInputValue(new Date()),
-    paymentMethod: '',
+    categoryId: expense.categoryId,
+    description: expense.description,
+    amount: expense.amount,
+    date: toDateInputValue(new Date(expense.date)),
+    paymentMethod: expense.paymentMethod ?? '',
   });
+
+  React.useEffect(() => {
+    if (open) {
+      setForm({
+        categoryId: expense.categoryId,
+        description: expense.description,
+        amount: expense.amount,
+        date: toDateInputValue(new Date(expense.date)),
+        paymentMethod: expense.paymentMethod ?? '',
+      });
+    }
+  }, [open, expense]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await createExpense.mutateAsync({
+    await updateExpense.mutateAsync({
       categoryId: form.categoryId,
       description: form.description,
       amount: Number(form.amount),
@@ -41,7 +53,6 @@ export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
       paymentMethod: form.paymentMethod || undefined,
     });
     setOpen(false);
-    setForm({ categoryId: '', description: '', amount: '', date: toDateInputValue(new Date()), paymentMethod: '' });
   }
 
   return (
@@ -49,7 +60,7 @@ export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
       <DialogTrigger asChild>{trigger}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nova despesa</DialogTitle>
+          <DialogTitle>Editar despesa</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
@@ -78,9 +89,9 @@ export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="description">Descrição</Label>
+            <Label htmlFor="edit-expense-description">Descrição</Label>
             <Input
-              id="description"
+              id="edit-expense-description"
               required
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
@@ -88,9 +99,9 @@ export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="amount">Valor (R$)</Label>
+              <Label htmlFor="edit-expense-amount">Valor (R$)</Label>
               <Input
-                id="amount"
+                id="edit-expense-amount"
                 type="number"
                 step="0.01"
                 min="0.01"
@@ -100,9 +111,9 @@ export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="date">Data</Label>
+              <Label htmlFor="edit-expense-date">Data</Label>
               <Input
-                id="date"
+                id="edit-expense-date"
                 type="date"
                 required
                 value={form.date}
@@ -111,16 +122,19 @@ export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="paymentMethod">Forma de pagamento</Label>
+            <Label htmlFor="edit-expense-paymentMethod">Forma de pagamento</Label>
             <Input
-              id="paymentMethod"
+              id="edit-expense-paymentMethod"
               value={form.paymentMethod}
               onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value }))}
             />
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={!form.categoryId || createExpense.isPending}>
-              {createExpense.isPending ? 'Salvando...' : 'Registrar despesa'}
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={!form.categoryId || updateExpense.isPending}>
+              {updateExpense.isPending ? 'Salvando...' : 'Salvar alterações'}
             </Button>
           </DialogFooter>
         </form>

@@ -6,6 +6,7 @@ import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { FinanceService } from './finance.service';
 import { CreateExpenseCategoryDto } from './dto/create-expense-category.dto';
 import { CreateExpenseDto } from './dto/create-expense.dto';
+import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { ListExpensesQueryDto } from './dto/list-expenses-query.dto';
 import { ListFeesQueryDto } from './dto/list-fees-query.dto';
 import { FinancePeriodQueryDto } from './dto/finance-period-query.dto';
@@ -39,6 +40,16 @@ export class FinanceController {
   @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
   createExpense(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateExpenseDto) {
     return this.financeService.createExpense(user.companyId, user.userId, dto);
+  }
+
+  @Patch('expenses/:id')
+  @RequirePermissions(PERMISSIONS.FINANCE_MANAGE)
+  updateExpense(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateExpenseDto,
+  ) {
+    return this.financeService.updateExpense(id, user.companyId, user.userId, dto);
   }
 
   @Get('recurring-expenses')

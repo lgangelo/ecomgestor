@@ -11,24 +11,26 @@ import {
   Min,
 } from 'class-validator';
 
-export class CreateExpenseDto {
+export class UpdateExpenseDto {
+  @IsOptional()
   @IsUUID()
-  categoryId!: string;
+  categoryId?: string;
 
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  description!: string;
+  description?: string;
 
+  @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
-  amount!: number;
+  amount?: number;
 
+  @IsOptional()
   @IsDateString()
-  date!: string;
+  date?: string;
 
-  // Mês/ano de competência gerencial — pode diferir da data de pagamento (ex: conta em atraso).
-  // Se omitido, assume a própria data de pagamento como competência.
   @IsOptional()
   @IsDateString()
   competenceDate?: string;
