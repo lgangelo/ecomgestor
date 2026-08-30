@@ -309,7 +309,11 @@ export class OrdersService {
       },
       include: {
         variant: {
-          include: { product: { select: { name: true } }, costHistory: { orderBy: { effectiveDate: 'desc' }, take: 1 } },
+          include: {
+            product: { select: { name: true } },
+            // Desempate por createdAt — ver comentário equivalente em products.service.ts.
+            costHistory: { orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }], take: 1 },
+          },
         },
       },
     });
@@ -604,7 +608,8 @@ export class OrdersService {
       where: { id: { in: variantIds }, product: { companyId } },
       include: {
         product: { select: { name: true } },
-        costHistory: { orderBy: { effectiveDate: 'desc' }, take: 1 },
+        // Desempate por createdAt — ver comentário equivalente em products.service.ts.
+        costHistory: { orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }], take: 1 },
       },
     });
     if (variants.length !== new Set(variantIds).size) {

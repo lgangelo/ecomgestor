@@ -79,7 +79,10 @@ export class ProductsService {
         category: { select: { id: true, name: true } },
         variants: {
           include: {
-            costHistory: { orderBy: { effectiveDate: 'desc' }, take: 1 },
+            // Desempate por createdAt: duas entradas registradas no mesmo dia (comum, o diálogo sempre
+            // sugere a data de hoje) ficam com o mesmo effectiveDate exato — sem desempate, a mais
+            // recente podia não ser a retornada (confirmado: "definir custo de novo não atualiza").
+            costHistory: { orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }], take: 1 },
             inventory: true,
           },
           orderBy: { createdAt: 'asc' },
@@ -403,7 +406,7 @@ export class ProductsService {
     await this.getVariantOrThrow(variantId, companyId);
     return this.prisma.client.productCostHistory.findMany({
       where: { variantId },
-      orderBy: { effectiveDate: 'desc' },
+      orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
@@ -446,7 +449,10 @@ export class ProductsService {
       where: { productId },
       include: {
         inventory: true,
-        costHistory: { orderBy: { effectiveDate: 'desc' }, take: 1 },
+        // Desempate por createdAt: duas entradas registradas no mesmo dia (comum, o diálogo sempre
+            // sugere a data de hoje) ficam com o mesmo effectiveDate exato — sem desempate, a mais
+            // recente podia não ser a retornada (confirmado: "definir custo de novo não atualiza").
+            costHistory: { orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }], take: 1 },
       },
     });
     const variantIds = variants.map((v) => v.id);
@@ -517,7 +523,7 @@ export class ProductsService {
     });
     const history = await this.prisma.client.productCostHistory.findMany({
       where: { variantId: { in: variants.map((v) => v.id) } },
-      orderBy: { effectiveDate: 'desc' },
+      orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }],
     });
     const skuByVariant = new Map(variants.map((v) => [v.id, v.sku]));
     return history.map((h) => ({ ...h, sku: skuByVariant.get(h.variantId) ?? null }));
