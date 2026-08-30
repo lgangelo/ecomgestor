@@ -407,11 +407,18 @@ export class TikTokProductsSyncService {
 
     const externalProducts = await this.fetchAllExternalProducts(companyId);
     const bySku = new Map(externalProducts.map((p) => [p.externalSku, p]));
+    const { connector } = await this.connectorFactory.forCompany(companyId);
 
     let updated = 0;
     let unchanged = 0;
     let notFoundOnTikTok = 0;
     const failed: Array<{ externalSku: string; error: string }> = [];
+    // "Get Product" (imagem) é uma chamada extra por produto — sem limite, um catálogo grande
+    // sem nenhuma imagem ainda faz o job demorar minutos numa única execução (confirmado pelo
+    // usuário: "o job de importar produtos agora tá demorando mais"). Limita quantas imagens
+    // busca POR EXECUÇÃO; o resto fica pendente e é buscado nas próximas sincronizações.
+    const MAX_IMAGE_FETCHES_PER_RUN = 20;
+    let imageFetchesThisRun = 0;
 
     for (const mapping of mappings) {
       const externalSku = mapping.externalSku ?? '';
@@ -442,9 +449,9 @@ export class TikTokProductsSyncService {
         // capa que o operador já tenha definido manualmente. `externalProduct.imageUrl` vem de
         // "Search Products", que nunca traz imagem (confirmado) — por isso busca sob demanda via
         // "Get Product" quando ainda falta, best-effort (nunca aborta a sincronização do resto).
-        if (!variant.product.imageUrl && mapping.externalProductId) {
+        if (!variant.product.imageUrl && mapping.externalProductId && imageFetchesThisRun < MAX_IMAGE_FETCHES_PER_RUN) {
+          imageFetchesThisRun++;
           try {
-            const { connector } = await this.connectorFactory.forCompany(companyId);
             const detail = await connector.getProductDetail(companyId, mapping.externalProductId);
             if (detail.imageUrl) {
               await this.prisma.client.product.update({
