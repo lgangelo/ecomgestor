@@ -11,6 +11,7 @@ import { QueryProductDto } from './dto/query-product.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { CreateCostHistoryDto } from './dto/create-cost-history.dto';
+import { BulkDeleteProductsDto } from './dto/bulk-delete-products.dto';
 
 @Controller('products')
 export class ProductsController {
@@ -103,6 +104,22 @@ export class ProductsController {
       entityId: id,
       oldValue: removed,
     });
+  }
+
+  /** Exclusão em massa — mesma regra de segurança do DELETE individual, aplicada a cada produto
+   * independentemente (um com histórico real nunca aborta os demais). */
+  @Post('bulk-delete')
+  @RequirePermissions(PERMISSIONS.PRODUCT_DELETE)
+  async removeMany(@CurrentUser() user: AuthenticatedUser, @Body() dto: BulkDeleteProductsDto) {
+    const result = await this.productsService.removeMany(dto.ids, user.companyId);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'BULK_DELETE',
+      entity: 'product',
+      newValue: { deletedIds: result.deleted, failed: result.failed },
+    });
+    return result;
   }
 
   @Post(':id/variants')

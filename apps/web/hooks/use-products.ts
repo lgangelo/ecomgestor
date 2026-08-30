@@ -131,6 +131,31 @@ export function useDeleteProduct() {
   });
 }
 
+export interface BulkDeleteProductsResult {
+  deleted: string[];
+  failed: Array<{ id: string; error: string }>;
+}
+
+export function useBulkDeleteProducts() {
+  const queryClient = useQueryClient();
+  const onErrorToast = useErrorToast();
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      apiFetch<BulkDeleteProductsResult>('/products/bulk-delete', { method: 'POST', body: { ids } }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast({
+        title:
+          result.failed.length === 0
+            ? `${result.deleted.length} produto(s) excluído(s).`
+            : `${result.deleted.length} excluído(s), ${result.failed.length} não puderam ser excluídos (já têm pedido/movimentação).`,
+        variant: result.failed.length === 0 ? undefined : 'destructive',
+      });
+    },
+    onError: onErrorToast('Não foi possível excluir os produtos selecionados'),
+  });
+}
+
 export function useCreateVariant(productId: string) {
   const queryClient = useQueryClient();
   const onErrorToast = useErrorToast();

@@ -251,6 +251,25 @@ export class ProductsService {
     return product;
   }
 
+  /** Exclusão em massa — mesma regra de segurança de `remove` aplicada individualmente a cada
+   * produto; um produto com histórico real (ou qualquer outro erro) nunca aborta os demais, só
+   * entra na lista de falhas. */
+  async removeMany(ids: string[], companyId: string): Promise<{ deleted: string[]; failed: Array<{ id: string; error: string }> }> {
+    const deleted: string[] = [];
+    const failed: Array<{ id: string; error: string }> = [];
+
+    for (const id of ids) {
+      try {
+        await this.remove(id, companyId);
+        deleted.push(id);
+      } catch (error) {
+        failed.push({ id, error: error instanceof Error ? error.message : 'Erro desconhecido' });
+      }
+    }
+
+    return { deleted, failed };
+  }
+
   async createVariant(productId: string, companyId: string, dto: CreateVariantDto) {
     await this.findProductOrThrow(productId, companyId);
 
