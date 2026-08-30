@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PRODUCT_STATUS_PRESENTATION, VARIANT_STATUS_PRESENTATION, INVENTORY_MOVEMENT_PRESENTATION } from '@ecommerce-manager/ui';
 import { formatBRL } from '@ecommerce-manager/shared';
-import { formatDate } from '@/lib/format';
+import { formatDate, stripHtmlForPreview } from '@/lib/format';
 import {
   useProduct,
   useProductChannels,
@@ -176,7 +176,9 @@ function ResumoTab({
 
       {product.description && (
         <Card>
-          <CardContent className="p-6 text-sm text-muted-foreground">{product.description}</CardContent>
+          <CardContent className="whitespace-pre-line p-6 text-sm text-muted-foreground">
+            {stripHtmlForPreview(product.description)}
+          </CardContent>
         </Card>
       )}
 
