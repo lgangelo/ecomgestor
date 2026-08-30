@@ -207,12 +207,11 @@ export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
 
 /**
  * Cor/tamanho da SKU. CONFIRMADO em produção que "Search Products" não traz `sales_attributes`
- * em nenhuma SKU (payload bruto de um produto de 2 SKUs logado, sem esse campo) — só existe em
- * "Get Product" (detalhe por id, ver `getProductDetail` no connector), por isso esta função só é
- * chamada a partir de lá. Suposição de nome de campo ainda não confirmada contra a resposta real
- * desse endpoint (`sales_attributes: [{ attribute_name, value_name }]`, padrão público da TikTok
- * Shop Open API) — debug temporário em `getProductDetail`. Nunca inventa — atributo não
- * reconhecido fica de fora, nunca vira "cor" por padrão.
+ * em nenhuma SKU — só existe em "Get Product" (detalhe por id, ver `getProductDetail` no
+ * connector), por isso esta função só é chamada a partir de lá. Estrutura real confirmada por
+ * payload de produção: `sales_attributes: [{ name, value_name, value_id, sku_img, id }]` — o
+ * nome do atributo é `name` (ex.: "Cor"), não `attribute_name` (chute anterior, nunca existiu).
+ * Nunca inventa — atributo não reconhecido (nem "cor" nem "tamanho") fica de fora.
  */
 export function extractSkuAttributes(sku: Record<string, unknown>): { color?: string; size?: string } {
   const attributes = Array.isArray(sku.sales_attributes) ? (sku.sales_attributes as unknown[]) : [];
@@ -220,7 +219,9 @@ export function extractSkuAttributes(sku: Record<string, unknown>): { color?: st
   let size: string | undefined;
   for (const rawAttr of attributes) {
     const attr = asRecord(rawAttr);
-    const attributeName = str(attr, 'attribute_name')?.toLowerCase() ?? '';
+    // Confirmado em produção (payload real de "Get Product"): o campo é `name` ("Cor"), não
+    // `attribute_name` (chute anterior, nunca existiu) — `value_name` já estava certo.
+    const attributeName = str(attr, 'name')?.toLowerCase() ?? '';
     const valueName = str(attr, 'value_name');
     if (!valueName) continue;
     if (attributeName.includes('cor') || attributeName.includes('color')) color = valueName;

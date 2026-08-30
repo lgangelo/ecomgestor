@@ -128,9 +128,8 @@ export class TikTokConnector implements MarketplaceConnector {
    * produto específico, nunca durante a listagem em massa (evita multiplicar centenas de
    * chamadas por sync) — e uma única chamada já resolve imagem + atributos juntos, nunca duas
    * chamadas separadas para o mesmo produto. Nunca lança: falha silenciosamente com valores
-   * vazios — imagem/atributos são "nice to have", nunca devem travar a criação do produto. Debug
-   * temporário até confirmar `main_images`/`sales_attributes` contra o payload real deste
-   * endpoint (diferente do de "Search Products", já confirmado sem nenhum dos dois campos).
+   * vazios — imagem/atributos são "nice to have", nunca devem travar a criação do produto.
+   * `main_images`/`sales_attributes` confirmados contra payload real de produção.
    */
   async getProductDetail(
     companyId: string,
@@ -142,8 +141,6 @@ export class TikTokConnector implements MarketplaceConnector {
         'GET',
         TIKTOK_PATHS.productDetail(externalProductId),
       );
-      // eslint-disable-next-line no-console -- debug temporário, remover após confirmar os campos reais de imagem/atributos em produção
-      console.log('[tiktok-product-detail-debug]', JSON.stringify(raw));
       const rawSkus = Array.isArray(raw.skus) ? (raw.skus as unknown[]) : [];
       const skus = rawSkus.map((rawSku) => {
         const sku = (rawSku ?? {}) as Record<string, unknown>;
