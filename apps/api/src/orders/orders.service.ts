@@ -249,12 +249,22 @@ export class OrdersService {
    * "live state transition"): usado tanto pela venda manual quanto pela importação de pedidos
    * externos cujo primeiro status observado já pode ser SHIPPED ou posterior. Nunca repete
    * transições intermediárias — aplica o efeito final de uma vez.
+   *
+   * `skipPhysicalDebit`: só suprime a baixa FÍSICA (`commitSale`, que decrementa `onHand`) de um
+   * pedido histórico já enviado/entregue — o estoque atual já foi ressincronizado do canal
+   * externo e já reflete essa venda antiga; debitar de novo levaria o saldo físico a negativo
+   * (confirmado em produção). `reserve` nunca decrementa `onHand` (só marca unidades como
+   * reservadas dentro do saldo físico já sincronizado), então um pedido histórico que AINDA está
+   * pré-envio (aguardando pagamento/envio) sempre é reservado normalmente, mesmo numa carga
+   * retroativa — do contrário um pedido em aberto encontrado no backfill nunca protegeria a
+   * unidade contra ser vendida de novo (furo de estoque que este parâmetro existe para evitar).
    */
   private async initializeStockForNewOrder(
     tx: Prisma.TransactionClient,
     ctx: { companyId: string; userId?: string | null; referenceId: string; reason: string },
     items: ImportItemLike[],
     initialStatus: OrderStatus,
+    options?: { skipPhysicalDebit?: boolean },
   ): Promise<void> {
     if (initialStatus === OrderStatus.CANCELLED) return;
     const preShipment = isPreShipmentStatus(initialStatus);
@@ -271,7 +281,7 @@ export class OrdersService {
       };
       if (preShipment) {
         await this.ledger.reserve(tx, movementCtx, item.quantity);
-      } else {
+      } else if (!options?.skipPhysicalDebit) {
         await this.ledger.commitSale(tx, movementCtx, item.quantity, false);
       }
     }
@@ -410,18 +420,16 @@ export class OrdersService {
         },
       });
 
-      // `skipStockMovement`: carga histórica de pedidos ANTIGOS (seção pedida pelo usuário) —
-      // o estoque atual já foi sincronizado do canal externo e já reflete essas vendas antigas;
-      // aplicar a movimentação de novo debitaria o mesmo estoque uma segunda vez, podendo levar
-      // o saldo a negativo (confirmado em produção: "Saldo insuficiente... estoque físico
-      // negativo"). Pedido vindo de webhook/reconciliação ao vivo continua movimentando estoque
-      // normalmente — só a importação retroativa explícita pula isso.
-      if (statusKnown && !options?.skipStockMovement) {
+      // `skipStockMovement`: carga histórica de pedidos ANTIGOS (seção pedida pelo usuário) — só
+      // suprime a baixa FÍSICA (ver comentário de `initializeStockForNewOrder`); um pedido do
+      // backfill que ainda está pré-envio continua sendo reservado normalmente.
+      if (statusKnown) {
         await this.initializeStockForNewOrder(
           tx,
           { companyId, userId, referenceId: order.id, reason: 'Importação de pedido externo' },
           order.items,
           initialStatus,
+          { skipPhysicalDebit: options?.skipStockMovement },
         );
       }
 

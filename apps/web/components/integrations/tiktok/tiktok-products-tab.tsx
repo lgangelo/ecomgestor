@@ -65,6 +65,7 @@ export function TikTokProductsTab() {
         sku: p.sellerSku,
         price: p.price,
         stock: p.stock,
+        imageUrl: p.imageUrl,
       }));
     bulkCreate.mutate(items, { onSuccess: () => setSelected(new Set()) });
   }
@@ -118,6 +119,7 @@ export function TikTokProductsTab() {
                 <TableHead className="w-10">
                   <Checkbox checked={selected.size === data.length} onCheckedChange={toggleAll} aria-label="Selecionar tudo" />
                 </TableHead>
+                <TableHead className="w-14" />
                 <TableHead>Produto TikTok</TableHead>
                 <TableHead>SKU TikTok</TableHead>
                 <TableHead>SKU vendedor</TableHead>
@@ -135,6 +137,14 @@ export function TikTokProductsTab() {
                       onCheckedChange={() => toggleOne(product.externalSku)}
                       aria-label={`Selecionar ${product.name}`}
                     />
+                  </TableCell>
+                  <TableCell>
+                    {product.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- URL remota da TikTok, sem otimização local necessária
+                      <img src={product.imageUrl} alt="" className="h-10 w-10 rounded object-cover" />
+                    ) : (
+                      <div className="h-10 w-10 rounded bg-muted" />
+                    )}
                   </TableCell>
                   <TableCell>{product.name}</TableCell>
                   <TableCell>{product.externalSku}</TableCell>

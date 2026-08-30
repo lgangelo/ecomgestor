@@ -24,4 +24,10 @@ export class CreateTikTokProductDto {
   @IsInt()
   @Min(0)
   stock?: number;
+
+  /** URL da imagem principal do produto na TikTok — nunca um upload/arquivo, só a referência
+   * remota (não deve haver dependência de diretório local no servidor). */
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
 }

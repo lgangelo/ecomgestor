@@ -12,6 +12,7 @@ import { CreateVariantDto } from './dto/create-variant.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { CreateCostHistoryDto } from './dto/create-cost-history.dto';
 import { BulkDeleteProductsDto } from './dto/bulk-delete-products.dto';
+import { BulkUpdateProductStatusDto } from './dto/bulk-update-product-status.dto';
 
 @Controller('products')
 export class ProductsController {
@@ -169,6 +170,22 @@ export class ProductsController {
   @RequirePermissions(PERMISSIONS.PRODUCT_READ)
   getCostHistory(@CurrentUser() user: AuthenticatedUser, @Param('variantId') variantId: string) {
     return this.productsService.getCostHistory(variantId, user.companyId);
+  }
+
+  /** Ativação/inativação em massa (seção pedida pelo usuário) — cada produto selecionado passa a
+   * ter o mesmo status; nunca bloqueia por histórico (diferente da exclusão). */
+  @Post('bulk-status')
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  async updateManyStatus(@CurrentUser() user: AuthenticatedUser, @Body() dto: BulkUpdateProductStatusDto) {
+    const result = await this.productsService.updateManyStatus(dto.ids, user.companyId, dto.status);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'BULK_UPDATE_STATUS',
+      entity: 'product',
+      newValue: { updatedIds: result.updated, status: dto.status, notFound: result.notFound },
+    });
+    return result;
   }
 
   @Post('variants/:variantId/cost-history')

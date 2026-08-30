@@ -47,7 +47,17 @@ export function ProductDetailView({ productId }: { productId: string }) {
       </Link>
 
       <PageHeader
-        title={product.name}
+        title={
+          <div className="flex items-center gap-3">
+            {product.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo ou cadastrada manualmente
+              <img src={product.imageUrl} alt="" className="h-12 w-12 rounded object-cover" />
+            ) : (
+              <div className="h-12 w-12 rounded bg-muted" />
+            )}
+            {product.name}
+          </div>
+        }
         description={`SKU base: ${product.baseSku}${product.category ? ` · Categoria: ${product.category.name}` : ''}`}
         actions={
           <div className="flex gap-2">

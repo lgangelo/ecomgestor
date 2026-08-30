@@ -156,6 +156,29 @@ export function useBulkDeleteProducts() {
   });
 }
 
+export interface BulkUpdateProductStatusResult {
+  updated: string[];
+  notFound: string[];
+}
+
+export function useBulkUpdateProductStatus() {
+  const queryClient = useQueryClient();
+  const onErrorToast = useErrorToast();
+  return useMutation({
+    mutationFn: ({ ids, status }: { ids: string[]; status: 'ACTIVE' | 'INACTIVE' | 'DRAFT' }) =>
+      apiFetch<BulkUpdateProductStatusResult>('/products/bulk-status', {
+        method: 'POST',
+        body: { ids, status },
+      }),
+    onSuccess: (result, { status }) => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      const label = status === 'ACTIVE' ? 'ativado(s)' : status === 'INACTIVE' ? 'inativado(s)' : 'marcado(s) como rascunho';
+      toast({ title: `${result.updated.length} produto(s) ${label}.` });
+    },
+    onError: onErrorToast('Não foi possível atualizar o status dos produtos selecionados'),
+  });
+}
+
 export function useCreateVariant(productId: string) {
   const queryClient = useQueryClient();
   const onErrorToast = useErrorToast();

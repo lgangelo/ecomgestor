@@ -27,6 +27,11 @@ class BulkCreateTikTokProductItemDto {
   @IsInt()
   @Min(0)
   stock?: number;
+
+  /** URL da imagem principal do produto na TikTok — só a referência remota, nunca um arquivo. */
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
 }
 
 export class BulkCreateTikTokProductsDto {

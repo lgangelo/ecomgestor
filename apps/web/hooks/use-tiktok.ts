@@ -32,6 +32,7 @@ export interface UnmatchedTikTokProduct {
   name: string;
   price: string;
   stock: number;
+  imageUrl?: string;
   suggestedVariantId?: string;
   suggestedSku?: string;
   ambiguous: boolean;
@@ -129,6 +130,7 @@ export function useCreateTikTokProduct() {
     sku: string;
     price: string;
     stock?: number;
+    imageUrl?: string;
   }>('/integrations/tiktok/products/create', [['tiktok', 'products', 'unmatched']]);
 }
 
@@ -141,7 +143,15 @@ export function useBulkCreateTikTokProducts() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (
-      items: Array<{ externalSku: string; externalProductId?: string; name: string; sku?: string; price: string; stock?: number }>,
+      items: Array<{
+        externalSku: string;
+        externalProductId?: string;
+        name: string;
+        sku?: string;
+        price: string;
+        stock?: number;
+        imageUrl?: string;
+      }>,
     ) =>
       apiFetch<BulkCreateTikTokProductsResult>('/integrations/tiktok/products/bulk-create', {
         method: 'POST',

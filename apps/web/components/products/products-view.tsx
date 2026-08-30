@@ -17,7 +17,7 @@ import { PRODUCT_STATUS_PRESENTATION } from '@ecommerce-manager/ui';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { apiFetch } from '@/lib/api-client';
 import type { Paginated } from '@/lib/types/pagination';
-import { useProducts, type ProductListItem } from '@/hooks/use-products';
+import { useProducts, useBulkUpdateProductStatus, type ProductListItem } from '@/hooks/use-products';
 import { useCategories } from '@/hooks/use-categories';
 import { useUrlFilters } from '@/hooks/use-url-filters';
 import { buildQueryString } from '@/lib/query-string';
@@ -33,6 +33,7 @@ export function ProductsView() {
   const [selectingAll, setSelectingAll] = React.useState(false);
 
   const { data: categories } = useCategories();
+  const bulkUpdateStatus = useBulkUpdateProductStatus();
   const { data, isLoading } = useProducts({
     page: filters.page,
     pageSize: 20,
@@ -71,15 +72,24 @@ export function ProductsView() {
     if (!data || data.total === 0) return;
     setSelectingAll(true);
     try {
-      const query = buildQueryString({
-        page: 1,
-        pageSize: data.total,
-        search: filters.search || undefined,
-        categoryId: filters.categoryId || undefined,
-        status: filters.status || undefined,
-      });
-      const all = await apiFetch<Paginated<ProductListItem>>(`/products${query}`);
-      setSelected(new Set(all.items.map((p) => p.id)));
+      // A API limita pageSize a 100 (ver PaginationQueryDto) — pedir `pageSize: data.total`
+      // direto falhava a validação em silêncio sempre que havia mais de 100 produtos, então
+      // aqui percorremos página por página até cobrir o total.
+      const ids: string[] = [];
+      const pageSize = 100;
+      for (let page = 1; ids.length < data.total; page++) {
+        const query = buildQueryString({
+          page,
+          pageSize,
+          search: filters.search || undefined,
+          categoryId: filters.categoryId || undefined,
+          status: filters.status || undefined,
+        });
+        const result = await apiFetch<Paginated<ProductListItem>>(`/products${query}`);
+        ids.push(...result.items.map((p) => p.id));
+        if (result.items.length === 0 || page >= result.totalPages) break;
+      }
+      setSelected(new Set(ids));
     } finally {
       setSelectingAll(false);
     }
@@ -165,6 +175,22 @@ export function ProductsView() {
                     {selectingAll ? 'Carregando...' : `Selecionar todos os ${data.total}`}
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={bulkUpdateStatus.isPending}
+                  onClick={() => bulkUpdateStatus.mutate({ ids: [...selected], status: 'ACTIVE' })}
+                >
+                  Ativar {selected.size} selecionado(s)
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={bulkUpdateStatus.isPending}
+                  onClick={() => bulkUpdateStatus.mutate({ ids: [...selected], status: 'INACTIVE' })}
+                >
+                  Desativar {selected.size} selecionado(s)
+                </Button>
                 <ProductBulkDeleteDialog
                   ids={[...selected]}
                   onDeleted={() => setSelected(new Set())}
@@ -187,6 +213,7 @@ export function ProductsView() {
                     aria-label="Selecionar página"
                   />
                 </TableHead>
+                <TableHead className="w-14" />
                 <TableHead>Produto</TableHead>
                 <TableHead>Categoria</TableHead>
                 <TableHead>Marca</TableHead>
@@ -204,6 +231,14 @@ export function ProductsView() {
                       onCheckedChange={() => toggleOne(product.id)}
                       aria-label={`Selecionar ${product.name}`}
                     />
+                  </TableCell>
+                  <TableCell>
+                    {product.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo ou cadastrada manualmente
+                      <img src={product.imageUrl} alt="" className="h-10 w-10 rounded object-cover" />
+                    ) : (
+                      <div className="h-10 w-10 rounded bg-muted" />
+                    )}
                   </TableCell>
                   <TableCell className="cursor-pointer">
                     <Link href={`/produtos/${product.id}`} className="hover:underline">

@@ -16,6 +16,7 @@ export interface UnmatchedTikTokProduct {
   name: string;
   price: string;
   stock: number;
+  imageUrl?: string;
   suggestedVariantId?: string;
   suggestedSku?: string;
   ambiguous: boolean;
@@ -85,6 +86,7 @@ export class TikTokProductsSyncService {
         name: product.name,
         price: product.price,
         stock: product.stock,
+        imageUrl: product.imageUrl,
         suggestedVariantId: candidates.length === 1 ? candidates[0] : undefined,
         suggestedSku: candidates.length === 1 ? sellerSku : undefined,
         ambiguous: candidates.length > 1,
@@ -212,7 +214,7 @@ export class TikTokProductsSyncService {
     userId: string,
     externalSku: string,
     externalProductId: string | undefined,
-    input: { name: string; sku: string; price: string; stock?: number },
+    input: { name: string; sku: string; price: string; stock?: number; imageUrl?: string },
   ) {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) throw new BadRequestException('Canal TikTok Shop ainda não conectado');
@@ -236,6 +238,7 @@ export class TikTokProductsSyncService {
           companyId,
           name: input.name,
           baseSku: input.sku,
+          imageUrl: input.imageUrl ?? null,
           status: ProductStatus.DRAFT,
           variants: {
             create: [{ sku: input.sku, suggestedPrice: input.price, status: VariantStatus.ACTIVE }],
@@ -296,7 +299,15 @@ export class TikTokProductsSyncService {
   async createInternalProductsBulk(
     companyId: string,
     userId: string,
-    items: Array<{ externalSku: string; externalProductId?: string; name: string; sku?: string; price: string; stock?: number }>,
+    items: Array<{
+      externalSku: string;
+      externalProductId?: string;
+      name: string;
+      sku?: string;
+      price: string;
+      stock?: number;
+      imageUrl?: string;
+    }>,
   ): Promise<{ created: number; failed: Array<{ externalSku: string; error: string }> }> {
     const existingVariants = await this.prisma.client.productVariant.findMany({
       where: { product: { companyId } },
@@ -318,6 +329,7 @@ export class TikTokProductsSyncService {
           sku,
           price: item.price,
           stock: item.stock,
+          imageUrl: item.imageUrl,
         });
         created++;
       } catch (error) {

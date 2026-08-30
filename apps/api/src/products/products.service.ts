@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@ecommerce-manager/database';
+import { Prisma, ProductStatus } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -302,6 +302,31 @@ export class ProductsService {
     }
 
     return { deleted, failed };
+  }
+
+  /** Ativação/inativação em massa (sem a regra de bloqueio da exclusão — mudar status nunca
+   * apaga histórico). Só afeta produtos que realmente pertencem à empresa; ids de outra empresa
+   * ou inexistentes entram em `notFound` em vez de silenciosamente não fazer nada. */
+  async updateManyStatus(
+    ids: string[],
+    companyId: string,
+    status: ProductStatus,
+  ): Promise<{ updated: string[]; notFound: string[] }> {
+    const products = await this.prisma.client.product.findMany({
+      where: { id: { in: ids }, companyId },
+      select: { id: true },
+    });
+    const updated = products.map((p) => p.id);
+    const notFound = ids.filter((id) => !updated.includes(id));
+
+    if (updated.length > 0) {
+      await this.prisma.client.product.updateMany({
+        where: { id: { in: updated } },
+        data: { status },
+      });
+    }
+
+    return { updated, notFound };
   }
 
   async createVariant(productId: string, companyId: string, dto: CreateVariantDto) {

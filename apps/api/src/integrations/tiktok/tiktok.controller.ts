@@ -63,6 +63,7 @@ export class TikTokController {
       sku: dto.sku,
       price: dto.price,
       stock: dto.stock,
+      imageUrl: dto.imageUrl,
     });
   }
 

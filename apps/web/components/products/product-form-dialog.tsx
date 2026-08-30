@@ -28,6 +28,7 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
     brand: '',
     description: '',
     categoryId: '',
+    imageUrl: '',
     status: 'DRAFT',
   });
 
@@ -39,10 +40,11 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
       brand: form.brand || undefined,
       description: form.description || undefined,
       categoryId: form.categoryId || undefined,
+      imageUrl: form.imageUrl || undefined,
       status: form.status,
     });
     setOpen(false);
-    setForm({ name: '', baseSku: '', brand: '', description: '', categoryId: '', status: 'DRAFT' });
+    setForm({ name: '', baseSku: '', brand: '', description: '', categoryId: '', imageUrl: '', status: 'DRAFT' });
   }
 
   return (
@@ -107,6 +109,15 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
                   <SelectItem value="INACTIVE">Inativo</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="col-span-2 space-y-1.5">
+              <Label htmlFor="imageUrl">URL da imagem de capa</Label>
+              <Input
+                id="imageUrl"
+                placeholder="https://..."
+                value={form.imageUrl}
+                onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
+              />
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label htmlFor="description">Descrição</Label>

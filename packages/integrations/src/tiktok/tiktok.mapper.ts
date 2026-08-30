@@ -142,16 +142,36 @@ function numericStr(obj: Record<string, unknown>, key: string): string | undefin
  *   TikTok manda os dois — anúncio "Product API now supports two prices" do Partner Center) —
  *   nunca um campo `sale_price`/`amount` (isso é do item de pedido, schema diferente).
  */
+/**
+ * Imagem principal do produto — nível do produto (`main_images`), não da SKU: a TikTok Shop
+ * Product API (202309) documenta `main_images: [{ uri, urls: [...], thumb_urls, ... }]`, onde
+ * `urls`/`thumb_urls` já são URLs http(s) prontas para uso (o `uri` sozinho é só um id interno
+ * da TikTok, não uma URL) — ainda não confirmado contra um payload real desta loja (diferente
+ * de id/preço, que já foram), por isso o log de debug temporário abaixo. Sempre retorna a URL
+ * remota da própria TikTok — nunca baixamos/guardamos o arquivo, só a referência.
+ */
+function extractMainImageUrl(product: Record<string, unknown>): string | undefined {
+  const images = Array.isArray(product.main_images) ? (product.main_images as unknown[]) : [];
+  const first = asRecord(images[0]);
+  const urls = Array.isArray(first.urls) ? (first.urls as unknown[]) : [];
+  const thumbUrls = Array.isArray(first.thumb_urls) ? (first.thumb_urls as unknown[]) : [];
+  const url = urls[0] ?? thumbUrls[0];
+  return typeof url === 'string' && url ? url : undefined;
+}
+
 export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
   const product = asRecord(raw);
   const skus = Array.isArray(product.skus) ? (product.skus as unknown[]) : [];
   const externalProductId = requiredStr(product, 'id');
   const name = requiredStr(product, 'title') || requiredStr(product, 'product_name');
+  const imageUrl = extractMainImageUrl(product);
+  // eslint-disable-next-line no-console -- debug temporário, remover após confirmar o campo real de imagem em produção
+  console.log('[tiktok-product-image-debug]', JSON.stringify({ id: externalProductId, main_images: product.main_images, resolved: imageUrl }));
 
   if (skus.length === 0) {
     // Nunca visto em produção até agora, mas não deveria acontecer de verdade — mantém como
     // um único item em vez de descartar o produto inteiro silenciosamente.
-    return [{ externalProductId, externalSku: externalProductId, name, price: '0', stock: 0, raw }];
+    return [{ externalProductId, externalSku: externalProductId, name, price: '0', stock: 0, imageUrl, raw }];
   }
 
   return skus.map((rawSku) => {
@@ -165,6 +185,7 @@ export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
       name,
       price: numericStr(skuPrice, 'tax_inclusive_price') ?? numericStr(skuPrice, 'tax_exclusive_price') ?? '0',
       stock,
+      imageUrl,
       raw: rawSku,
     };
   });

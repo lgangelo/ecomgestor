@@ -29,6 +29,7 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
     brand: product.brand ?? '',
     description: product.description ?? '',
     categoryId: product.category?.id ?? '',
+    imageUrl: product.imageUrl ?? '',
     status: product.status,
   });
 
@@ -40,6 +41,7 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
         brand: product.brand ?? '',
         description: product.description ?? '',
         categoryId: product.category?.id ?? '',
+        imageUrl: product.imageUrl ?? '',
         status: product.status,
       });
     }
@@ -55,6 +57,7 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
       brand: form.brand || undefined,
       description: form.description || undefined,
       categoryId: form.categoryId || undefined,
+      imageUrl: form.imageUrl || undefined,
       status: form.status,
     });
     setOpen(false);
@@ -131,6 +134,15 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
                   <SelectItem value="INACTIVE">Inativo</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="col-span-2 space-y-1.5">
+              <Label htmlFor="edit-imageUrl">URL da imagem de capa</Label>
+              <Input
+                id="edit-imageUrl"
+                placeholder="https://..."
+                value={form.imageUrl}
+                onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
+              />
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label htmlFor="edit-description">Descrição</Label>

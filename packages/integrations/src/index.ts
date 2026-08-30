@@ -35,6 +35,10 @@ export interface ExternalProduct {
   name: string;
   price: string;
   stock: number;
+  /** URL da imagem principal do produto no canal externo — sempre uma URL remota (nunca um
+   * arquivo baixado/salvo localmente: o servidor nunca deve depender de um diretório local para
+   * imagens de produto). `undefined` quando o canal não informa nenhuma imagem. */
+  imageUrl?: string;
   raw: unknown;
 }
 
