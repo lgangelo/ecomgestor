@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { ChannelMappingSyncStatus, Prisma, ProductStatus, VariantStatus } from '@ecommerce-manager/database';
 import { extractSellerSku, type ExternalProduct } from '@ecommerce-manager/integrations';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { AppLoggerService } from '../../common/logger/app-logger.service';
 import { AuditService } from '../../audit/audit.service';
 import { InventoryLedgerService } from '../../inventory/ledger.service';
 import { TikTokConnectorFactory } from './tiktok-connector.factory';
@@ -36,7 +37,10 @@ export class TikTokProductsSyncService {
     private readonly connectorFactory: TikTokConnectorFactory,
     private readonly audit: AuditService,
     private readonly ledger: InventoryLedgerService,
-  ) {}
+    private readonly logger: AppLoggerService,
+  ) {
+    this.logger.setContext('TikTokProductsSync');
+  }
 
   /** Busca o catálogo inteiro da TikTok (todas as páginas) — reusado tanto para achar produtos
    * não vinculados quanto para sincronizar os que já têm vínculo confirmado. */
@@ -106,16 +110,25 @@ export class TikTokProductsSyncService {
    * Também dispara `syncLinkedProducts` (preço/estoque/imagem dos produtos já vinculados) —
    * antes disso só rodava com um clique manual separado na aba de Produtos da integração, o que
    * confundia o operador ("rodei a sincronização e nada mudou"). Roda melhor-esforço: uma falha
-   * aqui nunca derruba a checagem de não-vinculados nem o checkpoint.
+   * aqui nunca derruba a checagem de não-vinculados nem o checkpoint, mas fica registrada no log
+   * e no resultado do job (tela de Jobs) em vez de desaparecer em silêncio.
    */
-  async runProductsCheck(companyId: string): Promise<{ unmatchedCount: number }> {
+  async runProductsCheck(
+    companyId: string,
+  ): Promise<{ unmatchedCount: number; linkedSync?: Awaited<ReturnType<TikTokProductsSyncService['syncLinkedProducts']>>; linkedSyncError?: string }> {
     const integration = await this.credentialsService.requireIntegration(companyId);
     const unmatched = await this.listUnmatched(companyId);
 
+    let linkedSync: Awaited<ReturnType<typeof this.syncLinkedProducts>> | undefined;
+    let linkedSyncError: string | undefined;
     try {
-      await this.syncLinkedProducts(companyId, null);
-    } catch {
-      // best-effort — a checagem de não-vinculados/checkpoint abaixo nunca deve ser bloqueada.
+      linkedSync = await this.syncLinkedProducts(companyId, null);
+    } catch (error) {
+      linkedSyncError = error instanceof Error ? error.message : 'Erro desconhecido';
+      this.logger.warn('tiktok_linked_products_sync_failed', {
+        operation: 'run_products_check',
+        errorMessage: linkedSyncError,
+      });
     }
 
     const checkpoints = (integration.syncCheckpoints as Record<string, string> | null) ?? {};
@@ -124,7 +137,7 @@ export class TikTokProductsSyncService {
       data: { syncCheckpoints: { ...checkpoints, productsSyncAt: new Date().toISOString() } },
     });
 
-    return { unmatchedCount: unmatched.length };
+    return { unmatchedCount: unmatched.length, linkedSync, linkedSyncError };
   }
 
   async link(
