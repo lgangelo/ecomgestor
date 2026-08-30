@@ -180,9 +180,29 @@ export class TikTokProductsSyncService {
     return mapping;
   }
 
+  /** Acha o produto interno já criado a partir do MESMO produto TikTok (outra SKU/variação dele
+   * já foi importada antes) — para a nova SKU virar mais uma variação, nunca um produto
+   * duplicado. Um produto TikTok (`externalProductId`) deve sempre corresponder a exatamente um
+   * produto interno, com uma variação por SKU. */
+  private async findProductIdForExternalProduct(
+    companyId: string,
+    channelId: string,
+    externalProductId: string,
+  ): Promise<string | undefined> {
+    const mapping = await this.prisma.client.channelProductMapping.findFirst({
+      where: { channelId, externalProductId, variantId: { not: null } },
+      include: { variant: { select: { productId: true, product: { select: { companyId: true } } } } },
+    });
+    if (mapping?.variant && mapping.variant.product.companyId === companyId) {
+      return mapping.variant.productId;
+    }
+    return undefined;
+  }
+
   /**
-   * Cria um produto interno novo a partir dos dados do produto TikTok (seção 10, ação "Criar
-   * produto interno"). Se `stock` vier preenchido (> 0), já semeia o saldo inicial via
+   * Cria (ou, se já existir um produto para o mesmo `externalProductId`, apenas adiciona uma
+   * variação nele) a partir dos dados do produto TikTok (seção 10, ação "Criar produto
+   * interno"). Se `stock` vier preenchido (> 0), já semeia o saldo inicial via
    * `InventoryLedgerService.adjust` — mesmo mecanismo usado por qualquer outra entrada/ajuste de
    * estoque no sistema (nunca escreve direto na tabela de saldo, sempre com movimentação
    * registrada), para a carga inicial já vir com estoque de verdade em vez de zerada.
@@ -197,21 +217,37 @@ export class TikTokProductsSyncService {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) throw new BadRequestException('Canal TikTok Shop ainda não conectado');
 
-    const product = await this.prisma.client.product.create({
-      data: {
-        companyId,
-        name: input.name,
-        baseSku: input.sku,
-        status: ProductStatus.DRAFT,
-        variants: {
-          create: [{ sku: input.sku, suggestedPrice: input.price, status: VariantStatus.ACTIVE }],
-        },
-      },
-      include: { variants: true },
-    });
+    const existingProductId = externalProductId
+      ? await this.findProductIdForExternalProduct(companyId, integration.channelId, externalProductId)
+      : undefined;
 
-    const variant = product.variants[0];
-    const mapping = await this.link(companyId, userId, externalSku, externalProductId, variant.id);
+    let productId: string;
+    let variantId: string;
+
+    if (existingProductId) {
+      const variant = await this.prisma.client.productVariant.create({
+        data: { productId: existingProductId, sku: input.sku, suggestedPrice: input.price, status: VariantStatus.ACTIVE },
+      });
+      productId = existingProductId;
+      variantId = variant.id;
+    } else {
+      const product = await this.prisma.client.product.create({
+        data: {
+          companyId,
+          name: input.name,
+          baseSku: input.sku,
+          status: ProductStatus.DRAFT,
+          variants: {
+            create: [{ sku: input.sku, suggestedPrice: input.price, status: VariantStatus.ACTIVE }],
+          },
+        },
+        include: { variants: true },
+      });
+      productId = product.id;
+      variantId = product.variants[0].id;
+    }
+
+    const mapping = await this.link(companyId, userId, externalSku, externalProductId, variantId);
 
     if (input.stock && input.stock > 0) {
       await this.prisma.client.$transaction((tx) =>
@@ -219,7 +255,7 @@ export class TikTokProductsSyncService {
           tx,
           {
             companyId,
-            variantId: variant.id,
+            variantId,
             referenceType: 'tiktok_import',
             referenceId: externalSku,
             userId,
@@ -235,8 +271,13 @@ export class TikTokProductsSyncService {
       userId,
       action: 'TIKTOK_PRODUCT_CREATED',
       entity: 'product',
-      entityId: product.id,
-      newValue: { externalSku, sku: input.sku, stock: input.stock ?? 0 },
+      entityId: productId,
+      newValue: { externalSku, sku: input.sku, stock: input.stock ?? 0, addedAsVariant: Boolean(existingProductId) },
+    });
+
+    const product = await this.prisma.client.product.findUniqueOrThrow({
+      where: { id: productId },
+      include: { variants: true },
     });
 
     return { product, mapping };
