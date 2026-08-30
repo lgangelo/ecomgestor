@@ -14,6 +14,7 @@ import { TikTokStockOutboxService } from './tiktok-stock-outbox.service';
 import { LinkTikTokProductDto } from './dto/link-tiktok-product.dto';
 import { IgnoreTikTokProductDto } from './dto/ignore-tiktok-product.dto';
 import { CreateTikTokProductDto } from './dto/create-tiktok-product.dto';
+import { BulkCreateTikTokProductsDto } from './dto/bulk-create-tiktok-products.dto';
 import { StartTikTokImportDto } from './dto/start-tiktok-import.dto';
 import { PushTikTokInventoryDto } from './dto/push-tiktok-inventory.dto';
 
@@ -62,6 +63,13 @@ export class TikTokController {
       sku: dto.sku,
       price: dto.price,
     });
+  }
+
+  /** Criação em lote — carga inicial de catálogos grandes (seção 10). */
+  @Post('products/bulk-create')
+  @RequirePermissions(PERMISSIONS.INTEGRATION_TIKTOK_SYNC)
+  bulkCreateProducts(@CurrentUser() user: AuthenticatedUser, @Body() dto: BulkCreateTikTokProductsDto) {
+    return this.productsSync.createInternalProductsBulk(user.companyId, user.userId, dto.items);
   }
 
   /** Wizard de importação inicial (seção 9) — enfileira e retorna na hora, nunca bloqueia. */

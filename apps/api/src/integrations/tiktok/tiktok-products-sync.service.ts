@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ChannelMappingSyncStatus, ProductStatus, VariantStatus } from '@ecommerce-manager/database';
+import { ChannelMappingSyncStatus, Prisma, ProductStatus, VariantStatus } from '@ecommerce-manager/database';
 import { extractSellerSku } from '@ecommerce-manager/integrations';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
@@ -206,5 +206,41 @@ export class TikTokProductsSyncService {
     });
 
     return { product, mapping };
+  }
+
+  /**
+   * Criação em lote (seção 10, carga inicial — catálogos grandes tornam a criação item a item
+   * inviável). Cada item é criado de forma independente: um SKU duplicado ou qualquer outro erro
+   * num item nunca aborta os demais, só entra na lista de falhas para o operador corrigir depois
+   * (o SKU pode ser ajustado a qualquer momento na tela de edição da variação).
+   */
+  async createInternalProductsBulk(
+    companyId: string,
+    userId: string,
+    items: Array<{ externalSku: string; externalProductId?: string; name: string; sku: string; price: string }>,
+  ): Promise<{ created: number; failed: Array<{ externalSku: string; error: string }> }> {
+    let created = 0;
+    const failed: Array<{ externalSku: string; error: string }> = [];
+
+    for (const item of items) {
+      try {
+        await this.createInternalProduct(companyId, userId, item.externalSku, item.externalProductId, {
+          name: item.name,
+          sku: item.sku,
+          price: item.price,
+        });
+        created++;
+      } catch (error) {
+        const message =
+          error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
+            ? `Já existe um produto/variante com o SKU "${item.sku}"`
+            : error instanceof Error
+              ? error.message
+              : 'Erro desconhecido';
+        failed.push({ externalSku: item.externalSku, error: message });
+      }
+    }
+
+    return { created, failed };
   }
 }

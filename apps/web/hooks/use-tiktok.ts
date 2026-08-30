@@ -128,6 +128,35 @@ export function useCreateTikTokProduct() {
   );
 }
 
+export interface BulkCreateTikTokProductsResult {
+  created: number;
+  failed: Array<{ externalSku: string; error: string }>;
+}
+
+export function useBulkCreateTikTokProducts() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (items: Array<{ externalSku: string; externalProductId?: string; name: string; sku: string; price: string }>) =>
+      apiFetch<BulkCreateTikTokProductsResult>('/integrations/tiktok/products/bulk-create', {
+        method: 'POST',
+        body: { items },
+      }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['tiktok', 'products', 'unmatched'] });
+      toast({
+        title:
+          result.failed.length === 0
+            ? `${result.created} produto(s) criado(s) com sucesso.`
+            : `${result.created} criado(s), ${result.failed.length} falharam.`,
+        variant: result.failed.length === 0 ? undefined : 'destructive',
+      });
+    },
+    onError: (error) => {
+      toast({ title: error instanceof ApiError ? error.message : 'Não foi possível concluir a criação em lote.' });
+    },
+  });
+}
+
 export function useStartTikTokImport() {
   return useTikTokMutation<{ importProducts?: boolean; importOrders?: boolean; ordersSince?: string }>(
     '/integrations/tiktok/import',
