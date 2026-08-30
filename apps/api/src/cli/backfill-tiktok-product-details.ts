@@ -3,8 +3,11 @@
  * Backfill único de imagem + cor/tamanho para produtos TikTok já vinculados antes desses campos
  * existirem/serem extraídos corretamente. `syncLinkedProducts` já faz isso automaticamente a
  * cada sincronização, mas limita a 20 chamadas de "Get Product" por execução (para não travar o
- * job de rotina num catálogo grande) — este script chama em loop até não haver mais nada para
- * atualizar, sem precisar clicar "Sincronizar agora" repetidamente na tela.
+ * job de rotina num catálogo grande) — esse limite baixo faz o job de rotina ficar sempre preso
+ * nos mesmos produtos sem nunca alcançar o resto do catálogo quando muitos produtos não têm um
+ * dos atributos (ex.: só "Cor", nunca "Tamanho" — a condição de "falta algo" nunca se resolve
+ * para eles). Este script chama `syncLinkedProducts` uma única vez sem limite prático, cobrindo
+ * o catálogo inteiro de uma só vez.
  *
  * Uso:
  *   npm run backfill-tiktok-product-details
@@ -14,7 +17,7 @@ import { PrismaClient } from '@ecommerce-manager/database';
 import { AppModule } from '../app.module';
 import { TikTokProductsSyncService } from '../integrations/tiktok/tiktok-products-sync.service';
 
-const MAX_ROUNDS = 50;
+const UNLIMITED = 1_000_000;
 
 async function main() {
   const prisma = new PrismaClient();
@@ -30,20 +33,15 @@ async function main() {
   const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
   try {
     const productsSync = app.get(TikTokProductsSyncService);
+    const result = await productsSync.syncLinkedProducts(company.id, null, UNLIMITED);
 
-    for (let round = 1; round <= MAX_ROUNDS; round++) {
-      const result = await productsSync.syncLinkedProducts(company.id, null);
-      console.log(
-        `Rodada ${round}: atualizados=${result.updated} inalterados=${result.unchanged} falhas=${result.failed.length}`,
-      );
-      if (result.failed.length > 0) {
-        for (const f of result.failed) console.log(`  falha em ${f.externalSku}: ${f.error}`);
-      }
-      if (result.updated === 0) {
-        console.log('Nada mais para atualizar — encerrando.');
-        break;
-      }
-    }
+    console.log('----------------------------------------------------');
+    console.log(`Atualizados: ${result.updated}`);
+    console.log(`Inalterados: ${result.unchanged}`);
+    console.log(`Não encontrados na TikTok: ${result.notFoundOnTikTok}`);
+    console.log(`Falhas: ${result.failed.length}`);
+    for (const f of result.failed) console.log(`  falha em ${f.externalSku}: ${f.error}`);
+    console.log('----------------------------------------------------');
   } finally {
     await app.close();
   }

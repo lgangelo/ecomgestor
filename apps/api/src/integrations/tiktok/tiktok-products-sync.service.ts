@@ -424,6 +424,15 @@ export class TikTokProductsSyncService {
   async syncLinkedProducts(
     companyId: string,
     userId: string | null,
+    // "Get Product" (imagem + atributos de SKU) é uma chamada extra por produto — sem limite, um
+    // catálogo grande sem nada disso ainda faz o job demorar minutos numa única execução
+    // (confirmado pelo usuário: "o job de importar produtos agora tá demorando mais"). O job de
+    // rotina (chamado sem este parâmetro) usa o limite padrão de 20 por execução; produtos sem
+    // nenhum atributo real (ex.: só "Cor", nunca "Tamanho") ficam para sempre "faltando" e
+    // consomem o limite todo run após run sem nunca alcançar o resto do catálogo — por isso o
+    // script de backfill único (`backfill-tiktok-product-details`) passa um limite bem maior
+    // para conseguir varrer o catálogo inteiro de uma vez.
+    detailFetchLimit = 20,
   ): Promise<{ updated: number; unchanged: number; notFoundOnTikTok: number; failed: Array<{ externalSku: string; error: string }> }> {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) throw new BadRequestException('Canal TikTok Shop ainda não conectado');
@@ -443,12 +452,6 @@ export class TikTokProductsSyncService {
     let unchanged = 0;
     let notFoundOnTikTok = 0;
     const failed: Array<{ externalSku: string; error: string }> = [];
-    // "Get Product" (imagem + atributos de SKU) é uma chamada extra por produto — sem limite, um
-    // catálogo grande sem nada disso ainda faz o job demorar minutos numa única execução
-    // (confirmado pelo usuário: "o job de importar produtos agora tá demorando mais"). Limita
-    // quantas chamadas de detalhe faz POR EXECUÇÃO; o resto fica pendente e é buscado nas
-    // próximas sincronizações.
-    const MAX_DETAIL_FETCHES_PER_RUN = 20;
     let detailFetchesThisRun = 0;
 
     for (const mapping of mappings) {
@@ -482,7 +485,7 @@ export class TikTokProductsSyncService {
         // Product" quando falta algo, best-effort (nunca aborta a sincronização do resto).
         const missingImage = !variant.product.imageUrl;
         const missingAttrs = !variant.color || !variant.size;
-        if ((missingImage || missingAttrs) && mapping.externalProductId && detailFetchesThisRun < MAX_DETAIL_FETCHES_PER_RUN) {
+        if ((missingImage || missingAttrs) && mapping.externalProductId && detailFetchesThisRun < detailFetchLimit) {
           detailFetchesThisRun++;
           try {
             const detail = await connector.getProductDetail(companyId, mapping.externalProductId);

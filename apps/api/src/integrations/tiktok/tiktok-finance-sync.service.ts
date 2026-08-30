@@ -28,10 +28,6 @@ function mapSettlementStatus(raw: string): SettlementStatus {
   return SettlementStatus.PENDING;
 }
 
-/** Categorias de `SettlementTransaction` que representam taxa/comissão cobrada pela plataforma —
- * as únicas que também alimentam `marketplace_fees` (ver `syncTransactionsForStatement`). */
-const FEE_TRANSACTION_TYPES = new Set(['PLATFORM_FEE', 'AFFILIATE_COMMISSION']);
-
 /**
  * Ingestão financeira (seção 29-30-31 da Fase 3): Get Statements -> Get Transactions by
  * Statement, alimentando `settlements`/`settlement_transactions` já existentes. Nunca inventa
@@ -137,15 +133,18 @@ export class TikTokFinanceSyncService {
         // `marketplace_fees` é a tabela que o resto do sistema já lê para lucro/margem (pedido,
         // dashboard financeiro, fechamento mensal) — sem isto, essas telas nunca descontavam a
         // taxa/comissão da TikTok (tabela sempre vazia, nenhum código em nenhum lugar escrevia
-        // nela). O valor bruto da TikTok vem negativo (é um débito no saldo do repasse); aqui
-        // grava-se a magnitude positiva, que é o que as leituras existentes esperam subtrair.
-        if (order && FEE_TRANSACTION_TYPES.has(data.type) && tx.externalTransactionId) {
+        // nela). Confirmado em produção: cada transação é o resumo financeiro do PEDIDO INTEIRO
+        // (tipo sempre "ORDER"), não uma categoria isolada — por isso nunca bate com
+        // PLATFORM_FEE/AFFILIATE_COMMISSION do mapeamento genérico; a condição real é só "tem
+        // taxa diferente de zero e o pedido foi resolvido". `tx.amount` já é `fee_amount` (a taxa
+        // total, negativa — débito no repasse); aqui grava-se a magnitude positiva.
+        if (order && Number(tx.amount) !== 0 && tx.externalTransactionId) {
           await this.prisma.client.marketplaceFee.upsert({
             where: { externalTransactionId: tx.externalTransactionId },
             create: {
               channelId,
               orderId: order.id,
-              feeType: data.type,
+              feeType: 'PLATFORM_FEE',
               amount: Math.abs(Number(tx.amount)),
               externalTransactionId: tx.externalTransactionId,
             },
@@ -166,6 +165,12 @@ export class TikTokFinanceSyncService {
    * Conciliação por pedido (seção 31 da Fase 3) — nunca considera valor zero silenciosamente
    * quando não há liquidação ainda: retorna `settled: false` e o frontend mostra
    * "Pendente de liquidação" em vez de R$ 0,00.
+   *
+   * Confirmado em produção: cada `settlementTx` já é o resumo financeiro do PEDIDO INTEIRO, não
+   * uma categoria isolada (venda/desconto/taxa cada uma numa linha, como o desenho original
+   * assumia) — por isso não há mais "somar por categoria" aqui. `grossSale`/`fees` vêm de campos
+   * já corretos e confiáveis: `order.subtotal` (preço de tabela, já calculado certo na
+   * importação) e a soma das taxas reais sincronizadas (`settlementTx.amount`, sempre negativo).
    */
   async getOrderReconciliation(companyId: string, orderId: string) {
     const order = await this.prisma.client.order.findFirst({
@@ -175,23 +180,13 @@ export class TikTokFinanceSyncService {
     if (!order) throw new NotFoundException('Pedido não encontrado');
 
     if (order.settlementTx.length === 0) {
-      return { settled: false, grossSale: null, discounts: null, fees: null, netRevenue: null, settlement: null };
+      return { settled: false, grossSale: null, fees: null, netRevenue: null };
     }
 
-    const sum = (type: string) =>
-      order.settlementTx.filter((t) => t.type === type).reduce((s, t) => s + Number(t.amount), 0);
+    const fees = order.settlementTx.reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
+    const grossSale = Number(order.subtotal);
+    const netRevenue = Number(order.total) - fees;
 
-    return {
-      settled: true,
-      grossSale: sum('GROSS_SALE'),
-      sellerDiscount: sum('SELLER_DISCOUNT'),
-      platformDiscount: sum('PLATFORM_DISCOUNT'),
-      fees: sum('PLATFORM_FEE'),
-      shippingAdjustment: sum('SHIPPING_ADJUSTMENT'),
-      affiliateCommission: sum('AFFILIATE_COMMISSION'),
-      settlementPayout: sum('SETTLEMENT_PAYOUT'),
-      other: sum('OTHER'),
-      netRevenue: order.settlementTx.reduce((s, t) => s + Number(t.amount), 0),
-    };
+    return { settled: true, grossSale, fees, netRevenue };
   }
 }

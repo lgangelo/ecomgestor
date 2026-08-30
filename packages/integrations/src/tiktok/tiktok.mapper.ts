@@ -281,6 +281,15 @@ export function normalizeStatement(raw: unknown): ExternalStatement {
  * normalização para categoria interna (`normalizeTransactionType`) é chamada explicitamente
  * pelo service de finance/settlement ao gravar `SettlementTransaction`, nunca aqui, para que
  * o valor bruto original (`rawType`) nunca se perca.
+ *
+ * CONFIRMADO em produção (payload real): esta API não devolve "uma transação por categoria"
+ * como um livro-razão genérico (uma linha de venda, outra de taxa, outra de desconto) — devolve
+ * um resumo financeiro COMPLETO de UM pedido por linha, `type` sempre `"ORDER"`, com dezenas de
+ * campos nomeados (`gross_sales_amount`, `platform_commission_amount`, `fee_amount`,
+ * `seller_discount_amount`, `settlement_amount`, ...) em vez de um `amount` genérico. `fee_amount`
+ * é a taxa TOTAL cobrada pela plataforma nesse pedido (comissão + demais taxas somadas) — o valor
+ * que efetivamente serve para "Taxas da plataforma". Tipos de transação ainda não vistos
+ * (reembolso, ajuste...) podem ter outro formato — por isso o fallback para `amount` genérico.
  */
 export function normalizeTransaction(raw: unknown, statementId?: string): ExternalTransaction {
   const tx = asRecord(raw);
@@ -289,8 +298,9 @@ export function normalizeTransaction(raw: unknown, statementId?: string): Extern
     externalOrderId: str(tx, 'order_id'),
     externalStatementId: statementId,
     type: requiredStr(tx, 'type') || requiredStr(tx, 'transaction_type'),
-    amount: numericStr(tx, 'amount') ?? '0',
-    occurredAt: unixDate(tx, 'create_time') ?? new Date(),
+    amount: numericStr(tx, 'fee_amount') ?? numericStr(tx, 'amount') ?? '0',
+    // Transação tipo "ORDER" não tem `create_time` — só `order_create_time`.
+    occurredAt: unixDate(tx, 'create_time') ?? unixDate(tx, 'order_create_time') ?? new Date(),
     raw,
   };
 }
