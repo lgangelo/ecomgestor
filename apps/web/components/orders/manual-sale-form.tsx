@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { toDateInputValue } from '@/lib/format';
 import { useCreateManualOrder } from '@/hooks/use-orders';
@@ -38,6 +39,7 @@ export function ManualSaleForm() {
   const [shipping, setShipping] = React.useState('0');
   const [paymentMethod, setPaymentMethod] = React.useState('');
   const [notes, setNotes] = React.useState('');
+  const [skipStockMovement, setSkipStockMovement] = React.useState(false);
   const [rows, setRows] = React.useState<Row[]>([]);
 
   function addRow(variant: PickedVariant) {
@@ -67,6 +69,7 @@ export function ManualSaleForm() {
       shipping: Number(shipping || 0),
       paymentMethod: paymentMethod || undefined,
       notes: notes || undefined,
+      skipStockMovement,
       items: rows.map((r) => ({
         variantId: r.variantId,
         quantity: Number(r.quantity),
@@ -203,6 +206,18 @@ export function ManualSaleForm() {
             )}
           </CardContent>
         </Card>
+
+        <div className="flex items-start gap-2 rounded-md border border-border p-3">
+          <Checkbox
+            id="skipStockMovement"
+            checked={skipStockMovement}
+            onCheckedChange={(checked) => setSkipStockMovement(checked === true)}
+          />
+          <Label htmlFor="skipStockMovement" className="text-sm font-normal leading-snug">
+            Venda antiga — só registrar para constar no histórico, sem reservar nem baixar
+            estoque. Use para lançar vendas passadas cujo estoque atual já está correto.
+          </Label>
+        </div>
 
         <div className="flex justify-end">
           <Button type="submit" size="lg" disabled={rows.length === 0 || createManualOrder.isPending}>

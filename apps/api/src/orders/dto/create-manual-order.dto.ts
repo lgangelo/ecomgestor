@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsIn,
   IsISO8601,
@@ -73,4 +74,11 @@ export class CreateManualOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  // Venda antiga registrada só para constar no histórico/gerar numeração — o estoque atual já
+  // reflete essa venda (ou nunca existiu de fato no sistema), então nunca deve reservar nem
+  // debitar de novo (mesmo raciocínio de StockEntry.skipStockMovement).
+  @IsOptional()
+  @IsBoolean()
+  skipStockMovement?: boolean;
 }

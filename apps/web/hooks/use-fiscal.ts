@@ -178,12 +178,15 @@ export function useUploadFiscalDocument() {
 export function useAssociateFiscalDocument() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ documentId, orderId }: { documentId: string; orderId: string }) =>
-      apiFetch(`/fiscal/documents/${documentId}/associate`, { method: 'PATCH', body: { orderId } }),
+    mutationFn: ({ documentId, orderId, returnId }: { documentId: string; orderId?: string; returnId?: string }) =>
+      apiFetch(`/fiscal/documents/${documentId}/associate`, {
+        method: 'PATCH',
+        body: orderId ? { orderId } : { returnId },
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fiscal-documents'] });
       queryClient.invalidateQueries({ queryKey: ['fiscal-pending'] });
-      toast({ title: 'Documento associado ao pedido.' });
+      toast({ title: 'Documento associado.' });
     },
     onError: (error) =>
       toast({

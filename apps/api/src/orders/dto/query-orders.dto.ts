@@ -33,6 +33,10 @@ export class QueryOrdersDto extends PaginationQueryDto {
   customerName?: string;
 
   @IsOptional()
+  @IsString()
+  externalOrderId?: string;
+
+  @IsOptional()
   @Type(() => Boolean)
   @IsBoolean()
   hasFiscalDocument?: boolean;

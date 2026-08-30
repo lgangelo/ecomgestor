@@ -70,6 +70,7 @@ export interface OrderFilters {
   syncStatus?: string;
   productId?: string;
   customerName?: string;
+  externalOrderId?: string;
   hasFiscalDocument?: boolean;
 }
 
@@ -134,14 +135,17 @@ export function useCreateManualOrder() {
       paymentMethod?: string;
       status?: string;
       notes?: string;
+      skipStockMovement?: boolean;
     }) => apiFetch<OrderDetail>('/orders/manual', { method: 'POST', body: data }),
-    onSuccess: (order) => {
+    onSuccess: (order, variables) => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       // Feedback específico (seção 60 da Fase 4) — nunca um "Sucesso" genérico.
       toast({
         title: 'Venda registrada.',
-        description: `Pedido ${order.externalOrderId ?? order.id.slice(0, 8)} — estoque reservado.`,
+        description: variables.skipStockMovement
+          ? `Pedido ${order.externalOrderId ?? order.id.slice(0, 8)} — sem movimentação de estoque.`
+          : `Pedido ${order.externalOrderId ?? order.id.slice(0, 8)} — estoque reservado.`,
       });
     },
     onError: onErrorToast('Não foi possível registrar a venda'),

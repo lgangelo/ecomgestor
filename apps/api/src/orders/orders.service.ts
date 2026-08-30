@@ -56,6 +56,9 @@ export class OrdersService {
       ...(query.customerName
         ? { customerName: { contains: query.customerName, mode: 'insensitive' as const } }
         : {}),
+      ...(query.externalOrderId
+        ? { externalOrderId: { contains: query.externalOrderId, mode: 'insensitive' as const } }
+        : {}),
       ...(query.productId
         ? { items: { some: { variant: { productId: query.productId } } } }
         : {}),
@@ -705,7 +708,7 @@ export class OrdersService {
         data: { orderId: order.id, status, changedBy: userId },
       });
 
-      if (status !== OrderStatus.CANCELLED) {
+      if (status !== OrderStatus.CANCELLED && !dto.skipStockMovement) {
         for (const item of dto.items) {
           const movementCtx = {
             companyId,
