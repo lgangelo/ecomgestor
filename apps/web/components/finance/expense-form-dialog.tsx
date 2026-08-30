@@ -78,10 +78,10 @@ export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="description">Descrição</Label>
+            <Label htmlFor="description">Descrição (opcional)</Label>
             <Input
               id="description"
-              required
+              placeholder="Deixe em branco para usar o nome da categoria"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             />

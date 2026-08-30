@@ -1,13 +1,14 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateRecurringExpenseDto {
   @IsUUID()
   categoryId!: string;
 
+  // Opcional — quando não informada, usa o nome da categoria.
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  description!: string;
+  description?: string;
 
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })

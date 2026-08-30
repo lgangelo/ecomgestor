@@ -127,7 +127,7 @@ export class FinanceService {
       data: {
         companyId,
         categoryId: dto.categoryId,
-        description: dto.description,
+        description: dto.description?.trim() || category.name,
         amount: dto.amount,
         date,
         competenceDate: dto.competenceDate ? new Date(dto.competenceDate) : date,
@@ -412,7 +412,7 @@ export class FinanceService {
       data: {
         companyId,
         categoryId: dto.categoryId,
-        description: dto.description,
+        description: dto.description?.trim() || category.name,
         amount: dto.amount,
         dayOfMonth: dto.dayOfMonth,
         paymentMethod: dto.paymentMethod ?? null,

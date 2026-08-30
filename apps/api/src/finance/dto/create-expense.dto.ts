@@ -3,7 +3,6 @@ import { Type } from 'class-transformer';
 import {
   IsDateString,
   IsEnum,
-  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -15,9 +14,11 @@ export class CreateExpenseDto {
   @IsUUID()
   categoryId!: string;
 
+  // Opcional — quando não informada, usa o nome da categoria (ex.: itens de uso simples como
+  // etiqueta/embalagem, onde a categoria já é descritiva o bastante).
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  description!: string;
+  description?: string;
 
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })

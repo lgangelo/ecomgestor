@@ -150,7 +150,7 @@ export function useCreateExpense() {
   return useMutation({
     mutationFn: (data: {
       categoryId: string;
-      description: string;
+      description?: string;
       amount: number;
       date: string;
       competenceDate?: string;
@@ -264,7 +264,7 @@ export function useRecurringExpenses() {
 export function useCreateRecurringExpense() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { categoryId: string; description: string; amount: number; dayOfMonth: number; paymentMethod?: string }) =>
+    mutationFn: (data: { categoryId: string; description?: string; amount: number; dayOfMonth: number; paymentMethod?: string }) =>
       apiFetch<RecurringExpenseTemplate>('/finance/recurring-expenses', { method: 'POST', body: data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recurring-expenses'] });
