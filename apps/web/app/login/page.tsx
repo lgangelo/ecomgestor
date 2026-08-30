@@ -13,10 +13,12 @@ export default async function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
       <div className="w-full max-w-sm space-y-6">
         <div className="space-y-1 text-center">
-          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
-            E
-          </div>
-          <h1 className="text-xl font-semibold tracking-tight">E-commerce Manager</h1>
+          {/* eslint-disable-next-line @next/next/no-img-element -- logo estático em /public, sem necessidade de otimização */}
+          <img
+            src="/venticelli.jpg"
+            alt="Venticelli"
+            className="mx-auto h-20 w-20 rounded-lg bg-white object-contain p-1 shadow-sm"
+          />
           <p className="text-sm text-muted-foreground">Entre com sua conta para continuar</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">

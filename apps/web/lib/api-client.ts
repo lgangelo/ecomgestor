@@ -61,6 +61,14 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
           ? payload.message.join(', ')
           : String(payload.message)
         : undefined) ?? `Erro na requisição (${response.status})`;
+
+    // Sessão expirada no meio do uso (token de acesso vencido) travava a tela em silêncio —
+    // nenhuma view checava isError, então a página só parava de carregar sem explicação. Nunca
+    // dispara para o próprio POST de login (ali um 401 é só "senha errada", tratado no form).
+    if (response.status === 401 && path !== '/auth/login' && typeof window !== 'undefined') {
+      window.location.href = '/login?expired=1';
+    }
+
     throw new ApiError(message, response.status, payload);
   }
 

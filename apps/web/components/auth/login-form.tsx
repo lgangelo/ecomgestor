@@ -1,14 +1,17 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, ApiError } from '@/lib/api-client';
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
-  const [error, setError] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(
+    searchParams.get('expired') ? 'Sua sessão expirou. Faça login novamente.' : null,
+  );
   const [loading, setLoading] = React.useState(false);
 
   async function handleSubmit(e: React.FormEvent) {

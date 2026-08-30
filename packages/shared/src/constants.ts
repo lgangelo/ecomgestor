@@ -15,7 +15,7 @@ export const EXPENSE_CATEGORY_NAMES = [
   'Outros',
 ] as const;
 
-export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60; // 15 minutos
+export const ACCESS_TOKEN_TTL_SECONDS = 30 * 60; // 30 minutos
 export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 dias
 
 export const AUTH_COOKIE_NAME = 'ecm_access_token';
