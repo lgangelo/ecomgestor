@@ -141,7 +141,8 @@ export function SalesByChannelChart({ data }: { data: DashboardResponse['charts'
                   <TableHead>Pedidos</TableHead>
                   <TableHead>Ticket médio</TableHead>
                   <TableHead>Lucro</TableHead>
-                  <TableHead>Margem</TableHead>
+                  <TableHead>Margem (venda)</TableHead>
+                  <TableHead>Markup (custo)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -155,6 +156,9 @@ export function SalesByChannelChart({ data }: { data: DashboardResponse['charts'
                     <TableCell>{formatBRL(row.profit)}</TableCell>
                     <TableCell className={row.marginPercent >= 0 ? 'text-success' : 'text-destructive'}>
                       {row.marginPercent.toFixed(1)}%
+                    </TableCell>
+                    <TableCell className={row.markupPercent !== null && row.markupPercent < 0 ? 'text-destructive' : ''}>
+                      {row.markupPercent === null ? '—' : `${row.markupPercent.toFixed(1)}%`}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -216,7 +220,8 @@ export function ProductsRankingTable({ data }: { data: DashboardResponse['charts
                 <TableHead>Unidades</TableHead>
                 <TableHead>Faturamento</TableHead>
                 <TableHead>Lucro</TableHead>
-                <TableHead>Margem</TableHead>
+                <TableHead>Margem (venda)</TableHead>
+                <TableHead>Markup (custo)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -228,6 +233,9 @@ export function ProductsRankingTable({ data }: { data: DashboardResponse['charts
                   <TableCell>{formatBRL(item.profit)}</TableCell>
                   <TableCell className={cn(item.marginPercent >= 0 ? 'text-success' : 'text-destructive')}>
                     {item.marginPercent.toFixed(1)}%
+                  </TableCell>
+                  <TableCell className={cn(item.markupPercent !== null && item.markupPercent < 0 ? 'text-destructive' : '')}>
+                    {item.markupPercent === null ? '—' : `${item.markupPercent.toFixed(1)}%`}
                   </TableCell>
                 </TableRow>
               ))}

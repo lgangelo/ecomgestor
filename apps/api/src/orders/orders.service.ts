@@ -124,7 +124,11 @@ export class OrdersService {
     const marketplaceFeesTotal = Number(marketplaceFees._sum.amount ?? 0);
     const total = Number(order.total);
     const estimatedProfit = total - cmv - marketplaceFeesTotal;
+    // Margem = lucro sobre a venda (padrão contábil, usado no rótulo "Margem"). Markup = lucro
+    // sobre o custo (o que o usuário já calculava numa planilha própria) — sempre um número maior
+    // que a margem para o mesmo lucro; nulo quando não há custo cadastrado (divisão por zero).
     const marginPercent = total > 0 ? (estimatedProfit / total) * 100 : 0;
+    const markupPercent = cmv > 0 ? (estimatedProfit / cmv) * 100 : null;
 
     return {
       id: order.id,
@@ -176,6 +180,7 @@ export class OrdersService {
       marketplaceFeesTotal: Math.round(marketplaceFeesTotal * 100) / 100,
       estimatedProfit: Math.round(estimatedProfit * 100) / 100,
       marginPercent: Math.round(marginPercent * 100) / 100,
+      markupPercent: markupPercent === null ? null : Math.round(markupPercent * 100) / 100,
     };
   }
 

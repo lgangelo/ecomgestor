@@ -11,6 +11,7 @@ export interface DashboardCards {
   averageTicket: number;
   estimatedProfit: number;
   margin: number;
+  markup: number | null;
   receivable: number;
 }
 
@@ -35,9 +36,17 @@ export interface DashboardResponse {
       averageTicket: number;
       profit: number;
       marginPercent: number;
+      markupPercent: number | null;
       share: number;
     }>;
-    products: Array<{ productName: string; quantity: number; revenue: number; profit: number; marginPercent: number }>;
+    products: Array<{
+      productName: string;
+      quantity: number;
+      revenue: number;
+      profit: number;
+      marginPercent: number;
+      markupPercent: number | null;
+    }>;
     topProducts: Array<{ productName: string; quantity: number; revenue: number }>;
     marginByProduct: Array<{ productName: string; marginPercent: number }>;
   };

@@ -192,7 +192,11 @@ export class ReportsService {
       0,
     );
     const estimatedProfit = netRevenue - cmv - fees;
+    // Margem = lucro sobre a venda (padrão contábil). Markup = lucro sobre o custo — sempre um
+    // número maior que a margem para o mesmo lucro; nulo quando não há CMV no período (divisão
+    // por zero, não "0%").
     const margin = revenue > 0 ? (estimatedProfit / revenue) * 100 : 0;
+    const markup = cmv > 0 ? (estimatedProfit / cmv) * 100 : null;
 
     return {
       revenue: round2(revenue),
@@ -201,6 +205,7 @@ export class ReportsService {
       averageTicket: round2(averageTicket),
       estimatedProfit: round2(estimatedProfit),
       margin: round2(margin),
+      markup: markup === null ? null : round2(markup),
       receivable: round2(receivable),
     };
   }
@@ -286,6 +291,7 @@ export class ReportsService {
           averageTicket: stats.orders > 0 ? round2(stats.total / stats.orders) : 0,
           profit: round2(profit),
           marginPercent: stats.total > 0 ? round2((profit / stats.total) * 100) : 0,
+          markupPercent: stats.cmv > 0 ? round2((profit / stats.cmv) * 100) : null,
           share: totalRevenueAllChannels > 0 ? round2((stats.total / totalRevenueAllChannels) * 100) : 0,
         };
       });
@@ -332,6 +338,7 @@ export class ReportsService {
         revenue: round2(stats.revenue),
         profit: round2(stats.revenue - stats.cmv - stats.fees),
         marginPercent: stats.revenue > 0 ? round2(((stats.revenue - stats.cmv - stats.fees) / stats.revenue) * 100) : 0,
+        markupPercent: stats.cmv > 0 ? round2(((stats.revenue - stats.cmv - stats.fees) / stats.cmv) * 100) : null,
       }))
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 50);

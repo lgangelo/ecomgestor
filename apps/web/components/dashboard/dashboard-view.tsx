@@ -83,10 +83,20 @@ export function DashboardView() {
               trend={trendFor(data.cards.estimatedProfit, data.previous?.estimatedProfit)}
             />
             <StatCard
-              title="Margem"
+              title="Margem (sobre a venda)"
               value={`${data.cards.margin.toFixed(1)}%`}
               icon={Percent}
               trend={trendFor(data.cards.margin, data.previous?.margin)}
+            />
+            <StatCard
+              title="Markup (sobre o custo)"
+              value={data.cards.markup === null ? '—' : `${data.cards.markup.toFixed(1)}%`}
+              icon={Percent}
+              trend={
+                data.cards.markup !== null && data.previous?.markup !== null
+                  ? trendFor(data.cards.markup, data.previous?.markup)
+                  : undefined
+              }
             />
             <StatCard title="A receber" value={formatBRL(data.cards.receivable)} icon={Wallet} />
           </div>

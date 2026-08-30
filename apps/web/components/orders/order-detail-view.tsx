@@ -95,7 +95,12 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
           </CardHeader>
           <CardContent className="pt-0">
             <p className="text-lg font-semibold">{formatBRL(order.estimatedProfit)}</p>
-            <p className="text-xs text-muted-foreground">Margem: {order.marginPercent.toFixed(1)}%</p>
+            <p className="text-xs text-muted-foreground">
+              Margem (sobre a venda): {order.marginPercent.toFixed(1)}%
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Markup (sobre o custo): {order.markupPercent === null ? '—' : `${order.markupPercent.toFixed(1)}%`}
+            </p>
           </CardContent>
         </Card>
       </div>

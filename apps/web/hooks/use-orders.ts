@@ -60,6 +60,7 @@ export interface OrderDetail {
   marketplaceFeesTotal: number;
   estimatedProfit: number;
   marginPercent: number;
+  markupPercent: number | null;
 }
 
 export interface OrderFilters {
