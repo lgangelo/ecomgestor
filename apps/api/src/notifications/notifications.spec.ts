@@ -52,6 +52,8 @@ function makeFakeFiscalService(salesWithoutInvoiceCount: number): FiscalService 
     getPending: async () => ({
       salesWithoutInvoice: Array.from({ length: salesWithoutInvoiceCount }, (_, i) => ({ id: `sale-${i}` })),
       returnsWithoutDocument: [],
+      salesWithoutInvoiceCount,
+      returnsWithoutDocumentCount: 0,
     }),
   } as unknown as FiscalService;
 }

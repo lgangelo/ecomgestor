@@ -25,6 +25,7 @@ import {
 } from '@/hooks/use-fiscal';
 import { useUrlFilters } from '@/hooks/use-url-filters';
 import { FiscalUploadDialog } from './upload-dialog';
+import { FiscalBulkUploadDialog } from './bulk-upload-dialog';
 import { AssociateFiscalDocumentDialog } from './associate-dialog';
 
 const STATUSES = ['PENDING', 'ISSUED', 'CANCELLED', 'ERROR'];
@@ -53,6 +54,7 @@ export function FiscalDocumentsView() {
         actions={
           <div className="flex gap-2">
             <FiscalUploadDialog trigger={<Button variant="outline">Enviar XML</Button>} />
+            <FiscalBulkUploadDialog trigger={<Button variant="outline">Enviar vários XMLs</Button>} />
             <Button
               disabled={selected.length === 0 || exportDocuments.isPending}
               onClick={() => exportDocuments.mutate(selected)}
@@ -64,17 +66,17 @@ export function FiscalDocumentsView() {
         }
       />
 
-      {pending && (pending.salesWithoutInvoice.length > 0 || pending.returnsWithoutDocument.length > 0) && (
+      {pending && (pending.salesWithoutInvoiceCount > 0 || pending.returnsWithoutDocumentCount > 0) && (
         <Card className="mb-6 border-warning/40">
           <CardHeader className="flex-row items-center gap-2 space-y-0">
             <AlertTriangle className="h-4 w-4 text-warning" />
             <CardTitle>Pendências fiscais</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 pt-0 text-sm">
-            {pending.salesWithoutInvoice.length > 0 && (
+            {pending.salesWithoutInvoiceCount > 0 && (
               <p>
                 <Badge tone="warning" className="mr-2">
-                  {pending.salesWithoutInvoice.length}
+                  {pending.salesWithoutInvoiceCount}
                 </Badge>
                 venda(s) sem NF-e —{' '}
                 {pending.salesWithoutInvoice.slice(0, 3).map((o, i) => (
@@ -85,12 +87,13 @@ export function FiscalDocumentsView() {
                     </Link>
                   </React.Fragment>
                 ))}
+                {pending.salesWithoutInvoiceCount > pending.salesWithoutInvoice.length && '...'}
               </p>
             )}
-            {pending.returnsWithoutDocument.length > 0 && (
+            {pending.returnsWithoutDocumentCount > 0 && (
               <p>
                 <Badge tone="warning" className="mr-2">
-                  {pending.returnsWithoutDocument.length}
+                  {pending.returnsWithoutDocumentCount}
                 </Badge>
                 devolução(ões) sem documento —{' '}
                 {pending.returnsWithoutDocument.slice(0, 3).map((r, i) => (
@@ -101,6 +104,7 @@ export function FiscalDocumentsView() {
                     </Link>
                   </React.Fragment>
                 ))}
+                {pending.returnsWithoutDocumentCount > pending.returnsWithoutDocument.length && '...'}
               </p>
             )}
           </CardContent>

@@ -90,7 +90,10 @@ export class ReportsService {
     // expressão (onHand - reserved) diretamente no Prisma, então compara em memória.
     const belowMinimumCount = inventories.filter((inv) => inv.onHand - inv.reserved < inv.variant.minStock).length;
 
-    const fiscalPendingCount = fiscalPending.salesWithoutInvoice.length + fiscalPending.returnsWithoutDocument.length;
+    // Nunca `.length` das listas de exemplo — elas são limitadas a 50 pra exibição, então
+    // sempre mostravam no máximo 50 mesmo quando o total real era maior. `salesWithoutInvoiceCount`/
+    // `returnsWithoutDocumentCount` são contagens de verdade (sem limite).
+    const fiscalPendingCount = fiscalPending.salesWithoutInvoiceCount + fiscalPending.returnsWithoutDocumentCount;
 
     const items: AttentionItem[] = [
       { key: 'low_stock', label: 'produtos com estoque baixo', count: belowMinimumCount, link: '/produtos/estoque' },

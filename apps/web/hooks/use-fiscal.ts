@@ -38,6 +38,8 @@ export interface FiscalPending {
     total: string;
   }>;
   returnsWithoutDocument: Array<{ id: string; orderId: string; customerName: string | null }>;
+  salesWithoutInvoiceCount: number;
+  returnsWithoutDocumentCount: number;
 }
 
 const CSRF_COOKIE_NAME = 'ecm_csrf_token';
@@ -131,29 +133,48 @@ export function useFiscalPending() {
   });
 }
 
+export interface UploadFiscalDocumentResult {
+  id: string;
+  autoAssociated: boolean;
+  orderId: string | null;
+}
+
+/** Chamada crua (sem toast/invalidação própria) — usada tanto pelo hook de envio único quanto
+ * pelo envio em lote (que precisa acumular os resultados de várias chamadas antes de mostrar UM
+ * resumo, em vez de um toast por arquivo). */
+export async function uploadFiscalDocumentRequest({
+  file,
+  type,
+  orderId,
+}: {
+  file: File;
+  type: string;
+  orderId?: string;
+}): Promise<UploadFiscalDocumentResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('type', type);
+  if (orderId) formData.append('orderId', orderId);
+
+  const csrf = readCookie(CSRF_COOKIE_NAME);
+  const response = await fetch(apiUrl('/fiscal/documents/upload'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: csrf ? { [CSRF_HEADER_NAME]: csrf } : undefined,
+    body: formData,
+  });
+  const payload = await response.json().catch(() => undefined);
+  if (!response.ok) {
+    const message = payload && typeof payload.message === 'string' ? payload.message : 'Falha no upload';
+    throw new ApiError(message, response.status, payload);
+  }
+  return payload as UploadFiscalDocumentResult;
+}
+
 export function useUploadFiscalDocument() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ file, type, orderId }: { file: File; type: string; orderId?: string }) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('type', type);
-      if (orderId) formData.append('orderId', orderId);
-
-      const csrf = readCookie(CSRF_COOKIE_NAME);
-      const response = await fetch(apiUrl('/fiscal/documents/upload'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: csrf ? { [CSRF_HEADER_NAME]: csrf } : undefined,
-        body: formData,
-      });
-      const payload = await response.json().catch(() => undefined);
-      if (!response.ok) {
-        const message = payload && typeof payload.message === 'string' ? payload.message : 'Falha no upload';
-        throw new ApiError(message, response.status, payload);
-      }
-      return payload as { id: string; autoAssociated: boolean; orderId: string | null };
-    },
+    mutationFn: uploadFiscalDocumentRequest,
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['fiscal-documents'] });
       queryClient.invalidateQueries({ queryKey: ['fiscal-pending'] });

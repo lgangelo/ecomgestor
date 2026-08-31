@@ -316,19 +316,36 @@ export class FiscalService {
 
   /** Pendências fiscais visíveis e navegáveis (independente de mês). */
   async getPending(companyId: string) {
-    const [salesWithoutInvoice, returnsWithoutDocument] = await Promise.all([
-      this.prisma.client.order.findMany({
-        where: { companyId, status: { not: 'CANCELLED' }, fiscalDocuments: { none: {} } },
-        select: { id: true, orderDate: true, customerName: true, total: true, channel: { select: { name: true } } },
-        orderBy: { orderDate: 'desc' },
-        take: 50,
-      }),
-      this.prisma.client.return.findMany({
-        where: { order: { companyId }, fiscalDocuments: { none: {} } },
-        include: { order: { select: { id: true, customerName: true } } },
-        take: 50,
-      }),
-    ]);
+    // Pedido ainda não pago (CREATED) não é uma venda confirmada — não deveria contar como
+    // "pendência fiscal" (não tem NF-e porque ainda não é uma venda de verdade, não por atraso).
+    const salesWhere: Prisma.OrderWhereInput = {
+      companyId,
+      status: { notIn: ['CANCELLED', 'CREATED'] },
+      fiscalDocuments: { none: {} },
+    };
+    const returnsWhere: Prisma.ReturnWhereInput = { order: { companyId }, fiscalDocuments: { none: {} } };
+
+    // `take: 50` nas listas abaixo é só para os exemplos exibidos na tela (nunca a lista
+    // inteira) — usar `.length` dessas listas como "quantas pendências existem" (como este
+    // método fazia antes) sempre mostrava no máximo 50, mesmo quando o total real era maior,
+    // fazendo o card do dashboard mentir sobre o tamanho real do problema. As contagens abaixo
+    // são a fonte de verdade; as listas continuam só para "veja alguns exemplos".
+    const [salesWithoutInvoice, returnsWithoutDocument, salesWithoutInvoiceCount, returnsWithoutDocumentCount] =
+      await Promise.all([
+        this.prisma.client.order.findMany({
+          where: salesWhere,
+          select: { id: true, orderDate: true, customerName: true, total: true, channel: { select: { name: true } } },
+          orderBy: { orderDate: 'desc' },
+          take: 50,
+        }),
+        this.prisma.client.return.findMany({
+          where: returnsWhere,
+          include: { order: { select: { id: true, customerName: true } } },
+          take: 50,
+        }),
+        this.prisma.client.order.count({ where: salesWhere }),
+        this.prisma.client.return.count({ where: returnsWhere }),
+      ]);
 
     return {
       salesWithoutInvoice: salesWithoutInvoice.map((o) => ({
@@ -343,6 +360,8 @@ export class FiscalService {
         orderId: ret.orderId,
         customerName: ret.order.customerName,
       })),
+      salesWithoutInvoiceCount,
+      returnsWithoutDocumentCount,
     };
   }
 

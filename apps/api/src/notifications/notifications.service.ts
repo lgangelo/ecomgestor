@@ -118,7 +118,9 @@ export class NotificationsService {
     ]);
 
     const belowMinimumCount = inventories.filter((inv) => inv.onHand - inv.reserved < inv.variant.minStock).length;
-    const salesWithoutInvoiceCount = fiscalPending.salesWithoutInvoice.length;
+    // Nunca `.length` da lista de exemplos (limitada a 50 pra exibição) — `salesWithoutInvoiceCount`
+    // é a contagem de verdade, sem limite.
+    const salesWithoutInvoiceCount = fiscalPending.salesWithoutInvoiceCount;
 
     const conditions: Condition[] = [
       {

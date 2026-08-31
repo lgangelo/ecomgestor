@@ -56,7 +56,13 @@ function makeFakePrisma(config: FakePrismaConfig): PrismaService {
 }
 
 function makeFakeFiscalService(pending: { salesWithoutInvoice: unknown[]; returnsWithoutDocument: unknown[] }): FiscalService {
-  return { getPending: async () => pending } as unknown as FiscalService;
+  return {
+    getPending: async () => ({
+      ...pending,
+      salesWithoutInvoiceCount: pending.salesWithoutInvoice.length,
+      returnsWithoutDocumentCount: pending.returnsWithoutDocument.length,
+    }),
+  } as unknown as FiscalService;
 }
 
 function order(overrides: Partial<FakeOrder>): FakeOrder {
