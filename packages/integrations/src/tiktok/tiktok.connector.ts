@@ -123,7 +123,13 @@ export class TikTokConnector implements MarketplaceConnector {
 
   async getOrder(companyId: string, externalOrderId: string) {
     void companyId;
-    const raw = await this.client.request<RawPage>('GET', `${TIKTOK_PATHS.orderDetail}/${externalOrderId}`);
+    // Confirmado em produção: path com o id anexado ("/orders/{id}", igual ao padrão usado em
+    // "Get Product") dá "Invalid path" — "Get Order Detail" não segue o mesmo padrão de outros
+    // recursos da TikTok Shop; usa o path base + `ids` como query param (formato de busca em
+    // lote, mesmo para um único id), não um path parameter.
+    const raw = await this.client.request<RawPage>('GET', TIKTOK_PATHS.orderDetail, {
+      query: { ids: JSON.stringify([externalOrderId]) },
+    });
     const item = (raw.orders ?? raw.items ?? [raw])[0];
     return normalizeOrder(item);
   }

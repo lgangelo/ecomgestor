@@ -40,7 +40,10 @@ export const TIKTOK_PATHS = {
   inventoryUpdate: `/product/${API_VERSION}/products/inventory/update`,
   /** A confirmar no Partner Center. */
   ordersSearch: `/order/${API_VERSION}/orders/search`,
-  /** A confirmar no Partner Center. */
+  /** "Get Order Detail" — confirmado em produção que NÃO segue o padrão de path parameter usado
+   * por "Get Product" (`/orders/{id}` dá "Invalid path"); usa o path base + `ids` como query
+   * param (formato de busca em lote, mesmo para um único id). Formato exato do valor de `ids`
+   * (JSON stringificado de array) ainda não confirmado contra um payload de sucesso real. */
   orderDetail: `/order/${API_VERSION}/orders`,
   /** A confirmar no Partner Center. */
   returnsSearch: `/return_refund/${API_VERSION}/returns/search`,
