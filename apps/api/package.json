@@ -16,6 +16,7 @@
     "check-unmatched-sku": "node dist/cli/check-unmatched-sku.js",
     "check-stock-invariant": "node dist/cli/check-stock-invariant.js",
     "check-sku-stock-history": "node dist/cli/check-sku-stock-history.js",
+    "backfill-order-customer-name": "node dist/cli/backfill-order-customer-name.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
