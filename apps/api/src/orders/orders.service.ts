@@ -505,6 +505,23 @@ export class OrdersService {
     const statusKnown = KNOWN_ORDER_STATUSES.has(normalized.internalStatus);
     const targetStatus = statusKnown ? (normalized.internalStatus as OrderStatus) : existing.status;
 
+    if (existing.status !== targetStatus) {
+      // TEMPORÁRIO — diagnóstico de pedidos "em processamento" que a TikTok já marcou como "em
+      // trânsito" mas o status interno não avançou. Remover depois de confirmar a causa real.
+      // eslint-disable-next-line no-console
+      console.log('[order-status-update-debug]', JSON.stringify({
+        orderId: existing.id,
+        externalOrderId: existing.externalOrderId,
+        currentStatus: existing.status,
+        rawExternalStatus: normalized.status,
+        mappedInternalStatus: normalized.internalStatus,
+        statusKnown,
+        targetStatus,
+        currentExternalUpdatedAt: existing.externalUpdatedAt,
+        newExternalUpdatedAt: normalized.externalUpdatedAt,
+      }));
+    }
+
     if (statusKnown && targetStatus !== existing.status && isRegressiveExternalTransition(existing.status, targetStatus)) {
       return { applied: false, reason: `Transição regressiva ignorada: ${existing.status} → ${targetStatus}.` };
     }
