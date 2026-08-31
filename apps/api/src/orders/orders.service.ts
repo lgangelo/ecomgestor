@@ -678,11 +678,19 @@ export class OrdersService {
     });
 
     if (order.status !== OrderStatus.CANCELLED) {
+      // Item que nunca teve vínculo (por isso nunca teve NENHUM efeito de estoque aplicado) sendo
+      // resolvido só agora: se o pedido já passou do envio, a venda física já aconteceu no
+      // passado, fora do nosso controle, e o estoque atual já deve ter sido resincronizado do
+      // canal externo desde então — debitar agora seria uma baixa de uma venda que já ocorreu
+      // "de verdade" há tempos, correndo o risco de derrubar um saldo que já está correto
+      // (mesmo raciocínio de `skipPhysicalDebit` na importação histórica). Só reserva
+      // normalmente quando o pedido ainda está pré-envio (reserva reflete um estado real atual).
       await this.initializeStockForNewOrder(
         tx,
         { companyId: ctx.companyId, userId: ctx.userId, referenceId: order.id, reason: ctx.reason },
         [{ variantId: resolved.variantId, quantity: item.quantity }],
         order.status,
+        { skipPhysicalDebit: !isPreShipmentStatus(order.status) },
       );
     }
   }

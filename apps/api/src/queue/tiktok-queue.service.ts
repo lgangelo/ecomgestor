@@ -79,28 +79,31 @@ export class TikTokQueueService implements OnModuleInit, OnModuleDestroy {
    * Job repetível de reconciliação (seção 23) — intervalo configurável via
    * TIKTOK_RECONCILE_INTERVAL_MINUTES, nunca hardcoded de forma impossível de alterar.
    *
-   * Confirmado em produção: `jobId` fixo NÃO substitui o agendamento anterior quando o
-   * intervalo (`repeat.every`) muda — o BullMQ identifica um job repetível pela combinação de
-   * nome + opções de repetição, então um `every` diferente vira um agendamento repetível
-   * SEPARADO, e o antigo continua rodando pra sempre em paralelo (mudar
-   * TIKTOK_RECONCILE_INTERVAL_MINUTES e reiniciar não tinha efeito nenhum). Por isso remove
-   * explicitamente qualquer agendamento repetível já existente para esta empresa antes de criar
-   * o novo, e só isso garante troca em vez de acúmulo.
+   * Reaplicado no boot tanto pela API quanto pelo worker (os dois carregam `TikTokModule`) —
+   * `queue.add` com `jobId`/`repeat` manual (get + remove + add) tem uma janela de corrida real:
+   * confirmado em produção, os dois processos subindo ao mesmo tempo criaram DOIS agendamentos
+   * repetíveis simultâneos (visível na tela de Jobs: dois "tiktok-reconcile-orders" completos no
+   * mesmo minuto). `upsertJobScheduler` é a operação atômica do BullMQ pra exatamente este caso —
+   * cria ou atualiza o agendamento por um ID estável num único passo do lado do Redis, então
+   * chamadas concorrentes convergem pra um único agendamento em vez de correr risco de duplicar.
    */
   async ensureReconcileSchedule(companyId: string, intervalMinutes: number) {
-    const jobId = `reconcile-${companyId}`;
-    const existing = await this.queue.getRepeatableJobs();
+    // Limpeza de transição: agendamentos repetíveis criados pelo mecanismo antigo (`queue.add`
+    // com `repeat`) vivem numa estrutura diferente da dos "job schedulers" novos — trocar de
+    // mecanismo sozinho não apaga os antigos (incluindo os duplicados criados pela condição de
+    // corrida antes desta correção). Remove qualquer um com o id desta empresa antes de garantir
+    // o agendamento novo.
+    const legacyRepeatable = await this.queue.getRepeatableJobs();
     await Promise.all(
-      existing.filter((job) => job.id === jobId).map((job) => this.queue.removeRepeatableByKey(job.key)),
+      legacyRepeatable
+        .filter((job) => job.id === `reconcile-${companyId}`)
+        .map((job) => this.queue.removeRepeatableByKey(job.key)),
     );
 
-    await this.queue.add(
-      INTEGRATION_JOBS.RECONCILE_ORDERS,
-      { companyId } satisfies ReconcileOrdersJobData,
-      {
-        jobId,
-        repeat: { every: intervalMinutes * 60_000 },
-      },
+    await this.queue.upsertJobScheduler(
+      `reconcile-${companyId}`,
+      { every: intervalMinutes * 60_000 },
+      { name: INTEGRATION_JOBS.RECONCILE_ORDERS, data: { companyId } satisfies ReconcileOrdersJobData },
     );
   }
 
