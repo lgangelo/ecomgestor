@@ -24,7 +24,9 @@
     "check-unmatched-sku": "npm run check-unmatched-sku --workspace=@ecommerce-manager/api",
     "check-stock-invariant": "npm run check-stock-invariant --workspace=@ecommerce-manager/api",
     "check-sku-stock-history": "npm run check-sku-stock-history --workspace=@ecommerce-manager/api",
-    "backfill-order-customer-name": "npm run backfill-order-customer-name --workspace=@ecommerce-manager/api"
+    "backfill-order-customer-name": "npm run backfill-order-customer-name --workspace=@ecommerce-manager/api",
+    "link-and-reprocess-order": "npm run link-and-reprocess-order --workspace=@ecommerce-manager/api",
+    "list-orders-for-month": "npm run list-orders-for-month --workspace=@ecommerce-manager/api"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",

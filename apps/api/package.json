@@ -17,6 +17,8 @@
     "check-stock-invariant": "node dist/cli/check-stock-invariant.js",
     "check-sku-stock-history": "node dist/cli/check-sku-stock-history.js",
     "backfill-order-customer-name": "node dist/cli/backfill-order-customer-name.js",
+    "link-and-reprocess-order": "node dist/cli/link-and-reprocess-order.js",
+    "list-orders-for-month": "node dist/cli/list-orders-for-month.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
