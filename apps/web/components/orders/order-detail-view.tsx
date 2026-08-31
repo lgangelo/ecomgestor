@@ -12,7 +12,7 @@ import { FISCAL_DOCUMENT_STATUS_PRESENTATION, ORDER_STATUS_PRESENTATION } from '
 import { formatBRL } from '@ecommerce-manager/shared';
 import { formatDate } from '@/lib/format';
 import { useOrder } from '@/hooks/use-orders';
-import { useReprocessTikTokOrder, useTikTokOrderReconciliation } from '@/hooks/use-tiktok';
+import { useReprocessTikTokOrder, useResyncTikTokOrder, useTikTokOrderReconciliation } from '@/hooks/use-tiktok';
 import { UpdateStatusDialog } from './update-status-dialog';
 import { RegisterReturnDialog } from './register-return-dialog';
 import { CreateProductFromOrderItemButton } from './create-product-from-item-dialog';
@@ -20,6 +20,7 @@ import { CreateProductFromOrderItemButton } from './create-product-from-item-dia
 export function OrderDetailView({ orderId }: { orderId: string }) {
   const { data: order, isLoading } = useOrder(orderId);
   const reprocess = useReprocessTikTokOrder();
+  const resync = useResyncTikTokOrder();
   const isTikTok = order?.channel.type === 'TIKTOK_SHOP';
   const { data: reconciliation } = useTikTokOrderReconciliation(orderId, isTikTok);
 
@@ -52,6 +53,11 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
         description={`${order.channel.name} · ${formatDate(order.orderDate, true)}${order.customerName ? ` · Cliente: ${order.customerName}` : ''}`}
         actions={
           <div className="flex gap-2">
+            {isTikTok && (
+              <Button variant="outline" disabled={resync.isPending} onClick={() => resync.mutate(orderId)}>
+                {resync.isPending ? 'Sincronizando...' : 'Sincronizar com TikTok'}
+              </Button>
+            )}
             <RegisterReturnDialog
               orderId={orderId}
               items={order.items}

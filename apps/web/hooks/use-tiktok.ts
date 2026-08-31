@@ -274,6 +274,23 @@ export function useReprocessTikTokOrder() {
   });
 }
 
+/** Busca o pedido direto na TikTok e reaplica status/estoque, sem depender do checkpoint da
+ * sincronização periódica — usado quando um pedido fica "preso" num status antigo. */
+export function useResyncTikTokOrder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (orderId: string) => apiFetch(`/integrations/tiktok/orders/${orderId}/resync`, { method: 'POST' }),
+    onSuccess: (_, orderId) => {
+      queryClient.invalidateQueries({ queryKey: ['orders', orderId] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      toast({ title: 'Pedido ressincronizado com a TikTok.' });
+    },
+    onError: (error) => {
+      toast({ title: error instanceof ApiError ? error.message : 'Não foi possível ressincronizar o pedido.' });
+    },
+  });
+}
+
 export function useTikTokOrderReconciliation(orderId: string, enabled: boolean) {
   return useQuery({
     queryKey: ['tiktok', 'orders', orderId, 'reconciliation'],

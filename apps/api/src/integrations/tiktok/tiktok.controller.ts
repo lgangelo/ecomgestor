@@ -10,6 +10,7 @@ import { TikTokProductsSyncService } from './tiktok-products-sync.service';
 import { TikTokInventorySyncService } from './tiktok-inventory-sync.service';
 import { TikTokFinanceSyncService } from './tiktok-finance-sync.service';
 import { TikTokJobsService } from './tiktok-jobs.service';
+import { TikTokOrdersSyncService } from './tiktok-orders-sync.service';
 import { TikTokStockOutboxService } from './tiktok-stock-outbox.service';
 import { LinkTikTokProductDto } from './dto/link-tiktok-product.dto';
 import { IgnoreTikTokProductDto } from './dto/ignore-tiktok-product.dto';
@@ -28,6 +29,7 @@ export class TikTokController {
     private readonly jobsService: TikTokJobsService,
     private readonly stockOutbox: TikTokStockOutboxService,
     private readonly ordersService: OrdersService,
+    private readonly ordersSync: TikTokOrdersSyncService,
     private readonly queue: TikTokQueueService,
   ) {}
 
@@ -112,6 +114,14 @@ export class TikTokController {
   @RequirePermissions(PERMISSIONS.INTEGRATION_TIKTOK_SYNC)
   reprocessOrder(@CurrentUser() user: AuthenticatedUser, @Param('orderId') orderId: string) {
     return this.ordersService.reprocessOrder(orderId, user.companyId, user.userId);
+  }
+
+  /** Busca o pedido direto na TikTok e reaplica o status/efeito de estoque, sem depender do
+   * checkpoint/janela de `update_time` da sincronização periódica (seção "pedido preso"). */
+  @Post('orders/:orderId/resync')
+  @RequirePermissions(PERMISSIONS.INTEGRATION_TIKTOK_SYNC)
+  resyncOrder(@CurrentUser() user: AuthenticatedUser, @Param('orderId') orderId: string) {
+    return this.ordersSync.syncSingleOrder(user.companyId, user.userId, orderId);
   }
 
   @Get('orders/:orderId/reconciliation')

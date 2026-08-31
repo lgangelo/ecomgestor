@@ -74,6 +74,12 @@ export class TikTokOrdersSyncService {
     // Cada pedido é processado de forma independente — um erro num pedido específico (ex.:
     // conflito de estoque) nunca aborta o lote inteiro, só entra na contagem de falhas.
     let failed = 0;
+    // Se algum pedido falhar, o checkpoint não pode avançar para além dele — senão, como a
+    // TikTok só reporta `update_time` quando algo muda do lado dela, um pedido que falhou por
+    // um erro NOSSO (ex.: erro transitório de estoque) nunca mais seria buscado de novo (nada
+    // muda pra ele na TikTok depois da tentativa). Guardar o menor `update_time` entre as
+    // falhas e usá-lo como novo checkpoint garante que a próxima sincronização tente de novo.
+    let minFailedUpdateTime: Date | undefined;
     let pageToken: string | undefined;
 
     for (let page = 0; page < MAX_PAGES; page++) {
@@ -108,6 +114,9 @@ export class TikTokOrdersSyncService {
           else updated++;
         } catch (error) {
           failed++;
+          if (order.externalUpdatedAt && (!minFailedUpdateTime || order.externalUpdatedAt < minFailedUpdateTime)) {
+            minFailedUpdateTime = order.externalUpdatedAt;
+          }
           this.logger.error('tiktok_order_sync_item_failed', {
             operation: 'sync_orders',
             externalOrderId: order.externalOrderId,
@@ -119,15 +128,51 @@ export class TikTokOrdersSyncService {
       pageToken = result.nextPageToken;
     }
 
+    const nextCheckpoint = minFailedUpdateTime && minFailedUpdateTime < startedAt ? minFailedUpdateTime : startedAt;
+
     await this.prisma.client.integration.update({
       where: { id: integration.id },
       data: {
         lastSyncAt: new Date(),
-        syncCheckpoints: { ...checkpoints, ordersSyncAt: startedAt.toISOString() },
+        syncCheckpoints: { ...checkpoints, ordersSyncAt: nextCheckpoint.toISOString() },
       },
     });
 
     this.logger.log('tiktok_orders_synced', { operation: 'sync_orders', imported, updated, skipped, failed });
     return { imported, updated, skipped, failed };
+  }
+
+  /**
+   * Ressincroniza UM pedido específico direto da TikTok, sem depender do checkpoint/janela de
+   * `update_time` — usado como botão manual na tela do pedido. `syncOrders` só busca pedidos cujo
+   * `update_time` está dentro da janela desde o último checkpoint; se um pedido falhou ao ser
+   * processado numa execução anterior (ex.: erro transitório de estoque), o checkpoint já avançou
+   * e a TikTok não vai reportar `update_time` de novo pra ele (nada mudou do lado dela) — esse
+   * pedido nunca mais seria buscado pela sincronização periódica, ficando "órfão" para sempre.
+   * Este método busca o pedido pelo ID direto (`Get Order`), contornando esse problema.
+   */
+  async syncSingleOrder(companyId: string, userId: string | null, orderId: string) {
+    const integration = await this.credentialsService.requireIntegration(companyId);
+    if (!integration.channelId) {
+      throw new BadRequestException('Canal TikTok Shop ainda não conectado.');
+    }
+
+    const existing = await this.prisma.client.order.findFirst({
+      where: { id: orderId, companyId, channelId: integration.channelId },
+      select: { externalOrderId: true },
+    });
+    if (!existing?.externalOrderId) {
+      throw new BadRequestException('Pedido não encontrado ou sem número externo da TikTok.');
+    }
+
+    const { connector } = await this.connectorFactory.forCompany(companyId);
+    const order = await connector.getOrder(companyId, existing.externalOrderId);
+    const { orderId: resultOrderId } = await this.ordersService.importExternalOrder(
+      companyId,
+      integration.channelId,
+      userId,
+      order,
+    );
+    return this.prisma.client.order.findUnique({ where: { id: resultOrderId }, select: { id: true, status: true } });
   }
 }
