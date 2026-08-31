@@ -19,6 +19,7 @@
     "backfill-order-customer-name": "node dist/cli/backfill-order-customer-name.js",
     "link-and-reprocess-order": "node dist/cli/link-and-reprocess-order.js",
     "list-orders-for-month": "node dist/cli/list-orders-for-month.js",
+    "check-product-variants": "node dist/cli/check-product-variants.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
