@@ -579,6 +579,10 @@ export class OrdersService {
         where: { id: existing.id },
         data: {
           status: targetStatus,
+          // Pedidos ainda não pagos costumam vir sem nome (a TikTok só atribui o endereço do
+          // destinatário depois do pagamento) — nunca sobrescreve um nome já conhecido com vazio,
+          // mas preenche assim que a TikTok passar a reportar (ex.: depois do pedido ser pago).
+          customerName: normalized.customerName || existing.customerName,
           externalStatus: normalized.status,
           externalUpdatedAt: normalized.externalUpdatedAt ?? existing.externalUpdatedAt,
           integrationIssue: !statusKnown
