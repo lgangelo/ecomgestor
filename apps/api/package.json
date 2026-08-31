@@ -14,6 +14,7 @@
     "check-marketplace-fees": "node dist/cli/check-marketplace-fees.js",
     "check-failed-jobs": "node dist/cli/check-failed-jobs.js",
     "check-unmatched-sku": "node dist/cli/check-unmatched-sku.js",
+    "check-stock-invariant": "node dist/cli/check-stock-invariant.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"

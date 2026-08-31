@@ -5,6 +5,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
 import { endOfDayExclusive } from '../common/date/day-range.util';
 import { InventoryLedgerService, MovementContext } from '../inventory/ledger.service';
+import { AppLoggerService } from '../common/logger/app-logger.service';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { CreateManualOrderDto } from './dto/create-manual-order.dto';
@@ -45,7 +46,10 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: InventoryLedgerService,
-  ) {}
+    private readonly logger: AppLoggerService,
+  ) {
+    this.logger.setContext('OrdersService');
+  }
 
   async findAll(companyId: string, query: QueryOrdersDto) {
     const where: Prisma.OrderWhereInput = {
@@ -487,7 +491,7 @@ export class OrdersService {
     orderId: string,
     userId: string | null,
     normalized: ExternalOrder,
-  ): Promise<{ applied: boolean; reason?: string }> {
+  ): Promise<{ applied: boolean; reason?: string; stockEffectError?: string }> {
     const existing = await this.prisma.client.order.findFirst({
       where: { id: orderId, companyId },
       include: { items: true },
@@ -505,42 +509,52 @@ export class OrdersService {
     const statusKnown = KNOWN_ORDER_STATUSES.has(normalized.internalStatus);
     const targetStatus = statusKnown ? (normalized.internalStatus as OrderStatus) : existing.status;
 
-    if (existing.status !== targetStatus) {
-      // TEMPORÁRIO — diagnóstico de pedidos "em processamento" que a TikTok já marcou como "em
-      // trânsito" mas o status interno não avançou. Remover depois de confirmar a causa real.
-      // eslint-disable-next-line no-console
-      console.log('[order-status-update-debug]', JSON.stringify({
-        orderId: existing.id,
-        externalOrderId: existing.externalOrderId,
-        currentStatus: existing.status,
-        rawExternalStatus: normalized.status,
-        mappedInternalStatus: normalized.internalStatus,
-        statusKnown,
-        targetStatus,
-        currentExternalUpdatedAt: existing.externalUpdatedAt,
-        newExternalUpdatedAt: normalized.externalUpdatedAt,
-      }));
-    }
-
     if (statusKnown && targetStatus !== existing.status && isRegressiveExternalTransition(existing.status, targetStatus)) {
       return { applied: false, reason: `Transição regressiva ignorada: ${existing.status} → ${targetStatus}.` };
     }
 
+    // O status é um FATO relatado pelo canal externo ("a TikTok diz que isso já foi enviado") —
+    // nunca deveria ficar preso porque nosso ledger interno de estoque está inconsistente pra
+    // essa variação (ex.: reservado > físico, por dessincronia histórica). Por isso o efeito de
+    // estoque roda numa transação PRÓPRIA, separada da atualização de status: se falhar, fica
+    // registrado (log + nota no histórico), mas nunca impede o status de refletir a realidade.
+    // Precisa ser uma transação separada porque, no Postgres, um erro dentro de uma transação a
+    // aborta por inteiro — capturar a exceção em JS não bastaria para salvar o resto do commit.
+    let stockEffectError: string | undefined;
+    if (statusKnown && targetStatus !== existing.status) {
+      try {
+        await this.prisma.client.$transaction((tx) =>
+          this.applyStockEffectsForTransition(
+            tx,
+            { companyId, userId, referenceId: existing.id, reason: 'Atualização via canal externo' },
+            existing.items,
+            existing.status,
+            targetStatus,
+          ),
+        );
+      } catch (error) {
+        stockEffectError = error instanceof Error ? error.message : 'Erro desconhecido';
+        this.logger.warn('order_status_update_stock_effect_failed', {
+          operation: 'apply_external_status_update',
+          orderId: existing.id,
+          externalOrderId: existing.externalOrderId ?? undefined,
+          fromStatus: existing.status,
+          toStatus: targetStatus,
+          errorMessage: stockEffectError,
+        });
+      }
+    }
+
     await this.prisma.client.$transaction(async (tx) => {
       if (statusKnown && targetStatus !== existing.status) {
-        await this.applyStockEffectsForTransition(
-          tx,
-          { companyId, userId, referenceId: existing.id, reason: 'Atualização via canal externo' },
-          existing.items,
-          existing.status,
-          targetStatus,
-        );
         await tx.orderStatusHistory.create({
           data: {
             orderId: existing.id,
             status: targetStatus,
             changedBy: userId,
-            note: 'Atualização de status via canal externo',
+            note: stockEffectError
+              ? `Atualização de status via canal externo — ATENÇÃO: falha ao ajustar estoque (${stockEffectError}). Confira o saldo desta variação manualmente.`
+              : 'Atualização de status via canal externo',
           },
         });
       }
@@ -553,19 +567,23 @@ export class OrdersService {
           externalUpdatedAt: normalized.externalUpdatedAt ?? existing.externalUpdatedAt,
           integrationIssue: !statusKnown
             ? `Status externo desconhecido: "${normalized.status}" — revisão manual necessária.`
-            : existing.integrationSyncStatus === 'REQUIRES_MAPPING'
-              ? existing.integrationIssue
-              : null,
+            : stockEffectError
+              ? `Falha ao ajustar estoque na atualização de status: ${stockEffectError}`
+              : existing.integrationSyncStatus === 'REQUIRES_MAPPING'
+                ? existing.integrationIssue
+                : null,
           integrationSyncStatus: !statusKnown
             ? 'ERROR'
-            : existing.integrationSyncStatus === 'REQUIRES_MAPPING'
-              ? 'REQUIRES_MAPPING'
-              : 'OK',
+            : stockEffectError
+              ? 'ERROR'
+              : existing.integrationSyncStatus === 'REQUIRES_MAPPING'
+                ? 'REQUIRES_MAPPING'
+                : 'OK',
         },
       });
     });
 
-    return { applied: true };
+    return { applied: true, stockEffectError };
   }
 
   /**

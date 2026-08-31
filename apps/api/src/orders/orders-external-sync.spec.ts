@@ -1,6 +1,7 @@
 import type { ExternalOrder } from '@ecommerce-manager/integrations';
 import type { PrismaService } from '../common/prisma/prisma.service';
 import { InventoryLedgerService } from '../inventory/ledger.service';
+import { AppLoggerService } from '../common/logger/app-logger.service';
 import { OrdersService } from './orders.service';
 import { FakeDb } from './test-support/fake-prisma';
 
@@ -23,7 +24,7 @@ function buildExternalOrder(overrides: Partial<ExternalOrder> = {}): ExternalOrd
 function makeService(db: FakeDb) {
   const prismaService = db.asPrismaService();
   const ledger = new InventoryLedgerService();
-  const service = new OrdersService(prismaService as unknown as PrismaService, ledger);
+  const service = new OrdersService(prismaService as unknown as PrismaService, ledger, new AppLoggerService());
   return { service, db };
 }
 
