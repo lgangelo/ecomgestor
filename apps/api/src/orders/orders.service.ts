@@ -654,6 +654,39 @@ export class OrdersService {
     return { checked: items.length, updated };
   }
 
+  /** Aplica a UM item de pedido sem vínculo a variação já resolvida (por mapeamento normal ou
+   * escolhida manualmente) — nunca toca em `channel_product_mapping`, só no item em si e no
+   * efeito de estoque. Compartilhado entre `reprocessOrder` (resolve via mapeamento) e
+   * `manuallyResolveOrderItem` (resolve para uma variação escolhida à mão, usado quando o SKU
+   * externo do pedido é antigo/substituído e nunca vai bater com o mapeamento atual do canal). */
+  private async applyItemResolution(
+    tx: Prisma.TransactionClient,
+    order: { id: string; status: OrderStatus },
+    item: { id: string; quantity: number },
+    resolved: { variantId: string; sku: string; productName: string; cost: number },
+    ctx: { companyId: string; userId: string; reason: string },
+  ): Promise<void> {
+    await tx.orderItem.update({
+      where: { id: item.id },
+      data: {
+        variantId: resolved.variantId,
+        externalSku: null,
+        productNameAtSale: resolved.productName,
+        skuAtSale: resolved.sku,
+        unitCost: resolved.cost,
+      },
+    });
+
+    if (order.status !== OrderStatus.CANCELLED) {
+      await this.initializeStockForNewOrder(
+        tx,
+        { companyId: ctx.companyId, userId: ctx.userId, referenceId: order.id, reason: ctx.reason },
+        [{ variantId: resolved.variantId, quantity: item.quantity }],
+        order.status,
+      );
+    }
+  }
+
   async reprocessOrder(orderId: string, companyId: string, userId: string): Promise<{ resolvedItems: number }> {
     const order = await this.prisma.client.order.findFirst({
       where: { id: orderId, companyId },
@@ -672,25 +705,11 @@ export class OrdersService {
         const mapping = await this.resolveMapping(tx, order.channelId, item.externalSku!);
         if (!mapping) continue;
 
-        await tx.orderItem.update({
-          where: { id: item.id },
-          data: {
-            variantId: mapping.variantId,
-            externalSku: null,
-            productNameAtSale: mapping.productName,
-            skuAtSale: mapping.sku,
-            unitCost: mapping.cost,
-          },
+        await this.applyItemResolution(tx, order, item, mapping, {
+          companyId,
+          userId,
+          reason: 'Reprocessamento após vínculo de SKU',
         });
-
-        if (order.status !== OrderStatus.CANCELLED) {
-          await this.initializeStockForNewOrder(
-            tx,
-            { companyId, userId, referenceId: order.id, reason: 'Reprocessamento após vínculo de SKU' },
-            [{ variantId: mapping.variantId, quantity: item.quantity }],
-            order.status,
-          );
-        }
         resolvedCount++;
       }
 
@@ -704,6 +723,67 @@ export class OrdersService {
     });
 
     return { resolvedItems: resolvedCount };
+  }
+
+  /**
+   * Resolve manualmente UM item de pedido sem vínculo para uma variação escolhida à mão — nunca
+   * grava em `channel_product_mapping` (essa tabela tem uma restrição única por variação/canal,
+   * então não serve quando o SKU externo do pedido é antigo/substituído: a TikTok pode reciclar
+   * o produto com um novo ID mantendo a variação "igual" do ponto de vista do vendedor, e a
+   * variação já está corretamente vinculada ao SKU ATUAL para sincronizações futuras). Usado
+   * quando o vínculo normal (`link`/reprocessar) não serve porque o SKU do pedido nunca mais vai
+   * bater com o mapeamento do canal.
+   */
+  async manuallyResolveOrderItem(
+    orderId: string,
+    companyId: string,
+    userId: string,
+    itemId: string,
+    variantId: string,
+  ): Promise<{ resolved: boolean }> {
+    const order = await this.prisma.client.order.findFirst({
+      where: { id: orderId, companyId },
+      include: { items: true },
+    });
+    if (!order) throw new NotFoundException('Pedido não encontrado');
+
+    const item = order.items.find((i) => i.id === itemId);
+    if (!item) throw new NotFoundException('Item do pedido não encontrado');
+    if (item.variantId) throw new BadRequestException('Este item já está vinculado a uma variação.');
+
+    const variant = await this.prisma.client.productVariant.findFirst({
+      where: { id: variantId, product: { companyId } },
+      include: {
+        product: { select: { name: true } },
+        costHistory: { orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }], take: 1 },
+      },
+    });
+    if (!variant) throw new NotFoundException('Variação não encontrada');
+
+    await this.prisma.client.$transaction(async (tx) => {
+      await this.applyItemResolution(
+        tx,
+        order,
+        item,
+        {
+          variantId: variant.id,
+          sku: variant.sku,
+          productName: variant.product.name,
+          cost: Number(variant.costHistory[0]?.cost ?? 0),
+        },
+        { companyId, userId, reason: 'Vínculo manual (SKU externo antigo/substituído)' },
+      );
+
+      const stillPending = await tx.orderItem.count({ where: { orderId: order.id, variantId: null } });
+      if (stillPending === 0) {
+        await tx.order.update({
+          where: { id: order.id },
+          data: { integrationSyncStatus: 'OK', integrationIssue: null },
+        });
+      }
+    });
+
+    return { resolved: true };
   }
 
   async createManualSale(companyId: string, userId: string, dto: CreateManualOrderDto) {

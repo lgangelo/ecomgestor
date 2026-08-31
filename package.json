@@ -28,7 +28,8 @@
     "link-and-reprocess-order": "npm run link-and-reprocess-order --workspace=@ecommerce-manager/api",
     "list-orders-for-month": "npm run list-orders-for-month --workspace=@ecommerce-manager/api",
     "check-product-variants": "npm run check-product-variants --workspace=@ecommerce-manager/api",
-    "check-tiktok-product-detail": "npm run check-tiktok-product-detail --workspace=@ecommerce-manager/api"
+    "check-tiktok-product-detail": "npm run check-tiktok-product-detail --workspace=@ecommerce-manager/api",
+    "manually-link-order-item": "npm run manually-link-order-item --workspace=@ecommerce-manager/api"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",
