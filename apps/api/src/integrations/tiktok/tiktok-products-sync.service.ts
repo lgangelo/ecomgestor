@@ -523,8 +523,18 @@ export class TikTokProductsSyncService {
           }
         }
 
+        // `externalProduct.stock` é o campo que NÓS mesmos escrevemos na TikTok em
+        // `updateInventory` (envia `available`, nunca `onHand`) — então ele representa estoque
+        // DISPONÍVEL, não físico total. Comparar contra `onHand` direto (em vez de
+        // `onHand - reserved`) fazia o ajuste falhar com "estoque disponível insuficiente"
+        // sempre que havia reserva ativa (ex.: pedido aguardando envio) e a TikTok reportava um
+        // número mais baixo — o ajuste tentava derrubar o físico abaixo do que já estava
+        // reservado. Ajustar contra `available` mantém `reserved` intocado e corrige `onHand`
+        // só o suficiente pra bater com o disponível reportado pela TikTok.
         const currentOnHand = variant.inventory?.onHand ?? 0;
-        const delta = externalProduct.stock - currentOnHand;
+        const currentReserved = variant.inventory?.reserved ?? 0;
+        const currentAvailable = currentOnHand - currentReserved;
+        const delta = externalProduct.stock - currentAvailable;
         if (delta !== 0) {
           await this.prisma.client.$transaction((tx) =>
             this.ledger.adjust(
