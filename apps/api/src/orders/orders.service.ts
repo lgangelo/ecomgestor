@@ -204,15 +204,18 @@ export class OrdersService {
     const updated = await this.prisma.client.$transaction(async (tx) => {
       // Cancelamento após o envio (estoque já baixado) NÃO gera retorno automático de
       // estoque — isso exige uma devolução explícita com `restockOnReturn` (seção 17-18).
+      // Parte de `stockAppliedStatus` (até onde o estoque já foi aplicado de verdade), nunca de
+      // `status` direto — os dois podem divergir se uma atualização anterior (via canal externo)
+      // teve o status avançado mas o ajuste de estoque falhou (ver applyExternalStatusUpdate).
       await this.applyStockEffectsForTransition(
         tx,
         { companyId, userId, referenceId: existing.id, reason: dto.note ?? undefined },
         existing.items,
-        existing.status,
+        existing.stockAppliedStatus,
         dto.status,
       );
 
-      const order = await tx.order.update({ where: { id }, data: { status: dto.status } });
+      const order = await tx.order.update({ where: { id }, data: { status: dto.status, stockAppliedStatus: dto.status } });
       await tx.orderStatusHistory.create({
         data: { orderId: id, status: dto.status, changedBy: userId, note: dto.note ?? null },
       });
@@ -417,6 +420,10 @@ export class OrdersService {
           externalOrderId: normalized.externalOrderId,
           customerName: normalized.customerName ?? null,
           status: initialStatus,
+          // A criação inteira (incluindo o efeito de estoque abaixo) é atômica nesta mesma
+          // transação — se o efeito de estoque falhar, o pedido inteiro nunca chega a existir,
+          // então `stockAppliedStatus` sempre nasce igual a `status` (nunca fica pra trás).
+          stockAppliedStatus: initialStatus,
           externalStatus: normalized.status,
           externalUpdatedAt: normalized.externalUpdatedAt ?? null,
           integrationSyncStatus: !statusKnown ? 'ERROR' : hasUnmapped ? 'REQUIRES_MAPPING' : 'OK',
@@ -520,25 +527,34 @@ export class OrdersService {
     // registrado (log + nota no histórico), mas nunca impede o status de refletir a realidade.
     // Precisa ser uma transação separada porque, no Postgres, um erro dentro de uma transação a
     // aborta por inteiro — capturar a exceção em JS não bastaria para salvar o resto do commit.
+    //
+    // A tentativa de estoque parte de `stockAppliedStatus` (até onde o ledger REALMENTE chegou),
+    // nunca de `status` (o que já foi exibido) — e dispara sempre que os dois divergem, mesmo
+    // que a TikTok reporte o MESMO status de antes. Sem isso, uma nova tentativa (ex.: clicar em
+    // "Sincronizar com TikTok" de novo depois de corrigir o estoque) nunca re-tentaria: como
+    // `status` já tinha avançado na tentativa anterior, `targetStatus !== existing.status` daria
+    // falso, e o efeito de estoque pendente ficaria esquecido pra sempre.
+    const needsStockCatchUp = statusKnown && targetStatus !== existing.stockAppliedStatus;
     let stockEffectError: string | undefined;
-    if (statusKnown && targetStatus !== existing.status) {
+    if (needsStockCatchUp) {
       try {
-        await this.prisma.client.$transaction((tx) =>
-          this.applyStockEffectsForTransition(
+        await this.prisma.client.$transaction(async (tx) => {
+          await this.applyStockEffectsForTransition(
             tx,
             { companyId, userId, referenceId: existing.id, reason: 'Atualização via canal externo' },
             existing.items,
-            existing.status,
+            existing.stockAppliedStatus,
             targetStatus,
-          ),
-        );
+          );
+          await tx.order.update({ where: { id: existing.id }, data: { stockAppliedStatus: targetStatus } });
+        });
       } catch (error) {
         stockEffectError = error instanceof Error ? error.message : 'Erro desconhecido';
         this.logger.warn('order_status_update_stock_effect_failed', {
           operation: 'apply_external_status_update',
           orderId: existing.id,
           externalOrderId: existing.externalOrderId ?? undefined,
-          fromStatus: existing.status,
+          fromStatus: existing.stockAppliedStatus,
           toStatus: targetStatus,
           errorMessage: stockEffectError,
         });
@@ -727,6 +743,7 @@ export class OrdersService {
           externalOrderId: null,
           customerName: dto.customerName,
           status,
+          stockAppliedStatus: status,
           orderDate: new Date(dto.orderDate),
           subtotal,
           discount: dto.items.reduce((sum, i) => sum + (i.discount ?? 0), 0),

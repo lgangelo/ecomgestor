@@ -594,6 +594,12 @@ model Order {
   customerName           String?                    @map("customer_name")
   customerDocument       String?                    @map("customer_document")
   status                 OrderStatus                @default(CREATED)
+  // Até onde o LEDGER de estoque já refletiu de verdade — separado de `status` (o fato relatado
+  // pelo canal externo) porque uma atualização de status externa nunca deve ficar bloqueada só
+  // porque o ajuste de estoque falhou (ex.: saldo insuficiente); quando isso acontece, `status`
+  // avança mas `stockAppliedStatus` fica pra trás, preservando o ponto de partida correto para a
+  // PRÓXIMA tentativa em vez de "pular" silenciosamente o efeito de estoque que nunca aconteceu.
+  stockAppliedStatus     OrderStatus                @default(CREATED) @map("stock_applied_status")
   externalStatus         String?                    @map("external_status")
   // Timestamp de atualização informado pelo canal externo — usado para descartar webhooks/
   // reconciliações fora de ordem (seção 24 da Fase 3): nunca regredir para um estado mais
