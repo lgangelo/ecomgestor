@@ -30,6 +30,41 @@ async function main() {
       `SKU ${inv.variant.sku} (${inv.variant.product.name}) — físico=${inv.onHand}, reservado=${inv.reserved}, faltam ${inv.reserved - inv.onHand} unidade(s) para o saldo fechar.`,
     );
   }
+
+  // Confirmado (check-sku-stock-history): vários pedidos SHIPPED reais tinham variação com
+  // físico=0 e ZERO movimentações desde sempre — não é corrupção, é estoque que nunca foi
+  // carregado de verdade nessas variações. Mede o tamanho real do problema: quantas variações
+  // estão "nunca inicializadas" E têm venda de verdade (não é só um produto cadastrado sem
+  // nunca ter vendido, que legitimamente pode estar zerado).
+  console.log('======================================================');
+  const zeroStock = inventories.filter((inv) => inv.onHand === 0 && inv.reserved === 0);
+  const movementCounts = await prisma.inventoryMovement.groupBy({
+    by: ['variantId'],
+    where: { variantId: { in: zeroStock.map((inv) => inv.variantId) } },
+    _count: { _all: true },
+  });
+  const variantIdsWithMovements = new Set(movementCounts.map((m) => m.variantId));
+  const neverInitialized = zeroStock.filter((inv) => !variantIdsWithMovements.has(inv.variantId));
+
+  const orderItemCounts = await prisma.orderItem.groupBy({
+    by: ['variantId'],
+    where: {
+      variantId: { in: neverInitialized.map((inv) => inv.variantId) },
+      order: { status: { not: 'CANCELLED' } },
+    },
+    _count: { _all: true },
+  });
+  const soldCountByVariant = new Map(orderItemCounts.map((o) => [o.variantId, o._count._all]));
+  const neverInitializedButSold = neverInitialized.filter((inv) => (soldCountByVariant.get(inv.variantId) ?? 0) > 0);
+
+  console.log(`Variações com físico=0 e nunca tiveram NENHUMA movimentação de estoque: ${neverInitialized.length}`);
+  console.log(`  ...das quais já têm pedido de venda de verdade (precisam de carga de estoque real): ${neverInitializedButSold.length}`);
+  console.log('----------------------------------------------------');
+  for (const inv of neverInitializedButSold) {
+    console.log(
+      `SKU ${inv.variant.sku} (${inv.variant.product.name}) — ${soldCountByVariant.get(inv.variantId)} item(ns) de pedido não cancelado, físico=0, nunca inicializado.`,
+    );
+  }
 }
 
 main()
