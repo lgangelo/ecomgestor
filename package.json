@@ -22,7 +22,8 @@
     "check-marketplace-fees": "npm run check-marketplace-fees --workspace=@ecommerce-manager/api",
     "check-failed-jobs": "npm run check-failed-jobs --workspace=@ecommerce-manager/api",
     "check-unmatched-sku": "npm run check-unmatched-sku --workspace=@ecommerce-manager/api",
-    "check-stock-invariant": "npm run check-stock-invariant --workspace=@ecommerce-manager/api"
+    "check-stock-invariant": "npm run check-stock-invariant --workspace=@ecommerce-manager/api",
+    "check-sku-stock-history": "npm run check-sku-stock-history --workspace=@ecommerce-manager/api"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",
