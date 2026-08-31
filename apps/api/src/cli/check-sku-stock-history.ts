@@ -1,45 +1,70 @@
 /* eslint-disable no-console */
 /**
- * Dump do histórico de movimentação de estoque (InventoryMovement) + saldo atual de uma ou mais
- * SKUs — usado para investigar por que pedidos com reserva antiga (ex.: "SKU sem vínculo" ou
- * "aguardando envio" há dias) falharam com "estoque físico negativo" ao tentar debitar na hora
- * do envio, mesmo depois da correção do sync de estoque (onHand vs available). Mostra a
- * sequência real de eventos que levou o saldo físico a ficar abaixo do reservado, em vez de
- * adivinhar.
+ * Dump do histórico de movimentação de estoque (InventoryMovement) + saldo atual das variações
+ * usadas em um ou mais PEDIDOS (por externalOrderId) — usado para investigar por que pedidos com
+ * reserva antiga falharam com "estoque físico negativo" ao tentar debitar na hora do envio,
+ * mesmo depois da correção do sync de estoque (onHand vs available). Recebe o número do pedido
+ * (não o SKU) porque `skuAtSale` é uma FOTO do momento da venda — se o SKU base do produto foi
+ * renomeado depois (renumera as variações automaticamente), o SKU antigo não existe mais e uma
+ * busca por SKU não acha nada. Mostra a sequência real de eventos, em vez de adivinhar.
  *
  * Uso:
- *   npm run check-sku-stock-history -- 0244 0206 0207 0097
+ *   npm run check-sku-stock-history -- 585794366323459351 585794478920270934
  */
 import { PrismaClient } from '@ecommerce-manager/database';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const skus = process.argv.slice(2);
-  if (skus.length === 0) {
-    console.error('Uso: npm run check-sku-stock-history -- <sku1> <sku2> ...');
+  const externalOrderIds = process.argv.slice(2);
+  if (externalOrderIds.length === 0) {
+    console.error('Uso: npm run check-sku-stock-history -- <externalOrderId1> <externalOrderId2> ...');
     process.exitCode = 1;
     return;
   }
 
-  for (const sku of skus) {
+  const seenVariantIds = new Set<string>();
+
+  for (const externalOrderId of externalOrderIds) {
     console.log('======================================================');
-    const variant = await prisma.productVariant.findFirst({
-      where: { sku },
-      include: { inventory: true, product: { select: { name: true } } },
+    const order = await prisma.order.findFirst({
+      where: { externalOrderId },
+      include: { items: { include: { variant: { include: { inventory: true, product: { select: { name: true } } } } } } },
     });
-    if (!variant) {
-      console.log(`SKU ${sku}: variante não encontrada.`);
+    if (!order) {
+      console.log(`Pedido ${externalOrderId}: não encontrado.`);
       continue;
     }
 
-    console.log(`SKU ${sku} (${variant.product.name}) — variantId=${variant.id}`);
+    console.log(`Pedido ${externalOrderId} — status=${order.status}, id=${order.id}`);
+    for (const item of order.items) {
+      if (!item.variant) {
+        console.log(`  item "${item.productNameAtSale}" — sem variantId (não vinculado).`);
+        continue;
+      }
+      const v = item.variant;
+      console.log(
+        `  item "${item.productNameAtSale}" — SKU atual=${v.sku} (SKU na venda="${item.skuAtSale}") variantId=${v.id} qty=${item.quantity}`,
+      );
+      seenVariantIds.add(v.id);
+    }
+  }
+
+  for (const variantId of seenVariantIds) {
+    console.log('------------------------------------------------------');
+    const variant = await prisma.productVariant.findUnique({
+      where: { id: variantId },
+      include: { inventory: true, product: { select: { name: true } } },
+    });
+    if (!variant) continue;
+
+    console.log(`Variante ${variant.sku} (${variant.product.name}) — variantId=${variant.id}`);
     console.log(
       `  Saldo atual: onHand=${variant.inventory?.onHand ?? 0}, reserved=${variant.inventory?.reserved ?? 0}, available=${(variant.inventory?.onHand ?? 0) - (variant.inventory?.reserved ?? 0)}`,
     );
 
     const movements = await prisma.inventoryMovement.findMany({
-      where: { variantId: variant.id },
+      where: { variantId },
       orderBy: { createdAt: 'asc' },
       select: {
         createdAt: true,
