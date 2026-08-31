@@ -16,11 +16,16 @@ export class ProductsService {
   async findAll(companyId: string, query: QueryProductDto) {
     const where: Prisma.ProductWhereInput = {
       companyId,
+      // Busca por SKU de variação também — na maioria dos casos ela é derivada do SKU base
+      // ("{baseSku}-1", "{baseSku}-2", ...), mas uma variação pode ter um SKU totalmente
+      // diferente (editado manualmente, ou de antes de o produto passar por uma renomeação de
+      // SKU base), e buscar só pelo SKU base nunca encontrava esse caso.
       ...(query.search
         ? {
             OR: [
               { name: { contains: query.search, mode: 'insensitive' as const } },
               { baseSku: { contains: query.search, mode: 'insensitive' as const } },
+              { variants: { some: { sku: { contains: query.search, mode: 'insensitive' as const } } } },
             ],
           }
         : {}),

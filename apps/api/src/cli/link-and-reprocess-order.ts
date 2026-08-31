@@ -43,6 +43,23 @@ async function main() {
     return;
   }
   console.log(`Variação encontrada: ${variant.product.name} (SKU ${variant.sku}, variantId=${variant.id})`);
+
+  // `channel_product_mappings` tem uma restrição única em (channelId, variantId) — uma variação
+  // só pode estar vinculada a UM SKU externo por canal. Confere antes de tentar, pra dar um erro
+  // claro (com o que já está vinculado) em vez de estourar a constraint do banco.
+  const existingMapping = await prisma.channelProductMapping.findFirst({
+    where: { variantId: variant.id },
+    include: { channel: { select: { name: true, companyId: true } } },
+  });
+  if (existingMapping && existingMapping.channel.companyId === company.id) {
+    console.error(
+      `Essa variação já está vinculada a outro SKU externo neste canal: externalSku=${existingMapping.externalSku}, externalProductId=${existingMapping.externalProductId ?? '—'}, status=${existingMapping.syncStatus} (mappingId=${existingMapping.id}).`,
+    );
+    console.error('Uma variação só pode estar vinculada a UM SKU externo por canal — confirme se é o SKU/variação certos antes de trocar o vínculo manualmente.');
+    await prisma.$disconnect();
+    process.exitCode = 1;
+    return;
+  }
   await prisma.$disconnect();
 
   const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
