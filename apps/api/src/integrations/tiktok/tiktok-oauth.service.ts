@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType, IntegrationProvider, IntegrationStatus } from '@ecommerce-manager/database';
 import { buildAuthorizeUrl, exchangeAuthorizationCode, getAuthorizedShops, TikTokClient } from '@ecommerce-manager/integrations';
@@ -28,7 +28,7 @@ interface OAuthStatePayload {
  * consumido, o state é apagado do Redis antes mesmo da troca do código começar.
  */
 @Injectable()
-export class TikTokOAuthService {
+export class TikTokOAuthService implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
@@ -39,6 +39,32 @@ export class TikTokOAuthService {
     private readonly logger: AppLoggerService,
   ) {
     this.logger.setContext('TikTokOAuth');
+  }
+
+  /**
+   * `ensureReconcileSchedule` só era chamado no callback do OAuth (ao conectar/reconectar) —
+   * mudar TIKTOK_RECONCILE_INTERVAL_MINUTES e reiniciar a API nunca reaplicava o novo intervalo
+   * pra quem já estava conectado (confirmado: usuário mudou de 15 para 5 min, reiniciou, e o
+   * job continuou rodando a cada 15). Reaplica o agendamento (com o valor ATUAL da config) pra
+   * toda integração já conectada sempre que a API sobe, sem exigir desconectar/reconectar.
+   */
+  async onModuleInit(): Promise<void> {
+    if (!this.isConfigured()) return;
+    const intervalMinutes = this.configService.get<number>('tiktok.reconcileIntervalMinutes', { infer: true }) as number;
+    const connected = await this.prisma.client.integration.findMany({
+      where: { provider: IntegrationProvider.TIKTOK_SHOP, status: IntegrationStatus.CONNECTED },
+      select: { companyId: true },
+    });
+    for (const integration of connected) {
+      await this.queue.ensureReconcileSchedule(integration.companyId, intervalMinutes);
+    }
+    if (connected.length > 0) {
+      this.logger.log('tiktok_reconcile_schedules_reapplied', {
+        operation: 'on_module_init',
+        companiesCount: connected.length,
+        intervalMinutes,
+      });
+    }
   }
 
   isConfigured(): boolean {

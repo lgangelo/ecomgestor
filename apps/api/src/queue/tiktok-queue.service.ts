@@ -78,15 +78,27 @@ export class TikTokQueueService implements OnModuleInit, OnModuleDestroy {
   /**
    * Job repetível de reconciliação (seção 23) — intervalo configurável via
    * TIKTOK_RECONCILE_INTERVAL_MINUTES, nunca hardcoded de forma impossível de alterar.
-   * `jobId` fixo garante que reconfigurar o intervalo substitui o agendamento anterior em vez
-   * de acumular agendamentos duplicados a cada reinício da API.
+   *
+   * Confirmado em produção: `jobId` fixo NÃO substitui o agendamento anterior quando o
+   * intervalo (`repeat.every`) muda — o BullMQ identifica um job repetível pela combinação de
+   * nome + opções de repetição, então um `every` diferente vira um agendamento repetível
+   * SEPARADO, e o antigo continua rodando pra sempre em paralelo (mudar
+   * TIKTOK_RECONCILE_INTERVAL_MINUTES e reiniciar não tinha efeito nenhum). Por isso remove
+   * explicitamente qualquer agendamento repetível já existente para esta empresa antes de criar
+   * o novo, e só isso garante troca em vez de acúmulo.
    */
   async ensureReconcileSchedule(companyId: string, intervalMinutes: number) {
+    const jobId = `reconcile-${companyId}`;
+    const existing = await this.queue.getRepeatableJobs();
+    await Promise.all(
+      existing.filter((job) => job.id === jobId).map((job) => this.queue.removeRepeatableByKey(job.key)),
+    );
+
     await this.queue.add(
       INTEGRATION_JOBS.RECONCILE_ORDERS,
       { companyId } satisfies ReconcileOrdersJobData,
       {
-        jobId: `reconcile-${companyId}`,
+        jobId,
         repeat: { every: intervalMinutes * 60_000 },
       },
     );

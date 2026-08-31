@@ -164,7 +164,10 @@ export class ReportsService {
   }
 
   private computeCards(orders: PeriodOrder[], returnsAmount: number, feesByOrderId: Map<string, number>) {
-    const active = orders.filter((o) => o.status !== OrderStatus.CANCELLED);
+    // CANCELLED nunca conta; CREATED (pedido ainda não pago) também não — só é "venda de
+    // verdade" depois de pago, então não deveria contar em nenhum número do dashboard (pedido
+    // explícito do usuário: números não pagos não são "oficiais" o suficiente pra aparecer aqui).
+    const active = orders.filter((o) => o.status !== OrderStatus.CANCELLED && o.status !== OrderStatus.CREATED);
     // `subtotal + shipping` (nunca `total`) é o valor bruto antes de qualquer desconto — `total`
     // já vem líquido dos dois descontos, então usá-lo aqui subtrairia o desconto do vendedor
     // duas vezes. Só o desconto do VENDEDOR entra como dedução: o desconto que a TikTok bancou
@@ -211,7 +214,8 @@ export class ReportsService {
   }
 
   private computeCharts(orders: PeriodOrder[], start: Date, end: Date, feesByOrderId: Map<string, number>) {
-    const active = orders.filter((o) => o.status !== OrderStatus.CANCELLED);
+    // Mesmo critério de computeCards — pedido ainda não pago não é número oficial.
+    const active = orders.filter((o) => o.status !== OrderStatus.CANCELLED && o.status !== OrderStatus.CREATED);
 
     // Seção 30 — gráfico principal por dia quando o período é curto, por semana ISO quando é
     // longo (evita um gráfico ilegível de 6 meses de barras diárias).
@@ -373,8 +377,10 @@ export class ReportsService {
       }));
 
     const cancelledOrders = orders.filter((o) => o.status === OrderStatus.CANCELLED).length;
+    // Pedido ainda não pago (CREATED) não é uma venda de verdade ainda — não deveria aparecer
+    // como "venda sem NF-e" (não tem NF-e porque não tem venda confirmada, não por pendência).
     const salesWithoutFiscalDocument = orders.filter(
-      (o) => o.status !== OrderStatus.CANCELLED && o.fiscalDocuments.length === 0,
+      (o) => o.status !== OrderStatus.CANCELLED && o.status !== OrderStatus.CREATED && o.fiscalDocuments.length === 0,
     ).length;
 
     const integrations = await this.prisma.client.integration.findMany({ where: { companyId } });
