@@ -88,20 +88,24 @@ export class TikTokQueueService implements OnModuleInit, OnModuleDestroy {
    * chamadas concorrentes convergem pra um único agendamento em vez de correr risco de duplicar.
    */
   async ensureReconcileSchedule(companyId: string, intervalMinutes: number) {
-    // Limpeza de transição: agendamentos repetíveis criados pelo mecanismo antigo (`queue.add`
-    // com `repeat`) vivem numa estrutura diferente da dos "job schedulers" novos — trocar de
-    // mecanismo sozinho não apaga os antigos (incluindo os duplicados criados pela condição de
-    // corrida antes desta correção). Remove qualquer um com o id desta empresa antes de garantir
-    // o agendamento novo.
+    const jobId = `reconcile-${companyId}`;
+
+    // Limpeza de transição: confirmado em produção que existiam TRÊS agendamentos simultâneos
+    // pra este job — dois deles SEM `id` nenhum (criados antes deste campo existir no código,
+    // um a cada 5min e um a cada 15min, sobrando de deploys bem anteriores), então o filtro
+    // antigo (`job.id === jobId`) nunca os alcançava — eles não tinham id pra bater com nada, e
+    // ficavam rodando pra sempre em paralelo com o agendamento "certo". Remove todo agendamento
+    // deste JOB (por nome) que não tenha id ou cujo id seja exatamente o desta empresa — nunca
+    // mexe num agendamento de nome diferente nem no de outra empresa (id diferente e não-nulo).
     const legacyRepeatable = await this.queue.getRepeatableJobs();
     await Promise.all(
       legacyRepeatable
-        .filter((job) => job.id === `reconcile-${companyId}`)
+        .filter((job) => job.name === INTEGRATION_JOBS.RECONCILE_ORDERS && (!job.id || job.id === jobId))
         .map((job) => this.queue.removeRepeatableByKey(job.key)),
     );
 
     await this.queue.upsertJobScheduler(
-      `reconcile-${companyId}`,
+      jobId,
       { every: intervalMinutes * 60_000 },
       { name: INTEGRATION_JOBS.RECONCILE_ORDERS, data: { companyId } satisfies ReconcileOrdersJobData },
     );
