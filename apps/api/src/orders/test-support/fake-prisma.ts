@@ -138,6 +138,19 @@ export class FakeDb {
         count: async ({ where }: { where: { orderId: string; variantId: null } }) => {
           return this.orderItems.filter((i) => i.orderId === where.orderId && i.variantId === null).length;
         },
+        updateMany: async ({
+          where,
+          data,
+        }: {
+          where: { orderId: string; marketplaceFee?: number };
+          data: Record<string, unknown>;
+        }) => {
+          const items = this.orderItems.filter(
+            (i) => i.orderId === where.orderId && (where.marketplaceFee === undefined || i.marketplaceFee === where.marketplaceFee),
+          );
+          for (const item of items) Object.assign(item, data);
+          return { count: items.length };
+        },
       },
       orderStatusHistory: {
         create: async ({ data }: { data: { orderId: string; status: string; note?: string | null } }) => {

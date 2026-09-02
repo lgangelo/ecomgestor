@@ -180,4 +180,37 @@ describe('OrdersService — sincronização externa (Fase 3)', () => {
     expect(db.inventories[0].onHand).toBe(8); // baixou de fato
     expect(db.inventories[0].reserved).toBe(0); // e liberou a reserva no mesmo movimento
   });
+
+  it('preenche a taxa de plataforma nos itens quando uma atualização externa passa a reportá-la (pedido nasceu sem pagar)', async () => {
+    const db = new FakeDb();
+    db.addVariant({ id: 'variant-1', sku: 'SKU-1', productName: 'Produto 1', cost: 10 });
+    db.inventories[0].onHand = 10;
+    db.addMapping({ channelId: CHANNEL_ID, externalSku: 'ext-sku-1', variantId: 'variant-1', syncStatus: 'CONFIRMED' });
+    const { service } = makeService(db);
+
+    // Nasce CREATED (não pago) — a TikTok ainda não calculou a comissão, então marketplaceFee vem vazio.
+    const created = await service.importExternalOrder(
+      COMPANY_ID,
+      CHANNEL_ID,
+      'user-1',
+      buildExternalOrder({ internalStatus: 'CREATED', status: 'UNPAID', marketplaceFee: undefined }),
+    );
+    expect(db.orderItems.find((i) => i.orderId === created.orderId)!.marketplaceFee).toBe(0);
+
+    // Pedido é pago — a TikTok agora reporta a taxa real no mesmo pedido.
+    const result = await service.applyExternalStatusUpdate(
+      COMPANY_ID,
+      created.orderId,
+      null,
+      buildExternalOrder({
+        internalStatus: 'PAID',
+        status: 'AWAITING_SHIPMENT',
+        marketplaceFee: '7.50',
+        externalUpdatedAt: new Date('2026-08-02T00:00:00Z'),
+      }),
+    );
+
+    expect(result.applied).toBe(true);
+    expect(db.orderItems.find((i) => i.orderId === created.orderId)!.marketplaceFee).toBe(7.5);
+  });
 });

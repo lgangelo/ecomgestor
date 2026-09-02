@@ -21,6 +21,7 @@
     "list-orders-for-month": "node dist/cli/list-orders-for-month.js",
     "check-product-variants": "node dist/cli/check-product-variants.js",
     "check-tiktok-product-detail": "node dist/cli/check-tiktok-product-detail.js",
+    "check-tiktok-order-detail": "node dist/cli/check-tiktok-order-detail.js",
     "manually-link-order-item": "node dist/cli/manually-link-order-item.js",
     "check-job-schedulers": "node dist/cli/check-job-schedulers.js",
     "lint": "eslint \"src/**/*.ts\"",

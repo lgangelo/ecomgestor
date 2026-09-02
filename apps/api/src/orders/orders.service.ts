@@ -601,6 +601,22 @@ export class OrdersService {
                 : 'OK',
         },
       });
+
+      // Mesmo caso do nome do cliente: um pedido ainda não pago nasce com a taxa da plataforma
+      // zerada porque a TikTok só calcula a comissão real depois do pagamento — nunca mais era
+      // preenchida depois disso, porque esta atualização só tocava campos do pedido, nunca dos
+      // itens. Preenche assim que a TikTok passar a reportar um valor (nunca zera um valor real
+      // já conhecido, mesmo que um evento fora de ordem reporte 0 de novo).
+      if (normalized.marketplaceFee !== undefined) {
+        const reportedFee = Number(normalized.marketplaceFee);
+        const needsFeeBackfill = reportedFee !== 0 && existing.items.some((item) => Number(item.marketplaceFee) === 0);
+        if (needsFeeBackfill) {
+          await tx.orderItem.updateMany({
+            where: { orderId: existing.id, marketplaceFee: 0 },
+            data: { marketplaceFee: reportedFee },
+          });
+        }
+      }
     });
 
     return { applied: true, stockEffectError };
