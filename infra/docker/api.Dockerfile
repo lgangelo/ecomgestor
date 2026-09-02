@@ -11,6 +11,15 @@ COPY packages/database/package.json packages/database/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/shared-server/package.json packages/shared-server/package.json
 COPY packages/integrations/package.json packages/integrations/package.json
+# TODOS os workspaces do monorepo precisam estar presentes aqui, mesmo os que esta imagem não usa
+# em tempo de execução (apps/web, packages/ui) — o `package-lock.json` da raiz foi gerado contra
+# os 7 workspaces juntos, e `npm install --workspaces` com só um SUBCONJUNTO deles presente
+# resolve/hoisteia a árvore de um jeito DIFERENTE do install local completo (confirmado em
+# produção: sem `apps/web` e `packages/ui` aqui, `@nestjs/config` saía de `node_modules` na raiz,
+# quebrando a imagem em runtime com `Cannot find module '@nestjs/config'` mesmo com o `npm
+# install` do passo anterior tendo "funcionado" sem erro).
+COPY apps/web/package.json apps/web/package.json
+COPY packages/ui/package.json packages/ui/package.json
 RUN npm install --workspaces --include-workspace-root
 
 FROM deps AS build

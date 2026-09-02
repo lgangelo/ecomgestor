@@ -7,6 +7,14 @@ COPY apps/web/package.json apps/web/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/ui/package.json packages/ui/package.json
+# TODOS os workspaces do monorepo precisam estar presentes aqui, mesmo os que esta imagem não usa
+# (apps/api, packages/shared-server, packages/integrations) — ver comentário equivalente em
+# api.Dockerfile: `npm install --workspaces` com só um subconjunto dos workspaces presente pode
+# resolver/hoistear a árvore de um jeito diferente do install local completo (o `package-lock.json`
+# da raiz foi gerado contra os 7 workspaces juntos).
+COPY apps/api/package.json apps/api/package.json
+COPY packages/shared-server/package.json packages/shared-server/package.json
+COPY packages/integrations/package.json packages/integrations/package.json
 RUN npm install --workspaces --include-workspace-root
 
 FROM deps AS build
