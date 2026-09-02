@@ -4,6 +4,7 @@ import { AppLoggerService } from '../../common/logger/app-logger.service';
 import { OrdersService } from '../../orders/orders.service';
 import { TikTokConnectorFactory } from './tiktok-connector.factory';
 import { TikTokCredentialsService } from './tiktok-credentials.service';
+import { TikTokFinanceSyncService } from './tiktok-finance-sync.service';
 
 const MAX_PAGES = 20;
 /** Janela de sobreposição (seção 13 da Fase 3) — protege contra pedidos atualizados por um
@@ -30,6 +31,7 @@ export class TikTokOrdersSyncService {
     private readonly credentialsService: TikTokCredentialsService,
     private readonly connectorFactory: TikTokConnectorFactory,
     private readonly ordersService: OrdersService,
+    private readonly financeSync: TikTokFinanceSyncService,
     private readonly logger: AppLoggerService,
   ) {
     this.logger.setContext('TikTokOrdersSync');
@@ -173,6 +175,22 @@ export class TikTokOrdersSyncService {
       userId,
       order,
     );
+
+    // Best-effort: junto com o status, também tenta buscar a taxa da plataforma direto por
+    // pedido (nunca depende de achar o extrato certo entre os ~500 mais recentes da varredura em
+    // lote — ver comentário em `TikTokFinanceSyncService.syncOrderFee`). Uma falha aqui nunca
+    // deve derrubar a ressincronização do pedido, que já é o efeito principal deste botão.
+    try {
+      await this.financeSync.syncOrderFee(companyId, resultOrderId);
+    } catch (error) {
+      this.logger.warn('tiktok_order_fee_sync_failed', {
+        operation: 'sync_single_order',
+        orderId: resultOrderId,
+        externalOrderId: existing.externalOrderId,
+        errorMessage: (error as Error).message,
+      });
+    }
+
     return this.prisma.client.order.findUnique({ where: { id: resultOrderId }, select: { id: true, status: true } });
   }
 }

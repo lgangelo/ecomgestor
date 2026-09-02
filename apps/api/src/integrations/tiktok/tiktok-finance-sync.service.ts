@@ -111,6 +111,62 @@ export class TikTokFinanceSyncService {
     return { statementsSynced, transactionsSynced };
   }
 
+  /**
+   * Sincronização manual de UM pedido específico (botão "Sincronizar com TikTok" na tela do
+   * pedido) — usa "Get Transactions by Order" em vez de paginar Statements -> Transactions by
+   * Statement. Existe porque a varredura em lote (`syncStatements`) depende de encontrar, entre
+   * os ~500 extratos mais recentes, o extrato certo que cobre este pedido — e às vezes um
+   * extrato vem da TikTok sem `id` (bug documentado em `normalizeStatement`), deixando o pedido
+   * que caiu nele sem chance nenhuma de ser alcançado pela varredura em lote, por mais vezes que
+   * ela rode. A busca por pedido não depende de achar o extrato certo, então contorna isso.
+   *
+   * Escreve só em `marketplace_fees` (nunca em `settlement_transactions`, que exige um
+   * Settlement válido pra existir) — `settlementId` fica nulo de propósito aqui, exatamente como
+   * o schema já documenta pra lançamentos manuais/fora do fluxo de extrato.
+   */
+  async syncOrderFee(companyId: string, orderId: string): Promise<{ feesFound: number }> {
+    const order = await this.prisma.client.order.findFirst({
+      where: { id: orderId, companyId },
+      select: { id: true, channelId: true, externalOrderId: true },
+    });
+    if (!order?.externalOrderId) return { feesFound: 0 };
+
+    const { connector } = await this.connectorFactory.forCompany(companyId);
+    let feesFound = 0;
+    let pageToken: string | undefined;
+
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const txPage = await connector.getTransactions(companyId, {
+        orderId: order.externalOrderId,
+        pageSize: 50,
+        pageToken,
+      });
+
+      for (const tx of txPage.items) {
+        if (Number(tx.amount) !== 0 && tx.externalTransactionId) {
+          await this.prisma.client.marketplaceFee.upsert({
+            where: { externalTransactionId: tx.externalTransactionId },
+            create: {
+              channelId: order.channelId,
+              orderId: order.id,
+              feeType: 'PLATFORM_FEE',
+              amount: Math.abs(Number(tx.amount)),
+              externalTransactionId: tx.externalTransactionId,
+              feeDate: tx.occurredAt,
+            },
+            update: { amount: Math.abs(Number(tx.amount)), feeDate: tx.occurredAt },
+          });
+          feesFound++;
+        }
+      }
+
+      if (!txPage.nextPageToken) break;
+      pageToken = txPage.nextPageToken;
+    }
+
+    return { feesFound };
+  }
+
   private async syncTransactionsForStatement(
     companyId: string,
     channelId: string,

@@ -31,7 +31,8 @@
     "check-tiktok-product-detail": "npm run check-tiktok-product-detail --workspace=@ecommerce-manager/api",
     "check-tiktok-order-detail": "npm run check-tiktok-order-detail --workspace=@ecommerce-manager/api",
     "manually-link-order-item": "npm run manually-link-order-item --workspace=@ecommerce-manager/api",
-    "check-job-schedulers": "npm run check-job-schedulers --workspace=@ecommerce-manager/api"
+    "check-job-schedulers": "npm run check-job-schedulers --workspace=@ecommerce-manager/api",
+    "sync-order-finance": "npm run sync-order-finance --workspace=@ecommerce-manager/api"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",
