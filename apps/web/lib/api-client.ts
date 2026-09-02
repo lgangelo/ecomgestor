@@ -27,6 +27,38 @@ export interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
 }
 
+// Rotas de autenticação nunca disparam a renovação silenciosa nem o redirect por 401 — um 401
+// em `/auth/login` é só "senha errada" (tratado no form), e um 401 em `/auth/refresh` É a
+// própria tentativa de renovação falhando (aí sim a sessão acabou de verdade).
+const AUTH_PATHS = new Set(['/auth/login', '/auth/refresh']);
+
+// Evita disparar vários POSTs /auth/refresh em paralelo quando várias chamadas da tela levam
+// 401 ao mesmo tempo (ex.: dashboard com 4 hooks buscando dados juntos) — todas esperam a MESMA
+// promise em vez de cada uma tentar renovar a sessão por conta própria.
+let refreshPromise: Promise<boolean> | null = null;
+
+async function silentRefresh(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = fetch(`${API_BASE_URL}/auth/refresh`, { method: 'POST', credentials: 'include' })
+      .then((res) => res.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+async function doFetch(path: string, method: string, headers: Headers, options: ApiFetchOptions) {
+  return fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    method,
+    headers,
+    credentials: 'include',
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+  });
+}
+
 /**
  * Wrapper de fetch usado por todas as páginas/hook de dados do app. Sempre envia
  * cookies (sessão httpOnly) e, em requisições que alteram estado, espelha o cookie
@@ -41,13 +73,19 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     if (csrfToken) headers.set(CSRF_HEADER_NAME, csrfToken);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    method,
-    headers,
-    credentials: 'include',
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
+  let response = await doFetch(path, method, headers, options);
+
+  // O token de acesso dura só 30 min — sem isso, qualquer clique feito depois desse tempo
+  // (mesmo com o usuário ativo o tempo todo) derrubava pra tela de login "do nada". Antes de
+  // desistir, tenta renovar a sessão em silêncio (usa o refresh token, cookie separado) e refaz
+  // a MESMA chamada uma vez — só cai pro login se a renovação também falhar (aí a sessão
+  // realmente não existe mais: token de refresh vencido/revogado ou navegador fechado).
+  if (response.status === 401 && !AUTH_PATHS.has(path)) {
+    const renewed = await silentRefresh();
+    if (renewed) {
+      response = await doFetch(path, method, headers, options);
+    }
+  }
 
   if (response.status === 204) return undefined as T;
 
@@ -62,9 +100,8 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
           : String(payload.message)
         : undefined) ?? `Erro na requisição (${response.status})`;
 
-    // Sessão expirada no meio do uso (token de acesso vencido) travava a tela em silêncio —
-    // nenhuma view checava isError, então a página só parava de carregar sem explicação. Nunca
-    // dispara para o próprio POST de login (ali um 401 é só "senha errada", tratado no form).
+    // Chegou aqui com 401 mesmo depois da tentativa de renovação acima (ou numa rota de auth,
+    // que nunca tenta renovar) — aí sim a sessão acabou de verdade.
     if (response.status === 401 && path !== '/auth/login' && typeof window !== 'undefined') {
       window.location.href = '/login?expired=1';
     }

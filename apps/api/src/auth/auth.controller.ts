@@ -12,13 +12,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
-import {
-  ACCESS_TOKEN_TTL_SECONDS,
-  AUTH_COOKIE_NAME,
-  CSRF_COOKIE_NAME,
-  REFRESH_COOKIE_NAME,
-  REFRESH_TOKEN_TTL_SECONDS,
-} from '@ecommerce-manager/shared';
+import { AUTH_COOKIE_NAME, CSRF_COOKIE_NAME, REFRESH_COOKIE_NAME } from '@ecommerce-manager/shared';
 import { AuthService, IssuedSession } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { Public } from '../common/decorators/public.decorator';
@@ -96,13 +90,18 @@ export class AuthController {
     const secure = this.configService.get<boolean>('cookieSecure');
     const domain = this.configService.get<string>('cookieDomain');
 
+    // Sem `maxAge`: os três cookies viram cookies DE SESSÃO DO NAVEGADOR — o navegador os
+    // descarta sozinho ao ser encerrado de fato (não apenas fechar a aba), sem precisar de
+    // nenhuma lógica nossa para isso. A validade de verdade continua sendo aplicada do lado do
+    // servidor (expiração do JWT em `ACCESS_TOKEN_TTL_SECONDS` e `expiresAt` do refresh token no
+    // banco) — isso aqui só controla até quando o NAVEGADOR guarda o cookie, nunca até quando ele
+    // é válido.
     res.cookie(AUTH_COOKIE_NAME, session.accessToken, {
       httpOnly: true,
       secure,
       sameSite: 'strict',
       domain,
       path: '/',
-      maxAge: ACCESS_TOKEN_TTL_SECONDS * 1000,
     });
     res.cookie(REFRESH_COOKIE_NAME, session.refreshToken, {
       httpOnly: true,
@@ -110,7 +109,6 @@ export class AuthController {
       sameSite: 'strict',
       domain,
       path: '/auth',
-      maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
     });
     // Cookie legível por JS de propósito: usado no padrão double-submit contra CSRF.
     res.cookie(CSRF_COOKIE_NAME, session.csrfToken, {
@@ -119,7 +117,6 @@ export class AuthController {
       sameSite: 'strict',
       domain,
       path: '/',
-      maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
     });
   }
 
