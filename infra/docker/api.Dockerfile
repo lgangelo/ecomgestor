@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Imagem única compartilhada por ecommerce-api e ecommerce-worker.
 # O container decide o processo a executar via CMD (definido no docker-compose.yml).
 FROM node:20-bookworm-slim AS base
@@ -22,7 +23,15 @@ COPY packages/integrations/package.json packages/integrations/package.json
 # re-resolvendo versões) e, principalmente, FALHA alto se package.json e package-lock.json algum
 # dia saírem de sincronia de novo — em vez de instalar uma árvore incompleta em silêncio, como
 # aconteceu com @nestjs/config/jwt/schedule.
-RUN npm ci --workspaces --include-workspace-root
+# Cache persistente do BuildKit pro diretório de cache do npm (id compartilhado com web.Dockerfile
+# de propósito): os pacotes baixados aqui ficam disponíveis pro build do Web também, e para
+# builds futuros — mesmo quando o `npm ci` precisa rodar de novo por causa de mudança no
+# lockfile, ele reaproveita os pacotes já baixados em vez de buscar tudo de novo na internet.
+# Sem isso, cada mudança de dependência derruba o cache normal de camada do Docker (que é tudo-
+# ou-nada) e força um download completo do zero — foi boa parte do motivo dos últimos builds
+# terem ficado tão mais lentos.
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    npm ci --workspaces --include-workspace-root
 
 FROM deps AS build
 COPY . .

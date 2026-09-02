@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM node:20-bookworm-slim AS base
 WORKDIR /app
 
@@ -12,7 +13,10 @@ COPY packages/ui/package.json packages/ui/package.json
 # nunca usa nenhum dos dois.
 # `npm ci`: ver comentário equivalente em api.Dockerfile — mais rápido e falha alto se
 # package.json/package-lock.json saírem de sincronia, em vez de instalar algo incompleto calado.
-RUN npm ci --workspaces --include-workspace-root
+# Mesmo cache persistente do BuildKit usado no api.Dockerfile (mesmo id de propósito — os dois
+# builds reaproveitam os mesmos pacotes já baixados, nunca buscam da internet duas vezes).
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache \
+    npm ci --workspaces --include-workspace-root
 
 FROM deps AS build
 COPY . .
