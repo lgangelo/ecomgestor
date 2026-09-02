@@ -7,19 +7,16 @@ import { StatCard } from '@/components/shared/stat-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { useDashboard } from '@/hooks/use-reports';
+import { computePeriodPreset } from '@/lib/period-presets';
 import { PeriodFilterBar, type PeriodFilterValue } from './period-filter-bar';
 import { AttentionSection } from './attention-section';
 import { ProductsRankingTable, RevenueByPeriodChart, SalesByChannelChart } from './dashboard-charts';
 import { OnboardingChecklist } from '@/components/onboarding/onboarding-checklist';
 
 function defaultPeriod(): PeriodFilterValue {
-  const end = new Date();
-  const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-  return {
-    dateFrom: start.toISOString().slice(0, 10),
-    dateTo: end.toISOString().slice(0, 10),
-    compare: false,
-  };
+  // Padrão é o mês vigente (não "últimos 30 dias") — o usuário troca pelo seletor de período se
+  // quiser outra janela.
+  return { ...computePeriodPreset('this_month')!, compare: false };
 }
 
 export function DashboardView() {

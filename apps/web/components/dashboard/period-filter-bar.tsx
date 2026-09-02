@@ -25,7 +25,7 @@ export function PeriodFilterBar({
   const { data: channels } = useChannels();
   // Seção 59 — preset de período reutilizável. É estado só de UI: mudar manualmente uma data
   // sempre volta para "Personalizado", sem precisar o pai saber qual preset está selecionado.
-  const [preset, setPreset] = React.useState<PeriodPreset>('last30');
+  const [preset, setPreset] = React.useState<PeriodPreset>('this_month');
 
   function handlePresetChange(next: PeriodPreset) {
     setPreset(next);
