@@ -72,40 +72,54 @@ export function FiscalDocumentsView() {
             <AlertTriangle className="h-4 w-4 text-warning" />
             <CardTitle>Pendências fiscais</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 pt-0 text-sm">
+          <CardContent className="space-y-4 pt-0 text-sm">
             {pending.salesWithoutInvoiceCount > 0 && (
-              <p>
-                <Badge tone="warning" className="mr-2">
-                  {pending.salesWithoutInvoiceCount}
-                </Badge>
-                venda(s) sem NF-e —{' '}
-                {pending.salesWithoutInvoice.slice(0, 3).map((o, i) => (
-                  <React.Fragment key={o.orderId}>
-                    {i > 0 && ', '}
-                    <Link href={`/vendas/pedidos/${o.orderId}`} className="underline">
-                      {o.customerName ?? o.orderId.slice(0, 8)}
-                    </Link>
-                  </React.Fragment>
-                ))}
-                {pending.salesWithoutInvoiceCount > pending.salesWithoutInvoice.length && '...'}
-              </p>
+              <div className="space-y-1.5">
+                <p>
+                  <Badge tone="warning" className="mr-2">
+                    {pending.salesWithoutInvoiceCount}
+                  </Badge>
+                  venda(s) sem NF-e
+                </p>
+                <ul className="space-y-1 pl-1">
+                  {pending.salesWithoutInvoice.slice(0, 3).map((o) => (
+                    <li key={o.orderId}>
+                      <Link href={`/vendas/pedidos/${o.orderId}`} className="underline">
+                        {o.customerName ?? o.orderId.slice(0, 8)}
+                      </Link>
+                    </li>
+                  ))}
+                  {pending.salesWithoutInvoiceCount > pending.salesWithoutInvoice.length && (
+                    <li className="text-muted-foreground">
+                      e mais {pending.salesWithoutInvoiceCount - pending.salesWithoutInvoice.length}...
+                    </li>
+                  )}
+                </ul>
+              </div>
             )}
             {pending.returnsWithoutDocumentCount > 0 && (
-              <p>
-                <Badge tone="warning" className="mr-2">
-                  {pending.returnsWithoutDocumentCount}
-                </Badge>
-                devolução(ões) sem documento —{' '}
-                {pending.returnsWithoutDocument.slice(0, 3).map((r, i) => (
-                  <React.Fragment key={r.id}>
-                    {i > 0 && ', '}
-                    <Link href={`/vendas/pedidos/${r.orderId}`} className="underline">
-                      {r.customerName ?? r.orderId.slice(0, 8)}
-                    </Link>
-                  </React.Fragment>
-                ))}
-                {pending.returnsWithoutDocumentCount > pending.returnsWithoutDocument.length && '...'}
-              </p>
+              <div className="space-y-1.5">
+                <p>
+                  <Badge tone="warning" className="mr-2">
+                    {pending.returnsWithoutDocumentCount}
+                  </Badge>
+                  devolução(ões) sem documento
+                </p>
+                <ul className="space-y-1 pl-1">
+                  {pending.returnsWithoutDocument.slice(0, 3).map((r) => (
+                    <li key={r.id}>
+                      <Link href={`/vendas/pedidos/${r.orderId}`} className="underline">
+                        {r.customerName ?? r.orderId.slice(0, 8)}
+                      </Link>
+                    </li>
+                  ))}
+                  {pending.returnsWithoutDocumentCount > pending.returnsWithoutDocument.length && (
+                    <li className="text-muted-foreground">
+                      e mais {pending.returnsWithoutDocumentCount - pending.returnsWithoutDocument.length}...
+                    </li>
+                  )}
+                </ul>
+              </div>
             )}
           </CardContent>
         </Card>
