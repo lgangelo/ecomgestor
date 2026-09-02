@@ -89,9 +89,12 @@ export function FiscalDocumentsView() {
                       </Link>
                     </li>
                   ))}
-                  {pending.salesWithoutInvoiceCount > pending.salesWithoutInvoice.length && (
+                  {/* "e mais N" precisa contar a partir de quantos itens aparecem na tela (no máximo
+                      3), nunca do tamanho da lista de exemplo vinda da API (até 50) — senão, com
+                      mais de 3 pendências, o número mostrado nunca bate com o que o usuário vê. */}
+                  {pending.salesWithoutInvoiceCount > Math.min(3, pending.salesWithoutInvoice.length) && (
                     <li className="text-muted-foreground">
-                      e mais {pending.salesWithoutInvoiceCount - pending.salesWithoutInvoice.length}...
+                      e mais {pending.salesWithoutInvoiceCount - Math.min(3, pending.salesWithoutInvoice.length)}...
                     </li>
                   )}
                 </ul>
@@ -113,9 +116,9 @@ export function FiscalDocumentsView() {
                       </Link>
                     </li>
                   ))}
-                  {pending.returnsWithoutDocumentCount > pending.returnsWithoutDocument.length && (
+                  {pending.returnsWithoutDocumentCount > Math.min(3, pending.returnsWithoutDocument.length) && (
                     <li className="text-muted-foreground">
-                      e mais {pending.returnsWithoutDocumentCount - pending.returnsWithoutDocument.length}...
+                      e mais {pending.returnsWithoutDocumentCount - Math.min(3, pending.returnsWithoutDocument.length)}...
                     </li>
                   )}
                 </ul>

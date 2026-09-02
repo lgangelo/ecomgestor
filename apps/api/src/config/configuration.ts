@@ -22,6 +22,7 @@ export interface AppConfig {
     redirectUri: string;
     inventoryPushEnabled: boolean;
     reconcileIntervalMinutes: number;
+    financeSyncIntervalMinutes: number;
   };
 }
 
@@ -55,5 +56,9 @@ export default (): AppConfig => ({
     // apenas compara. Habilitar exige decisão explícita do operador via variável de ambiente.
     inventoryPushEnabled: process.env.TIKTOK_INVENTORY_PUSH_ENABLED === 'true',
     reconcileIntervalMinutes: parseInt(process.env.TIKTOK_RECONCILE_INTERVAL_MINUTES ?? '15', 10),
+    // Liquidação/extrato da TikTok é diário, não faz sentido checar com a mesma frequência da
+    // reconciliação de pedidos — 60 min por padrão é suficiente pra "taxas da plataforma"
+    // aparecer no mesmo dia em que o pedido é liquidado, sem gerar chamada excessiva à API.
+    financeSyncIntervalMinutes: parseInt(process.env.TIKTOK_FINANCE_SYNC_INTERVAL_MINUTES ?? '60', 10),
   },
 });

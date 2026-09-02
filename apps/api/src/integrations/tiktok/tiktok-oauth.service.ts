@@ -51,18 +51,23 @@ export class TikTokOAuthService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     if (!this.isConfigured()) return;
     const intervalMinutes = this.configService.get<number>('tiktok.reconcileIntervalMinutes', { infer: true }) as number;
+    const financeSyncIntervalMinutes = this.configService.get<number>('tiktok.financeSyncIntervalMinutes', {
+      infer: true,
+    }) as number;
     const connected = await this.prisma.client.integration.findMany({
       where: { provider: IntegrationProvider.TIKTOK_SHOP, status: IntegrationStatus.CONNECTED },
       select: { companyId: true },
     });
     for (const integration of connected) {
       await this.queue.ensureReconcileSchedule(integration.companyId, intervalMinutes);
+      await this.queue.ensureFinanceSyncSchedule(integration.companyId, financeSyncIntervalMinutes);
     }
     if (connected.length > 0) {
       this.logger.log('tiktok_reconcile_schedules_reapplied', {
         operation: 'on_module_init',
         companiesCount: connected.length,
         intervalMinutes,
+        financeSyncIntervalMinutes,
       });
     }
   }
@@ -192,6 +197,10 @@ export class TikTokOAuthService implements OnModuleInit {
 
     const intervalMinutes = this.configService.get<number>('tiktok.reconcileIntervalMinutes', { infer: true }) as number;
     await this.queue.ensureReconcileSchedule(companyId, intervalMinutes);
+    const financeSyncIntervalMinutes = this.configService.get<number>('tiktok.financeSyncIntervalMinutes', {
+      infer: true,
+    }) as number;
+    await this.queue.ensureFinanceSyncSchedule(companyId, financeSyncIntervalMinutes);
 
     await this.audit.log({
       companyId,

@@ -111,6 +111,31 @@ export class TikTokQueueService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  /**
+   * Mesmo mecanismo de `ensureReconcileSchedule`, mas para a sincronização financeira
+   * (Statements/Transactions -> `marketplace_fees`) — até agora ela só rodava quando alguém
+   * clicava manualmente em "Sincronizar financeiro" ou reprocessava um job falho na mão. Sem
+   * agendamento automático, um pedido pago nunca tinha a taxa da plataforma preenchida sozinho
+   * (a tela de detalhe do pedido lê `marketplace_fees`, alimentada só por este job — nunca pela
+   * sincronização de pedidos, que é uma fila totalmente separada).
+   */
+  async ensureFinanceSyncSchedule(companyId: string, intervalMinutes: number) {
+    const jobId = `finance-sync-${companyId}`;
+
+    const legacyRepeatable = await this.queue.getRepeatableJobs();
+    await Promise.all(
+      legacyRepeatable
+        .filter((job) => job.name === INTEGRATION_JOBS.SYNC_FINANCE && (!job.id || job.id === jobId))
+        .map((job) => this.queue.removeRepeatableByKey(job.key)),
+    );
+
+    await this.queue.upsertJobScheduler(
+      jobId,
+      { every: intervalMinutes * 60_000 },
+      { name: INTEGRATION_JOBS.SYNC_FINANCE, data: { companyId } satisfies SyncFinanceJobData },
+    );
+  }
+
   async onModuleDestroy() {
     await this.queue?.close();
     this.connection?.disconnect();
