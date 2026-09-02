@@ -11,16 +11,18 @@ COPY packages/database/package.json packages/database/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/shared-server/package.json packages/shared-server/package.json
 COPY packages/integrations/package.json packages/integrations/package.json
-# TODOS os workspaces do monorepo precisam estar presentes aqui, mesmo os que esta imagem não usa
-# em tempo de execução (apps/web, packages/ui) — o `package-lock.json` da raiz foi gerado contra
-# os 7 workspaces juntos, e `npm install --workspaces` com só um SUBCONJUNTO deles presente
-# resolve/hoisteia a árvore de um jeito DIFERENTE do install local completo (confirmado em
-# produção: sem `apps/web` e `packages/ui` aqui, `@nestjs/config` saía de `node_modules` na raiz,
-# quebrando a imagem em runtime com `Cannot find module '@nestjs/config'` mesmo com o `npm
-# install` do passo anterior tendo "funcionado" sem erro).
-COPY apps/web/package.json apps/web/package.json
-COPY packages/ui/package.json packages/ui/package.json
-RUN npm install --workspaces --include-workspace-root
+# Nunca copiar apps/web nem packages/ui aqui: esta imagem não usa nenhum dos dois, e
+# `npm install --workspaces` instala TUDO que estiver presente na árvore — incluir o package.json
+# do Web faria a imagem da API instalar Next.js/React/Recharts/Tailwind à toa (confirmado: ~280
+# pacotes a mais, só peso e tempo de build, sem nenhum uso). Um "Cannot find module '@nestjs/config'"
+# visto em produção uma vez pareceu vir daqui, mas era coincidência — a causa real era o
+# package-lock.json sem entrada pra @nestjs/config/jwt/schedule (corrigido separadamente);
+# confirmado depois que reinstalar só com este subconjunto de workspaces resolve certinho.
+# `npm ci` em vez de `npm install`: instala exatamente o que o lockfile manda (sem gastar tempo
+# re-resolvendo versões) e, principalmente, FALHA alto se package.json e package-lock.json algum
+# dia saírem de sincronia de novo — em vez de instalar uma árvore incompleta em silêncio, como
+# aconteceu com @nestjs/config/jwt/schedule.
+RUN npm ci --workspaces --include-workspace-root
 
 FROM deps AS build
 COPY . .
