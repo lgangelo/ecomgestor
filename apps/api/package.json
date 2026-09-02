@@ -25,6 +25,7 @@
     "manually-link-order-item": "node dist/cli/manually-link-order-item.js",
     "check-job-schedulers": "node dist/cli/check-job-schedulers.js",
     "sync-order-finance": "node dist/cli/sync-order-finance.js",
+    "backfill-manual-channels": "node dist/cli/backfill-manual-channels.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"

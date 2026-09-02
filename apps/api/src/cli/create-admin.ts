@@ -9,11 +9,35 @@
  * Se --password não for informado, uma senha aleatória forte é gerada e exibida
  * uma única vez no terminal. Nunca existe senha padrão fixa no código.
  */
-import { PrismaClient, RoleName } from '@ecommerce-manager/database';
-import { ALL_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS, ROLE_NAMES } from '@ecommerce-manager/shared';
+import { ChannelType, PrismaClient, RoleName } from '@ecommerce-manager/database';
+import { ALL_PERMISSIONS, DEFAULT_ROLE_PERMISSIONS, MANUAL_SALE_CHANNELS, ROLE_NAMES } from '@ecommerce-manager/shared';
 import { generateRandomPassword, hashPassword, isPasswordStrongEnough } from '@ecommerce-manager/shared-server';
 
 const prisma = new PrismaClient();
+
+// Nomes exibidos na tela (mesmos usados no formulário de venda manual, `manual-sale-form.tsx`)
+// — nunca inventa um nome novo aqui, só espelha o que já existe.
+const MANUAL_CHANNEL_NAMES: Record<(typeof MANUAL_SALE_CHANNELS)[number], string> = {
+  INSTAGRAM: 'Instagram',
+  WHATSAPP: 'WhatsApp',
+  LOJA_FISICA: 'Loja física',
+  OUTRO: 'Outro',
+};
+
+/** Sem isto, uma empresa nova nunca conseguia registrar NENHUMA venda manual — o formulário
+ * oferece os 4 canais manuais pra escolher, mas `createManualSale` exige que o `SalesChannel`
+ * já exista (confirmado em produção: "Canal manual do tipo INSTAGRAM não está cadastrado para
+ * esta empresa"), e nada em lugar nenhum do fluxo real de provisionamento (só este script,
+ * `create-admin` — o seed de demonstração é outro caminho, nunca usado em produção) os criava. */
+async function ensureManualChannels(companyId: string) {
+  for (const type of MANUAL_SALE_CHANNELS) {
+    await prisma.salesChannel.upsert({
+      where: { companyId_type_name: { companyId, type: type as ChannelType, name: MANUAL_CHANNEL_NAMES[type] } },
+      update: {},
+      create: { companyId, name: MANUAL_CHANNEL_NAMES[type], type: type as ChannelType, isManual: true },
+    });
+  }
+}
 
 function parseArgs(argv: string[]): Record<string, string> {
   const args: Record<string, string> = {};
@@ -87,6 +111,7 @@ async function main() {
     });
     console.log(`Empresa criada: ${company.name} (${company.id})`);
   }
+  await ensureManualChannels(company.id);
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
