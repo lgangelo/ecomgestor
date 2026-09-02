@@ -58,6 +58,7 @@ export interface OrderDetail {
   fiscalDocuments: Array<{ id: string; type: string; number: string | null; status: string }>;
   cmv: number;
   marketplaceFeesTotal: number;
+  marketplaceFeePending: boolean;
   estimatedProfit: number;
   marginPercent: number;
   markupPercent: number | null;

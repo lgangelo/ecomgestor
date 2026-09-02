@@ -122,10 +122,22 @@ export class OrdersService {
     const marketplaceFees = await this.prisma.client.marketplaceFee.aggregate({
       where: { orderId: id },
       _sum: { amount: true },
+      _count: { _all: true },
     });
 
     const cmv = order.items.reduce((sum, item) => sum + Number(item.unitCost) * item.quantity, 0);
     const marketplaceFeesTotal = Number(marketplaceFees._sum.amount ?? 0);
+    // "Aguardando liquidação" só faz sentido pra pedido de canal integrado (a TikTok é quem
+    // calcula a taxa — canal manual não tem taxa de plataforma nenhuma) que já foi pago (pedido
+    // ainda não pago nunca teve chance de ter taxa) e ainda não cancelado (nunca vai ter taxa
+    // nenhuma, não é "pendente", é inaplicável). `_count` conta qualquer linha, mesmo as com
+    // amount=0 (taxa confirmada zerada, ex. reembolso total) — só a AUSÊNCIA de linha significa
+    // "ainda não sincronizado".
+    const marketplaceFeePending =
+      Boolean(order.externalOrderId) &&
+      order.status !== OrderStatus.CREATED &&
+      order.status !== OrderStatus.CANCELLED &&
+      marketplaceFees._count._all === 0;
     const total = Number(order.total);
     const estimatedProfit = total - cmv - marketplaceFeesTotal;
     // Margem = lucro sobre a venda (padrão contábil, usado no rótulo "Margem"). Markup = lucro
@@ -182,6 +194,7 @@ export class OrdersService {
       fiscalDocuments: order.fiscalDocuments,
       cmv: Math.round(cmv * 100) / 100,
       marketplaceFeesTotal: Math.round(marketplaceFeesTotal * 100) / 100,
+      marketplaceFeePending,
       estimatedProfit: Math.round(estimatedProfit * 100) / 100,
       marginPercent: Math.round(marginPercent * 100) / 100,
       markupPercent: markupPercent === null ? null : Math.round(markupPercent * 100) / 100,

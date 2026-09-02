@@ -104,11 +104,10 @@ export class TikTokQueueService implements OnModuleInit, OnModuleDestroy {
         .map((job) => this.queue.removeRepeatableByKey(job.key)),
     );
 
-    await this.queue.upsertJobScheduler(
-      jobId,
-      { every: intervalMinutes * 60_000 },
-      { name: INTEGRATION_JOBS.RECONCILE_ORDERS, data: { companyId } satisfies ReconcileOrdersJobData },
-    );
+    await this.upsertScheduleIfChanged(jobId, intervalMinutes, {
+      name: INTEGRATION_JOBS.RECONCILE_ORDERS,
+      data: { companyId } satisfies ReconcileOrdersJobData,
+    });
   }
 
   /**
@@ -129,11 +128,34 @@ export class TikTokQueueService implements OnModuleInit, OnModuleDestroy {
         .map((job) => this.queue.removeRepeatableByKey(job.key)),
     );
 
-    await this.queue.upsertJobScheduler(
-      jobId,
-      { every: intervalMinutes * 60_000 },
-      { name: INTEGRATION_JOBS.SYNC_FINANCE, data: { companyId } satisfies SyncFinanceJobData },
-    );
+    await this.upsertScheduleIfChanged(jobId, intervalMinutes, {
+      name: INTEGRATION_JOBS.SYNC_FINANCE,
+      data: { companyId } satisfies SyncFinanceJobData,
+    });
+  }
+
+  /**
+   * A partir do BullMQ 5.19, `upsertJobScheduler` dispara uma execução IMEDIATA toda vez que é
+   * chamado — mesmo re-registrando um agendamento já existente, sem nenhuma mudança de verdade
+   * (confirmado: https://github.com/taskforcesh/bullmq/issues/3084, "immediately" virou sempre
+   * ligado). Como `onModuleInit` reaplica o agendamento em TODO boot da API e do worker — e cada
+   * `docker compose run` de um script de diagnóstico também conta como um boot —, isso vinha
+   * disparando uma rajada de execuções extras a cada restart/diagnóstico, sem nenhuma mudança
+   * real de intervalo (confirmado em produção: `tiktok-reconcile-orders`/`tiktok-sync-finance`
+   * rodando a cada 1-3 min na tela de Jobs, bem mais frequente que os 5min/60min configurados).
+   * Só chama `upsertJobScheduler` de verdade quando o intervalo atual difere do já registrado (ou
+   * não existe nenhum ainda) — reaplicar o MESMO valor nunca deveria ter efeito nenhum.
+   */
+  private async upsertScheduleIfChanged(
+    jobId: string,
+    intervalMinutes: number,
+    template: { name: string; data: unknown },
+  ) {
+    const everyMs = intervalMinutes * 60_000;
+    const existing = (await this.queue.getJobSchedulers()).find((s) => s.id === jobId);
+    if (existing?.every === everyMs) return;
+
+    await this.queue.upsertJobScheduler(jobId, { every: everyMs }, template);
   }
 
   async onModuleDestroy() {

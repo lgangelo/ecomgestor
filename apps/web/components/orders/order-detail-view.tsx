@@ -93,7 +93,16 @@ export function OrderDetailView({ orderId }: { orderId: string }) {
           <CardHeader className="pb-2">
             <CardTitle>Taxas da plataforma</CardTitle>
           </CardHeader>
-          <CardContent className="pt-0 text-lg font-semibold">{formatBRL(order.marketplaceFeesTotal)}</CardContent>
+          <CardContent className="pt-0">
+            {order.marketplaceFeePending ? (
+              <>
+                <p className="text-lg font-semibold text-muted-foreground">—</p>
+                <p className="text-xs text-muted-foreground">Aguardando liquidação da TikTok</p>
+              </>
+            ) : (
+              <p className="text-lg font-semibold">{formatBRL(order.marketplaceFeesTotal)}</p>
+            )}
+          </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">

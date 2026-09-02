@@ -143,7 +143,10 @@ export class TikTokFinanceSyncService {
       });
 
       for (const tx of txPage.items) {
-        if (Number(tx.amount) !== 0 && tx.externalTransactionId) {
+        // Grava mesmo quando a taxa é ZERO de verdade — ver comentário equivalente em
+        // `syncTransactionsForStatement`: sem isso, um pedido com taxa genuinamente zerada
+        // (ex.: reembolso total) fica indistinguível de "ainda não sincronizado".
+        if (tx.externalTransactionId) {
           await this.prisma.client.marketplaceFee.upsert({
             where: { externalTransactionId: tx.externalTransactionId },
             create: {
@@ -231,7 +234,12 @@ export class TikTokFinanceSyncService {
         // PLATFORM_FEE/AFFILIATE_COMMISSION do mapeamento genérico; a condição real é só "tem
         // taxa diferente de zero e o pedido foi resolvido". `tx.amount` já é `fee_amount` (a taxa
         // total, negativa — débito no repasse); aqui grava-se a magnitude positiva.
-        if (order && Number(tx.amount) !== 0 && tx.externalTransactionId) {
+        // Grava mesmo quando a taxa é ZERO de verdade (ex.: pedido totalmente reembolsado — a
+        // TikTok não cobra comissão sobre o que foi devolvido) — sem isso, um pedido com taxa
+        // genuinamente zerada ficava indistinguível de "ainda não sincronizado", e a tela do
+        // pedido mostraria "aguardando liquidação" pra sempre mesmo depois de já ter a resposta
+        // real da TikTok.
+        if (order && tx.externalTransactionId) {
           await this.prisma.client.marketplaceFee.upsert({
             where: { externalTransactionId: tx.externalTransactionId },
             create: {
