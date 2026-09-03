@@ -12,8 +12,17 @@ export const PERIOD_PRESET_OPTIONS: Array<{ value: PeriodPreset; label: string }
   { value: 'custom', label: 'Personalizado' },
 ];
 
+// NUNCA usar `date.toISOString().slice(0,10)` aqui — isso converte pra UTC antes de formatar, e
+// pra quem está num fuso atrás de UTC (Brasil, UTC-3) isso empurra a data pra FRENTE nas últimas
+// horas do dia local: às 22h de um dia local, já é 01h do dia seguinte em UTC, então "hoje"/"este
+// mês" passavam a incluir um dia que ainda nem começou aqui (e, no fim do mês, empurravam o
+// último dia pro dia 1º do mês seguinte). Monta a string direto dos componentes LOCAIS
+// (getFullYear/getMonth/getDate) — nunca passa pelo fuso UTC em nenhum momento do cálculo.
 function toISODate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /** Retorna `null` para "custom" — o chamador mantém as datas atuais nesse caso. */

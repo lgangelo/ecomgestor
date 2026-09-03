@@ -108,6 +108,22 @@ export class UsersService {
         });
       }
 
+      // Desativar um usuário precisa cortar o acesso dele imediatamente, não só impedir login
+      // novo. O token de acesso já emitido (JWT, sem consulta ao banco) continua tecnicamente
+      // válido até expirar sozinho (30 min) — isso é uma limitação aceita de qualquer sessão via
+      // JWT sem lista de revogação. Mas sem isto, o usuário desativado continuava conseguindo
+      // RENOVAR a sessão indefinidamente pelo refresh token (que nunca expira sozinho por até 30
+      // dias) — e a renovação silenciosa adicionada nesta sessão (api-client.ts/middleware.ts)
+      // torna isso automático a cada clique, então "desativar" na prática não desconectava
+      // ninguém. Revogar todo refresh token do usuário aqui garante que a PRÓXIMA tentativa de
+      // renovação (reativa em qualquer 401, ou na próxima navegação) falhe e force login de novo.
+      if (dto.isActive === false) {
+        await tx.refreshToken.updateMany({
+          where: { userId: id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+      }
+
       return tx.user.findUniqueOrThrow({
         where: { id },
         include: { userRoles: { include: { role: true } } },

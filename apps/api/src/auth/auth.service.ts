@@ -114,7 +114,34 @@ export class AuthService {
       },
     });
 
-    if (!stored || stored.revokedAt || stored.expiresAt.getTime() < Date.now()) {
+    if (!stored) {
+      throw new UnauthorizedException('Sessão expirada. Faça login novamente.');
+    }
+
+    // Reusar um refresh token que já foi revogado (a rotação sempre revoga o token usado antes
+    // de emitir o próximo par) é o sinal clássico de roubo/replay: o dono legítimo já rotacionou
+    // esse token uma vez, então alguém apresentando o MESMO token de novo não é ele. Sem isto, a
+    // segunda tentativa só era rejeitada silenciosamente — dando ao atacante um sinal limpo
+    // ("tente de novo com um token mais recente") sem nenhuma consequência real. Revoga TODAS as
+    // sessões ativas do usuário como precaução (força login de novo em todo dispositivo) e
+    // registra em auditoria.
+    if (stored.revokedAt) {
+      await this.prisma.client.refreshToken.updateMany({
+        where: { userId: stored.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await this.auditService.log({
+        companyId: stored.user.companyId,
+        userId: stored.userId,
+        action: 'SESSION_REUSE_DETECTED',
+        entity: 'user',
+        entityId: stored.userId,
+        ip: meta.ip,
+      });
+      throw new UnauthorizedException('Sessão expirada. Faça login novamente.');
+    }
+
+    if (stored.expiresAt.getTime() < Date.now()) {
       throw new UnauthorizedException('Sessão expirada. Faça login novamente.');
     }
     if (!stored.user.isActive) {

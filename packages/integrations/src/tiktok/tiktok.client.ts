@@ -88,6 +88,13 @@ export class TikTokClient {
     else if (status === 429) category = 'RATE_LIMIT';
     else if (status >= 500) category = 'TEMPORARY';
     else if (status === 400 || status === 422) category = 'VALIDATION';
+    // A TikTok pode devolver um erro de token (access_token inválido/expirado) com HTTP 200 e o
+    // código de erro só dentro do envelope — `status` sozinho nunca detecta isso (fica
+    // PERMANENT, que nunca aciona o aviso de reconectar). Sem uma lista confirmada dos códigos
+    // numéricos de erro de auth da TikTok (não encontrados com certeza na pesquisa), reconhecer
+    // pela palavra "token" na mensagem é um sinal best-effort — nunca inventa um código
+    // específico, só evita classificar como PERMANENT algo que claramente fala de token.
+    else if (/token/i.test(message)) category = 'AUTH';
 
     return new TikTokApiError(message, category, status);
   }

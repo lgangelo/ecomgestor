@@ -1,4 +1,4 @@
-import { TIKTOK_HOSTS, TIKTOK_PATHS, TikTokTokenResponse } from './tiktok.types';
+import { TIKTOK_HOSTS, TIKTOK_PATHS, TikTokEnvelope, TikTokTokenResponse, isTikTokEnvelope } from './tiktok.types';
 import { TikTokApiError } from './tiktok.errors';
 
 /**
@@ -62,6 +62,23 @@ async function fetchAndParseToken(url: URL): Promise<TikTokTokenResponse> {
     throw new TikTokApiError(message, response.status === 401 || response.status === 403 ? 'AUTH' : 'TEMPORARY', response.status);
   }
 
+  // A TikTok pode devolver um erro de token (refresh token expirado/revogado, code inválido...)
+  // com HTTP 200 e o erro só dentro do envelope (confirmado que isso acontece nas chamadas de
+  // negócio normais, ver TikTokClient.request — nunca foi checado aqui, no endpoint de TOKEN em
+  // si). Diferente de uma chamada de negócio comum (onde um erro pode ser validação, rate limit
+  // etc.), QUALQUER erro devolvido pelo endpoint de token — por HTTP não-200 ou por code != 0
+  // dentro de um HTTP 200 — significa por definição que o fluxo de autenticação está quebrado
+  // (token/código inválido, expirado ou revogado), nunca "temporário" nem "permanente
+  // genérico". Classificar como 'AUTH' é o que faz `tiktok-token-refresh.service.ts` marcar a
+  // integração como AUTH_EXPIRED e avisar "reconecte sua loja" — sem isso, o erro cai como
+  // PERMANENT e a integração nunca avisa ninguém, só falha silenciosamente pra sempre.
+  if (isTikTokEnvelope(json) && json.code !== 0) {
+    throw new TikTokApiError(
+      (json as TikTokEnvelope<unknown>).message || 'Erro de autenticação retornado pela TikTok Shop',
+      'AUTH',
+    );
+  }
+
   return parseTokenResponse(json);
 }
 
@@ -72,9 +89,12 @@ function parseTokenResponse(json: unknown): TikTokTokenResponse {
   const accessToken = data.access_token ? String(data.access_token) : '';
   const refreshToken = data.refresh_token ? String(data.refresh_token) : '';
   if (!accessToken || !refreshToken) {
+    // Sem código de erro no envelope (code === 0 ou ausente) mas também sem token utilizável —
+    // ainda assim é uma falha do fluxo de autenticação, nunca um erro "permanente genérico"
+    // (categoria que nunca aciona o aviso de reconectar).
     throw new TikTokApiError(
       'Resposta de token da TikTok Shop sem access_token/refresh_token — payload inesperado.',
-      'PERMANENT',
+      'AUTH',
     );
   }
 
