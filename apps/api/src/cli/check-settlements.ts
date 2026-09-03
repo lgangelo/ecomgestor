@@ -11,7 +11,7 @@
  *   npm run check-settlements
  */
 import { NestFactory } from '@nestjs/core';
-import { PrismaClient } from '@ecommerce-manager/database';
+import { OrderStatus, PrismaClient } from '@ecommerce-manager/database';
 import { AppModule } from '../app.module';
 import { TikTokConnectorFactory } from '../integrations/tiktok/tiktok-connector.factory';
 import { TikTokCredentialsService } from '../integrations/tiktok/tiktok-credentials.service';
@@ -19,6 +19,35 @@ import { TikTokCredentialsService } from '../integrations/tiktok/tiktok-credenti
 async function main() {
   const prisma = new PrismaClient();
 
+  // Hipótese a testar: Statements/Payments só cobrem extratos JÁ FECHADOS (e, na prática, quase
+  // sempre já pagos) — o saldo "a receber" de curto prazo pode ser simplesmente receita de
+  // pedidos recentes que ainda não foi agrupada em NENHUM extrato pela TikTok (janela de
+  // conclusão do pedido ainda não fechou), não algo que exista em algum endpoint de finance.
+  const lastSettlement = await prisma.settlement.findFirst({ orderBy: { periodEnd: 'desc' }, select: { periodEnd: true, channelId: true } });
+  if (lastSettlement) {
+    const active = OrderStatus;
+    const recentOrders = await prisma.order.findMany({
+      where: {
+        channelId: lastSettlement.channelId,
+        orderDate: { gt: lastSettlement.periodEnd },
+        status: { notIn: [active.CANCELLED, active.CREATED] },
+      },
+      select: { externalOrderId: true, orderDate: true, subtotal: true, shipping: true, items: { select: { sellerDiscount: true } } },
+    });
+    const netRevenue = recentOrders.reduce((sum, o) => {
+      const sellerDiscount = o.items.reduce((s, i) => s + Number(i.sellerDiscount), 0);
+      return sum + Number(o.subtotal) + Number(o.shipping) - sellerDiscount;
+    }, 0);
+    console.log(`Extrato mais recente termina em: ${lastSettlement.periodEnd.toISOString()}`);
+    console.log(
+      `Pedidos TikTok depois dessa data (ainda não podem ter entrado em nenhum extrato): ${recentOrders.length} — receita líquida somada R$ ${netRevenue.toFixed(2)}`,
+    );
+    for (const o of recentOrders) {
+      console.log(`  externalOrderId=${o.externalOrderId} orderDate=${o.orderDate.toISOString()}`);
+    }
+  }
+
+  console.log('----------------------------------------------------');
   console.log('Distribuição de Settlement por status (banco local):');
   const grouped = await prisma.settlement.groupBy({
     by: ['status'],
