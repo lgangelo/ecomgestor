@@ -20,7 +20,6 @@ interface FakeOrder {
     unitCost: number;
     productNameAtSale: string;
   }>;
-  payments: Array<{ amount: number; status: string }>;
   fiscalDocuments: Array<{ id: string }>;
 }
 
@@ -31,6 +30,8 @@ interface FakePrismaConfig {
   integrations: Array<{ status: string; lastSyncAt: Date | null }>;
   unmappedOrdersCount: number;
   syncJobFailedCount: number;
+  // "A receber" (Settlement.totalAmount, status != PAID) — não depende de orders/período.
+  openSettlementsTotal?: number;
 }
 
 function makeFakePrisma(config: FakePrismaConfig): PrismaService {
@@ -48,6 +49,7 @@ function makeFakePrisma(config: FakePrismaConfig): PrismaService {
       },
       refund: { aggregate: async () => ({ _sum: { amount: config.returnsAmount } }) },
       marketplaceFee: { groupBy: async () => [] },
+      settlement: { aggregate: async () => ({ _sum: { totalAmount: config.openSettlementsTotal ?? 0 } }) },
       inventory: { findMany: async () => config.inventories },
       integration: { findMany: async () => config.integrations },
       syncJob: { count: async () => config.syncJobFailedCount },
@@ -77,7 +79,6 @@ function order(overrides: Partial<FakeOrder>): FakeOrder {
     channelId: 'ch-1',
     channel: { name: 'TikTok' },
     items: [],
-    payments: [],
     fiscalDocuments: [],
     ...overrides,
   };
@@ -244,5 +245,28 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     const revenueByPeriod = (result as { charts: { revenueByPeriod: Array<{ date: string }> } }).charts.revenueByPeriod;
 
     expect(revenueByPeriod.every((p) => /^\d{4}-W\d{2}$/.test(p.date))).toBe(true);
+  });
+
+  it('"a receber": soma o saldo em aberto dos extratos (Settlement), nunca o filtro de período do dashboard', async () => {
+    // Nenhum pedido cai dentro do período filtrado — se "a receber" dependesse de `orders`
+    // (como o antigo cálculo via `Payment`, nunca gravado por nenhum código), daria 0. Vindo de
+    // `Settlement` (saldo de conta corrente, não métrica de período), o valor aparece de qualquer forma.
+    const orders = [order({ id: 'o1', orderDate: new Date('2020-01-01T00:00:00Z') })];
+    const prisma = makeFakePrisma({
+      orders,
+      returnsAmount: 0,
+      inventories: [],
+      integrations: [],
+      unmappedOrdersCount: 0,
+      syncJobFailedCount: 0,
+      openSettlementsTotal: 1234.56,
+    });
+    const fiscal = makeFakeFiscalService({ salesWithoutInvoice: [], returnsWithoutDocument: [] });
+    const service = new ReportsService(prisma, fiscal);
+
+    const result = await service.getDashboard('company-1', { dateFrom: '2026-08-01', dateTo: '2026-08-31' });
+    const cards = (result as { cards: Record<string, number> }).cards;
+
+    expect(cards.receivable).toBe(1234.56);
   });
 });

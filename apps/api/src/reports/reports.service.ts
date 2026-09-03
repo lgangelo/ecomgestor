@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@ecommerce-manager/database';
+import { OrderStatus, Prisma, SettlementStatus } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { csvEscape } from '../common/csv.util';
 import { endOfDayExclusive } from '../common/date/day-range.util';
@@ -23,7 +23,6 @@ interface PeriodOrder {
     unitCost: Prisma.Decimal;
     productNameAtSale: string;
   }>;
-  payments: Array<{ amount: Prisma.Decimal; status: string }>;
   fiscalDocuments: Array<{ id: string }>;
 }
 
@@ -44,13 +43,14 @@ export class ReportsService {
 
   async getDashboard(companyId: string, query: DashboardQueryDto) {
     const { start, end } = this.resolvePeriod(query.dateFrom, query.dateTo);
-    const [orders, returnsAmount, attention] = await Promise.all([
+    const [orders, returnsAmount, attention, receivable] = await Promise.all([
       this.fetchOrders(companyId, start, end, query.channelId),
       this.fetchReturnsAmount(companyId, start, end, query.channelId),
       this.computeAttention(companyId),
+      this.fetchReceivable(companyId),
     ]);
     const feesByOrderId = await this.fetchFeesByOrderId(orders);
-    const current = this.computeCards(orders, returnsAmount, feesByOrderId);
+    const current = { ...this.computeCards(orders, returnsAmount, feesByOrderId), receivable: round2(receivable) };
     const charts = this.computeCharts(orders, start, end, feesByOrderId);
     const alerts = await this.computeAlerts(companyId, orders, start, end);
 
@@ -122,6 +122,20 @@ export class ReportsService {
     return Number(agg._sum.amount ?? 0);
   }
 
+  /** "A receber" (seção 63) — saldo em aberto de verdade que a plataforma ainda deve repassar,
+   * direto dos extratos (`Settlement`) que a própria TikTok reporta. É um saldo de conta
+   * corrente (só muda quando o dinheiro efetivamente cai, status PAID), não uma métrica de
+   * período — por isso nunca filtrado pela janela de data do dashboard, ao contrário dos
+   * outros cards. (O modelo `Payment` usado aqui antes nunca era gravado por nenhum código do
+   * sistema — o card sempre mostrava zero.) */
+  private async fetchReceivable(companyId: string): Promise<number> {
+    const agg = await this.prisma.client.settlement.aggregate({
+      where: { companyId, status: { not: SettlementStatus.PAID } },
+      _sum: { totalAmount: true },
+    });
+    return Number(agg._sum.totalAmount ?? 0);
+  }
+
   private resolvePeriod(dateFrom?: string, dateTo?: string): { start: Date; end: Date } {
     // `end` já é o limite EXCLUSIVO (início do dia seguinte) — todo uso deve ser `lt`, nunca
     // `lte` com a data crua (excluiria tudo criado depois da meia-noite do próprio dia "Até").
@@ -160,7 +174,6 @@ export class ReportsService {
         // Nome do produto vem do snapshot da venda (productNameAtSale) — nunca do cadastro
         // atual, que pode ter mudado ou (para itens importados sem vínculo) nem existir.
         items: true,
-        payments: { select: { amount: true, status: true } },
         fiscalDocuments: { select: { id: true } },
       },
     });
@@ -192,11 +205,6 @@ export class ReportsService {
     // Taxa da plataforma (comissão TikTok) — sem isto, o lucro/margem aqui não batiam com o
     // "Lucro estimado" do detalhe do pedido, que sempre descontou a taxa (order.marketplaceFeesTotal).
     const fees = active.reduce((sum, o) => sum + (feesByOrderId.get(o.id) ?? 0), 0);
-    const receivable = orders.reduce(
-      (sum, o) =>
-        sum + o.payments.filter((p) => p.status === 'PENDING').reduce((s, p) => s + Number(p.amount), 0),
-      0,
-    );
     const estimatedProfit = netRevenue - cmv - fees;
     // Margem = lucro sobre a venda (padrão contábil). Markup = lucro sobre o custo — sempre um
     // número maior que a margem para o mesmo lucro; nulo quando não há CMV no período (divisão
@@ -212,7 +220,6 @@ export class ReportsService {
       estimatedProfit: round2(estimatedProfit),
       margin: round2(margin),
       markup: markup === null ? null : round2(markup),
-      receivable: round2(receivable),
     };
   }
 
