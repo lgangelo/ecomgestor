@@ -33,7 +33,8 @@
     "manually-link-order-item": "npm run manually-link-order-item --workspace=@ecommerce-manager/api",
     "check-job-schedulers": "npm run check-job-schedulers --workspace=@ecommerce-manager/api",
     "sync-order-finance": "npm run sync-order-finance --workspace=@ecommerce-manager/api",
-    "backfill-manual-channels": "npm run backfill-manual-channels --workspace=@ecommerce-manager/api"
+    "backfill-manual-channels": "npm run backfill-manual-channels --workspace=@ecommerce-manager/api",
+    "check-settlements": "npm run check-settlements --workspace=@ecommerce-manager/api"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",
