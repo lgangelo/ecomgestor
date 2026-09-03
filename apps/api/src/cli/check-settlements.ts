@@ -60,6 +60,18 @@ async function main() {
     console.log('----------------------------------------------------');
     console.log('Payload bruto COMPLETO do extrato mais recente (pra achar o nome real do campo de status):');
     console.log(JSON.stringify((page.items[0] as unknown as { raw?: unknown })?.raw ?? null, null, 2));
+
+    console.log('----------------------------------------------------');
+    console.log(
+      'Buscando "Get Unsettled Transactions" (dinheiro já ganho, ainda dentro da janela de conclusão, ' +
+        'que não juntou em nenhum extrato ainda — provável fonte real do saldo "a receber" de curto prazo):',
+    );
+    try {
+      const unsettled = await connector.getUnsettledTransactionsRaw(companyId);
+      console.log(JSON.stringify(unsettled, null, 2));
+    } catch (err) {
+      console.log(`Falhou (path/parâmetro ainda não confirmado): ${(err as Error).message}`);
+    }
   } finally {
     await app.close();
   }

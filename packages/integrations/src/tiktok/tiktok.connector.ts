@@ -269,6 +269,20 @@ export class TikTokConnector implements MarketplaceConnector {
       nextPageToken: raw.next_page_token,
     };
   }
+
+  /**
+   * Diagnóstico "Get Unsettled Transactions" — devolve o payload bruto sem nenhuma normalização,
+   * de propósito: nem os nomes de campo nem a exigência de `sort_field` (como em `getStatements`)
+   * foram confirmados ainda contra produção. Usado só pelo `check-settlements` CLI até um payload
+   * real justificar escrever um `normalizeUnsettledTransaction` de verdade — nunca chamado pelo
+   * fluxo de sincronização normal.
+   */
+  async getUnsettledTransactionsRaw(companyId: string): Promise<unknown> {
+    void companyId;
+    return this.client.request('GET', TIKTOK_PATHS.financeUnsettledTransactions, {
+      query: { page_size: '20' },
+    });
+  }
 }
 
 function buildPageQuery(params: PageParams): Record<string, string> {
