@@ -531,10 +531,20 @@ export class TikTokProductsSyncService {
         // número mais baixo — o ajuste tentava derrubar o físico abaixo do que já estava
         // reservado. Ajustar contra `available` mantém `reserved` intocado e corrige `onHand`
         // só o suficiente pra bater com o disponível reportado pela TikTok.
+        //
+        // CONFIRMADO em produção: o "disponível" que a TikTok reporta aqui já reflete pedidos
+        // recém-enviados como VENDIDOS (ela baixa do lado dela assim que o pedido sai) — antes
+        // do nosso lado ter tido a chance de aplicar essa MESMA baixa (`stockAppliedStatus`
+        // atrasado em relação a `status`, ver `OrdersService.applyStockEffectsForTransition`).
+        // Sem somar de volta essa quantidade ainda pendente, esta sincronização periódica
+        // travava esse pedido pra sempre: zera o onHand pra bater com a TikTok, o catch-up
+        // tenta baixar de novo (a MESMA unidade, contada duas vezes) e falha por saldo
+        // insuficiente — na próxima sincronização de produtos, zera de novo, num ciclo infinito.
         const currentOnHand = variant.inventory?.onHand ?? 0;
         const currentReserved = variant.inventory?.reserved ?? 0;
         const currentAvailable = currentOnHand - currentReserved;
-        const delta = externalProduct.stock - currentAvailable;
+        const pendingCatchUpQty = await this.pendingStockCatchUpQty(variant.id);
+        const delta = externalProduct.stock + pendingCatchUpQty - currentAvailable;
         if (delta !== 0) {
           await this.prisma.client.$transaction((tx) =>
             this.ledger.adjust(
@@ -569,5 +579,20 @@ export class TikTokProductsSyncService {
     });
 
     return { updated, unchanged, notFoundOnTikTok, failed };
+  }
+
+  /** Soma a quantidade de pedidos com baixa de estoque ainda pendente (`status` avançou mas
+   * `stockAppliedStatus` ficou pra trás — ver `OrdersService.applyStockEffectsForTransition`)
+   * para uma variação. Usado para nunca deixar a sincronização de estoque com a TikTok "roubar"
+   * de volta uma unidade que um pedido local ainda precisa debitar. */
+  private async pendingStockCatchUpQty(variantId: string): Promise<number> {
+    // Comparar duas colunas da MESMA linha (`status` vs `stockAppliedStatus`) não dá pra
+    // filtrar direto no Prisma — mesmo critério já usado em `computeAttention` (reports.service.ts)
+    // para `onHand - reserved`: busca os candidatos e compara em memória.
+    const items = await this.prisma.client.orderItem.findMany({
+      where: { variantId },
+      select: { quantity: true, order: { select: { status: true, stockAppliedStatus: true } } },
+    });
+    return items.filter((i) => i.order.status !== i.order.stockAppliedStatus).reduce((sum, i) => sum + i.quantity, 0);
   }
 }
