@@ -60,7 +60,16 @@ export class InventoryLedgerService {
     return this.applyDelta(tx, ctx, InventoryMovementType.RELEASE, quantity, 0, -quantity);
   }
 
-  /** Baixa efetiva na venda. `fromReservation` também libera a reserva equivalente no mesmo movimento. */
+  /**
+   * Baixa efetiva na venda. `fromReservation` também libera a reserva equivalente no mesmo
+   * movimento — mas nunca mais do que a variação REALMENTE tem reservado agora. Um pedido
+   * importado historicamente com `skipStockMovement` (seção 18) nunca passou pela etapa de
+   * reserva de propósito; quando ele progride depois para um status pós-envio via sincronização
+   * normal, esta baixa continua chamada com `fromReservation: true` (não há como o chamador
+   * saber, ali, que a reserva nunca existiu) — sem o `Math.min`, isso derrubava `reserved` abaixo
+   * de zero e travava a baixa física pra sempre com "Quantidade reservada insuficiente", mesmo o
+   * pedido tendo saído de verdade (confirmado em produção).
+   */
   async commitSale(
     tx: Prisma.TransactionClient,
     ctx: MovementContext,
@@ -74,7 +83,7 @@ export class InventoryLedgerService {
       InventoryMovementType.SALE,
       -quantity,
       -quantity,
-      fromReservation ? -quantity : 0,
+      fromReservation ? (currentReserved: number) => -Math.min(quantity, currentReserved) : 0,
     );
   }
 
@@ -113,13 +122,14 @@ export class InventoryLedgerService {
     type: InventoryMovementType,
     quantity: number,
     onHandDelta: number,
-    reservedDelta: number,
+    reservedDelta: number | ((currentReserved: number) => number),
   ): Promise<LedgerResult> {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       const current = await this.getOrCreateInventory(tx, ctx.companyId, ctx.variantId);
 
+      const resolvedReservedDelta = typeof reservedDelta === 'function' ? reservedDelta(current.reserved) : reservedDelta;
       const newOnHand = current.onHand + onHandDelta;
-      const newReserved = current.reserved + reservedDelta;
+      const newReserved = current.reserved + resolvedReservedDelta;
       const newAvailable = newOnHand - newReserved;
 
       if (newOnHand < 0) {

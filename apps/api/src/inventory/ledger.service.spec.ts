@@ -109,3 +109,37 @@ describe('InventoryLedgerService — concorrência (seção 56)', () => {
     expect(db.onHand).toBe(1);
   });
 });
+
+describe('InventoryLedgerService.commitSale — fromReservation nunca derruba reserved abaixo de zero', () => {
+  it('baixa o físico normalmente quando fromReservation=true mas a variação nunca teve reserva de verdade (pedido histórico com skipStockMovement)', async () => {
+    const ledger = new InventoryLedgerService();
+    const { tx, db } = createFakeTransaction({ onHand: 1, reserved: 0 });
+
+    const result = await ledger.commitSale(
+      tx,
+      { companyId: 'company-1', variantId: 'variant-1', referenceType: 'order', referenceId: 'order-a', reason: 'baixa no envio' },
+      1,
+      true,
+    );
+
+    expect(result.onHand).toBe(0);
+    expect(result.reserved).toBe(0);
+    expect(db.onHand).toBe(0);
+    expect(db.reserved).toBe(0);
+  });
+
+  it('continua liberando a reserva normalmente quando ela existe de verdade', async () => {
+    const ledger = new InventoryLedgerService();
+    const { tx, db } = createFakeTransaction({ onHand: 3, reserved: 1 });
+
+    await ledger.commitSale(
+      tx,
+      { companyId: 'company-1', variantId: 'variant-1', referenceType: 'order', referenceId: 'order-a', reason: 'baixa no envio' },
+      1,
+      true,
+    );
+
+    expect(db.onHand).toBe(2);
+    expect(db.reserved).toBe(0);
+  });
+});
