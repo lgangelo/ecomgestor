@@ -403,7 +403,13 @@ export class OrdersService {
     userId: string | null,
     normalized: ExternalOrder,
     options?: { skipStockMovement?: boolean },
-  ): Promise<{ orderId: string; created: boolean }> {
+  ): Promise<{
+    orderId: string;
+    created: boolean;
+    fromStatus?: OrderStatus;
+    toStatus?: OrderStatus;
+    statusChanged?: boolean;
+  }> {
     const existing = await this.prisma.client.order.findUnique({
       where: {
         companyId_channelId_externalOrderId: {
@@ -416,8 +422,14 @@ export class OrdersService {
     });
 
     if (existing) {
-      await this.applyExternalStatusUpdate(companyId, existing.id, userId, normalized);
-      return { orderId: existing.id, created: false };
+      const result = await this.applyExternalStatusUpdate(companyId, existing.id, userId, normalized);
+      return {
+        orderId: existing.id,
+        created: false,
+        fromStatus: result.fromStatus,
+        toStatus: result.toStatus,
+        statusChanged: result.statusChanged,
+      };
     }
 
     const statusKnown = KNOWN_ORDER_STATUSES.has(normalized.internalStatus);
@@ -519,7 +531,7 @@ export class OrdersService {
       return order.id;
     });
 
-    return { orderId, created: true };
+    return { orderId, created: true, toStatus: initialStatus };
   }
 
   /**
@@ -535,7 +547,14 @@ export class OrdersService {
     orderId: string,
     userId: string | null,
     normalized: ExternalOrder,
-  ): Promise<{ applied: boolean; reason?: string; stockEffectError?: string }> {
+  ): Promise<{
+    applied: boolean;
+    reason?: string;
+    stockEffectError?: string;
+    fromStatus?: OrderStatus;
+    toStatus?: OrderStatus;
+    statusChanged?: boolean;
+  }> {
     const existing = await this.prisma.client.order.findFirst({
       where: { id: orderId, companyId },
       include: { items: true },
@@ -656,7 +675,13 @@ export class OrdersService {
       }
     });
 
-    return { applied: true, stockEffectError };
+    return {
+      applied: true,
+      stockEffectError,
+      fromStatus: existing.status,
+      toStatus: targetStatus,
+      statusChanged: statusKnown && targetStatus !== existing.status,
+    };
   }
 
   /**

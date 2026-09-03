@@ -10,6 +10,9 @@ const MAX_PAGES = 20;
 /** Janela de sobreposição (seção 13 da Fase 3) — protege contra pedidos atualizados por um
  * instante entre a última sincronização e agora que poderiam ser perdidos numa busca exata. */
 const OVERLAP_MS = 10 * 60 * 1000;
+/** Teto de linhas de "o que mudou" guardadas por execução (tela de Jobs) — uma sincronização em
+ * lote grande não deveria inflar o JSON do resultado sem limite. */
+const MAX_CHANGES_RECORDED = 30;
 
 interface SyncCheckpoints {
   ordersSyncAt?: string;
@@ -41,7 +44,7 @@ export class TikTokOrdersSyncService {
     companyId: string,
     userId: string | null,
     explicitSince?: Date,
-  ): Promise<{ imported: number; updated: number; skipped: number; failed: number }> {
+  ): Promise<{ imported: number; updated: number; skipped: number; failed: number; changes: string[] }> {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) {
       throw new BadRequestException('Canal TikTok Shop ainda não conectado.');
@@ -89,6 +92,16 @@ export class TikTokOrdersSyncService {
     // `update_time` de novo se algo mudar do lado dela, e nada muda num pedido já entregue há
     // tempos parado na fila). Detectado explicitamente abaixo, nunca inferido do `break`.
     let truncatedByPageLimit = false;
+    // Descrição legível do que de fato mudou nesta execução (seção "log de alteração" da tela de
+    // Jobs) — os contadores (imported/updated/skipped/failed) já existiam, mas não diziam QUAL
+    // pedido mudou pra qual status, só quantos. Limitado pra nunca deixar o resultado do job
+    // gigante numa sincronização em lote grande.
+    const changes: string[] = [];
+    let changesOmitted = 0;
+    function recordChange(line: string) {
+      if (changes.length < MAX_CHANGES_RECORDED) changes.push(line);
+      else changesOmitted++;
+    }
 
     for (let page = 0; page < MAX_PAGES; page++) {
       const result = await connector.getOrders(companyId, { pageSize: 50, pageToken, updatedAfter, createdAfter });
@@ -111,15 +124,22 @@ export class TikTokOrdersSyncService {
             }
           }
 
-          const { created } = await this.ordersService.importExternalOrder(
+          const result = await this.ordersService.importExternalOrder(
             companyId,
             integration.channelId,
             userId,
             order,
             { skipStockMovement },
           );
-          if (created) imported++;
-          else updated++;
+          if (result.created) {
+            imported++;
+            recordChange(`Pedido ${order.externalOrderId}: importado (${result.toStatus ?? '?'})`);
+          } else {
+            updated++;
+            if (result.statusChanged) {
+              recordChange(`Pedido ${order.externalOrderId}: ${result.fromStatus} → ${result.toStatus}`);
+            }
+          }
         } catch (error) {
           failed++;
           if (order.externalUpdatedAt && (!minFailedUpdateTime || order.externalUpdatedAt < minFailedUpdateTime)) {
@@ -166,8 +186,12 @@ export class TikTokOrdersSyncService {
       },
     });
 
+    if (changesOmitted > 0) {
+      changes.push(`... e mais ${changesOmitted} mudança(s) não listada(s).`);
+    }
+
     this.logger.log('tiktok_orders_synced', { operation: 'sync_orders', imported, updated, skipped, failed });
-    return { imported, updated, skipped, failed };
+    return { imported, updated, skipped, failed, changes };
   }
 
   /**

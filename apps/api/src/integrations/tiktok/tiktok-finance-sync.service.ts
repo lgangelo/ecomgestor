@@ -12,6 +12,9 @@ const MAX_PAGES = 10;
  * entrega (PENDING -> SETTLED), então reprocessar a última semana de novo a cada execução é
  * barato e seguro (upsert), diferente de nunca mais tocar num extrato que ainda pode mudar. */
 const FINANCE_RESCAN_OVERLAP_MS = 7 * 24 * 60 * 60 * 1000;
+/** Teto de linhas de "o que mudou" guardadas por execução (tela de Jobs) — ver mesma constante
+ * em `tiktok-orders-sync.service.ts`. */
+const MAX_CHANGES_RECORDED = 30;
 
 interface SyncCheckpoints {
   ordersSyncAt?: string;
@@ -50,7 +53,9 @@ export class TikTokFinanceSyncService {
     this.logger.setContext('TikTokFinanceSync');
   }
 
-  async syncStatements(companyId: string): Promise<{ statementsSynced: number; transactionsSynced: number }> {
+  async syncStatements(
+    companyId: string,
+  ): Promise<{ statementsSynced: number; transactionsSynced: number; changes: string[] }> {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) throw new BadRequestException('Canal TikTok Shop ainda não conectado.');
 
@@ -71,6 +76,12 @@ export class TikTokFinanceSyncService {
     let statementsSynced = 0;
     let transactionsSynced = 0;
     let pageToken: string | undefined;
+    const changes: string[] = [];
+    let changesOmitted = 0;
+    function recordChange(line: string) {
+      if (changes.length < MAX_CHANGES_RECORDED) changes.push(line);
+      else changesOmitted++;
+    }
 
     outer: for (let page = 0; page < MAX_PAGES; page++) {
       const statementPage = await connector.getStatements(companyId, { pageSize: 50, pageToken });
@@ -110,6 +121,7 @@ export class TikTokFinanceSyncService {
           settlement.id,
           settlement.periodEnd,
           stmt.externalStatementId,
+          recordChange,
         );
       }
 
@@ -122,8 +134,12 @@ export class TikTokFinanceSyncService {
       data: { syncCheckpoints: { ...checkpoints, financeSyncAt: new Date().toISOString() } },
     });
 
+    if (changesOmitted > 0) {
+      changes.push(`... e mais ${changesOmitted} mudança(s) não listada(s).`);
+    }
+
     this.logger.log('tiktok_finance_synced', { operation: 'sync_finance', statementsSynced, transactionsSynced });
-    return { statementsSynced, transactionsSynced };
+    return { statementsSynced, transactionsSynced, changes };
   }
 
   /**
@@ -191,6 +207,7 @@ export class TikTokFinanceSyncService {
     settlementId: string,
     settlementPeriodEnd: Date,
     externalStatementId: string,
+    recordChange: (line: string) => void,
   ): Promise<number> {
     const { connector } = await this.connectorFactory.forCompany(companyId);
     let synced = 0;
@@ -239,19 +256,32 @@ export class TikTokFinanceSyncService {
         // pedido mostraria "aguardando liquidação" pra sempre mesmo depois de já ter a resposta
         // real da TikTok.
         if (order && tx.externalTransactionId) {
+          const existingFee = await this.prisma.client.marketplaceFee.findUnique({
+            where: { externalTransactionId: tx.externalTransactionId },
+            select: { amount: true },
+          });
+          const newAmount = Math.abs(Number(tx.amount));
           await this.prisma.client.marketplaceFee.upsert({
             where: { externalTransactionId: tx.externalTransactionId },
             create: {
               channelId,
               orderId: order.id,
               feeType: 'PLATFORM_FEE',
-              amount: Math.abs(Number(tx.amount)),
+              amount: newAmount,
               externalTransactionId: tx.externalTransactionId,
               settlementId,
               feeDate: settlementPeriodEnd,
             },
-            update: { amount: Math.abs(Number(tx.amount)), settlementId, feeDate: settlementPeriodEnd },
+            update: { amount: newAmount, settlementId, feeDate: settlementPeriodEnd },
           });
+          // Só registra no log de mudanças quando o valor é NOVO ou mudou de verdade — nunca
+          // pra um upsert que só reconfirmou o mesmo valor já conhecido (rescan da margem de
+          // segurança de 7 dias reprocessa extrato recente sempre, mesmo sem nada ter mudado).
+          if (!existingFee || Number(existingFee.amount) !== newAmount) {
+            recordChange(
+              `Pedido ${order.externalOrderId ?? order.id}: taxa da plataforma ${existingFee ? 'atualizada' : 'gravada'} (R$ ${newAmount.toFixed(2)})`,
+            );
+          }
         }
         synced++;
       }
