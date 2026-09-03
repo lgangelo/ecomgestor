@@ -7,8 +7,15 @@
  * "SETTLED" pra TikTok já significa "dinheiro caiu na conta" (e deveria contar como PAID) ou é só
  * uma etapa intermediária antes do repasse de fato.
  *
+ * Aceita opcionalmente um externalOrderId — nesse caso, em vez do diagnóstico geral, busca
+ * "Get Transactions by Order" (mesma API financeira, mas por pedido) para ESSE pedido específico
+ * e devolve o payload bruto sem nenhuma normalização — útil pra ver se um pedido ainda em
+ * trânsito (não pago pela TikTok ainda) já tem algum campo de valor reservado/pendente
+ * preenchido, em vez de simplesmente não aparecer em lugar nenhum.
+ *
  * Uso:
  *   npm run check-settlements
+ *   npm run check-settlements -- 585823673078613191
  */
 import { NestFactory } from '@nestjs/core';
 import { OrderStatus, PrismaClient } from '@ecommerce-manager/database';
@@ -17,6 +24,12 @@ import { TikTokConnectorFactory } from '../integrations/tiktok/tiktok-connector.
 import { TikTokCredentialsService } from '../integrations/tiktok/tiktok-credentials.service';
 
 async function main() {
+  const externalOrderId = process.argv[2];
+  if (externalOrderId) {
+    await checkOrderTransactions(externalOrderId);
+    return;
+  }
+
   const prisma = new PrismaClient();
 
   // Hipótese a testar: Statements/Payments só cobrem extratos JÁ FECHADOS (e, na prática, quase
@@ -101,6 +114,36 @@ async function main() {
       console.log(JSON.stringify(payments, null, 2));
     } catch (err) {
       console.log(`Falhou (path/parâmetro ainda não confirmado): ${(err as Error).message}`);
+    }
+  } finally {
+    await app.close();
+  }
+}
+
+async function checkOrderTransactions(externalOrderId: string) {
+  const prisma = new PrismaClient();
+  const integration = await prisma.integration.findFirst({ where: { provider: 'TIKTOK_SHOP' } });
+  if (!integration) {
+    console.log('Nenhuma integração TikTok encontrada.');
+    await prisma.$disconnect();
+    return;
+  }
+  const companyId = integration.companyId;
+  await prisma.$disconnect();
+
+  console.log(`Buscando "Get Transactions by Order" direto na TikTok para o pedido ${externalOrderId}...`);
+  const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
+  try {
+    const connectorFactory = app.get(TikTokConnectorFactory);
+    const { connector } = await connectorFactory.forCompany(companyId);
+    const page = await connector.getTransactions(companyId, { orderId: externalOrderId, pageSize: 20 });
+    console.log(`Recebida(s) ${page.items.length} transação(ões) para este pedido:`);
+    for (const tx of page.items) {
+      console.log('----------------------------------------------------');
+      console.log(JSON.stringify((tx as unknown as { raw?: unknown }).raw ?? tx, null, 2));
+    }
+    if (page.items.length === 0) {
+      console.log('Nenhuma transação — a TikTok ainda não tem NENHUM registro financeiro para este pedido.');
     }
   } finally {
     await app.close();
