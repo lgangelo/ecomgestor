@@ -2,6 +2,7 @@ import {
   mapOrderStatus,
   normalizeOrder,
   normalizeProductSkus,
+  normalizeStatement,
   normalizeTransactionType,
   extractSellerSku,
 } from '@ecommerce-manager/integrations';
@@ -88,5 +89,23 @@ describe('TikTok Shop — mapper (seção 16/29, docs/integrations/tiktok-data-m
     expect(normalizeTransactionType('order_amount')).toBe('GROSS_SALE');
     expect(normalizeTransactionType('commission_fee')).toBe('PLATFORM_FEE');
     expect(normalizeTransactionType('algo_nunca_visto')).toBe('OTHER');
+  });
+
+  it('normaliza um extrato lendo o status de payment_status (payload real não tem campo "status")', () => {
+    // Payload real confirmado via `check-settlements` CLI em produção — sem isto, `status` sempre
+    // vinha vazio e todo extrato caía no fallback PENDING de `mapSettlementStatus`, inflando o
+    // card "A receber" do dashboard com extratos que já tinham sido pagos de verdade.
+    const raw = {
+      id: '7679917821555394311',
+      statement_time: 1788134400,
+      settlement_amount: '151.52',
+      payment_status: 'PAID',
+      payment_id: '3691886739683378500',
+      payment_time: 1788151301,
+    };
+    const statement = normalizeStatement(raw);
+    expect(statement.externalStatementId).toBe('7679917821555394311');
+    expect(statement.totalAmount).toBe('151.52');
+    expect(statement.status).toBe('PAID');
   });
 });

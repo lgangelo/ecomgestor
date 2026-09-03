@@ -259,27 +259,24 @@ export function normalizeReturn(raw: unknown): ExternalReturn {
 }
 
 /**
- * Confirmado em produção (sintoma, não payload direto ainda): `externalStatementId` saía vazio
- * — a busca de transações por statement então caía no path errado (`/finance/.../statements` em
- * vez de `.../statements/{id}/statement_transactions`, confirmado via log), e 87 statements
- * "sincronizados" na real colidiam num único registro (mesmo `channelId` + `externalStatementId`
- * vazio no upsert). Segue o mesmo padrão já confirmado em produto e pedido: o campo é `id` no
- * nível do recurso, não `<recurso>_id` — `statement_id` (chute anterior) provavelmente nunca
- * existiu. Debug temporário até confirmar contra o payload real.
+ * CONFIRMADO em produção (payload real, via `check-settlements` CLI): o campo é `id` no nível do
+ * recurso (nunca `statement_id`, que provavelmente nunca existiu) — resolve o sintoma antigo de
+ * `externalStatementId` vazio (87 statements colidindo num único registro no upsert).
+ *
+ * Também CONFIRMADO: não existe campo `status` no payload — o card "A receber" do dashboard
+ * (soma de extratos ainda não repassados) ficava sempre contando um valor inflado porque todo
+ * extrato caía no fallback PENDING. O campo real de liquidação é `payment_status` (visto com
+ * valor `"PAID"` no payload real), companheiro de `payment_id`/`payment_time`.
  */
 export function normalizeStatement(raw: unknown): ExternalStatement {
   const statement = asRecord(raw);
   const externalStatementId = requiredStr(statement, 'id') || requiredStr(statement, 'statement_id');
-  if (!externalStatementId) {
-    // eslint-disable-next-line no-console -- debug temporário, remover após confirmar o campo real de id do statement em produção
-    console.log('[tiktok-statement-id-debug]', JSON.stringify(statement));
-  }
   return {
     externalStatementId,
     periodStart: unixDate(statement, 'statement_time') ?? new Date(0),
     periodEnd: unixDate(statement, 'statement_time') ?? new Date(0),
     totalAmount: numericStr(statement, 'settlement_amount') ?? '0',
-    status: requiredStr(statement, 'status'),
+    status: requiredStr(statement, 'payment_status'),
     raw,
   };
 }
