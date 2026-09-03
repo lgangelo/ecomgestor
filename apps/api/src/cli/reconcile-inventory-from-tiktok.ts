@@ -6,6 +6,14 @@
  * sempre, sem nenhuma movimentação), travando a baixa automática no envio de pedidos já
  * despachados de verdade ("Saldo insuficiente: estoque físico negativo").
  *
+ * IMPORTANTE: o "disponível" que a TikTok reporta AGORA já reflete os pedidos passados como
+ * argumento como VENDIDOS (o estoque dela já foi baixado quando o pedido saiu de verdade) — só
+ * o nosso lado é que ainda não aplicou essa baixa (por isso o pedido está travado). Usar o
+ * disponível da TikTok direto como alvo local ficaria sistematicamente baixo demais: o alvo
+ * correto é o disponível da TikTok MAIS a quantidade desses pedidos ainda pendente de baixa
+ * local — assim, quando a baixa pendente for aplicada em seguida (reconciliação/retry), o saldo
+ * local cai para o MESMO número que a TikTok já mostra agora, não para menos.
+ *
  * Recebe o número do pedido (não o SKU/variantId) pelo mesmo motivo do `check-sku-stock-history`:
  * `skuAtSale` é uma FOTO do momento da venda, então buscar direto pelo pedido sempre acha a
  * variação certa, mesmo que o SKU tenha sido renomeado depois.
@@ -44,23 +52,31 @@ async function main() {
   const companyId = integration.companyId;
   const channelId = integration.channelId;
 
-  // Resolve pedido -> variantId (a mesma variação pode aparecer em mais de um pedido informado).
-  const variantIds = new Set<string>();
+  // Resolve pedido -> variantId (a mesma variação pode aparecer em mais de um pedido informado)
+  // e soma, por variação, a quantidade ainda pendente de baixa local (só pedidos onde o status
+  // já avançou mas `stockAppliedStatus` ficou pra trás — exatamente o sintoma travado).
+  const pendingByVariant = new Map<string, number>();
   for (const externalOrderId of externalOrderIds) {
     const order = await prisma.order.findFirst({
       where: { externalOrderId },
-      include: { items: { select: { variantId: true, productNameAtSale: true } } },
+      include: { items: { select: { variantId: true, quantity: true, productNameAtSale: true } } },
     });
     if (!order) {
       console.log(`Pedido ${externalOrderId}: não encontrado — ignorado.`);
       continue;
     }
+    if (order.status === order.stockAppliedStatus) {
+      console.log(`Pedido ${externalOrderId}: estoque já aplicado (stockAppliedStatus == status) — nada pendente para ele.`);
+      continue;
+    }
     for (const item of order.items) {
-      if (item.variantId) variantIds.add(item.variantId);
+      if (!item.variantId) continue;
+      pendingByVariant.set(item.variantId, (pendingByVariant.get(item.variantId) ?? 0) + item.quantity);
     }
   }
+  const variantIds = new Set(pendingByVariant.keys());
   if (variantIds.size === 0) {
-    console.log('Nenhuma variação vinculada encontrada nos pedidos informados.');
+    console.log('Nenhuma variação com baixa de estoque pendente encontrada nos pedidos informados.');
     await prisma.$disconnect();
     return;
   }
@@ -97,19 +113,23 @@ async function main() {
       const currentOnHand = v.inventory?.onHand ?? 0;
       const currentReserved = v.inventory?.reserved ?? 0;
 
+      const pendingQty = pendingByVariant.get(v.id) ?? 0;
+
       console.log('----------------------------------------------------');
       console.log(`Variante ${v.sku} (${v.product.name}) — externalSku=${mapping.externalSku}`);
       console.log(`  Saldo local atual: onHand=${currentOnHand} reserved=${currentReserved}`);
       console.log(`  Saldo disponível reportado pela TikTok agora: ${tiktokAvailable ?? '(SKU não retornado pela TikTok)'}`);
+      console.log(`  Quantidade pendente de baixa local (pedidos informados): ${pendingQty}`);
 
       if (tiktokAvailable === undefined) {
         console.log('  Pulado — sem dado da TikTok para comparar.');
         continue;
       }
 
-      // `available = onHand - reserved`; o alvo mantém o `reserved` atual (nenhuma reserva ativa
-      // nova sendo criada aqui) e ajusta só o `onHand` pra bater com o disponível real da TikTok.
-      const targetOnHand = tiktokAvailable + currentReserved;
+      // `available = onHand - reserved`; soma de volta a quantidade que a baixa local pendente
+      // vai consumir em seguida — sem isso, o saldo local acabaria FICANDO ABAIXO do que a
+      // TikTok já mostra (ela já descontou essa venda do lado dela; o nosso lado ainda não).
+      const targetOnHand = tiktokAvailable + currentReserved + pendingQty;
       const delta = targetOnHand - currentOnHand;
       if (delta === 0) {
         console.log('  Já está correto — nenhum ajuste necessário.');
