@@ -103,12 +103,18 @@ export class AuthController {
       domain,
       path: '/',
     });
+    // `path: '/'` (nunca `/auth`) — CONFIRMADO: um cookie restrito a `/auth` nunca é anexado
+    // pelo navegador numa navegação de página normal (`/vendas/pedidos` etc.), o que quebra
+    // silenciosamente o middleware criado exatamente para renovar a sessão nessas navegações
+    // (`request.cookies.has(REFRESH_COOKIE_NAME)` sempre dava falso). httpOnly já impede leitura
+    // via JS de qualquer página, então ampliar o path não expõe o valor a nada que não pudesse
+    // vê-lo antes.
     res.cookie(REFRESH_COOKIE_NAME, session.refreshToken, {
       httpOnly: true,
       secure,
       sameSite: 'strict',
       domain,
-      path: '/auth',
+      path: '/',
     });
     // Cookie legível por JS de propósito: usado no padrão double-submit contra CSRF.
     res.cookie(CSRF_COOKIE_NAME, session.csrfToken, {
@@ -123,6 +129,10 @@ export class AuthController {
   private clearSessionCookies(res: Response) {
     const domain = this.configService.get<string>('cookieDomain');
     res.clearCookie(AUTH_COOKIE_NAME, { path: '/', domain });
+    res.clearCookie(REFRESH_COOKIE_NAME, { path: '/', domain });
+    // Sessões abertas antes desta correção ainda têm o cookie de refresh antigo, restrito a
+    // `/auth` — limpa os dois paths pra não deixar um cookie morto (mas ainda válido no banco até
+    // expirar em 30 dias) esquecido no navegador depois do logout.
     res.clearCookie(REFRESH_COOKIE_NAME, { path: '/auth', domain });
     res.clearCookie(CSRF_COOKIE_NAME, { path: '/', domain });
   }
