@@ -1,9 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@ecommerce-manager/database';
+import { ChannelType, Prisma } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { QueryCategoryDto } from './dto/query-category.dto';
+import { UpsertCategoryFiscalProfileDto } from './dto/upsert-category-fiscal-profile.dto';
 
 @Injectable()
 export class CategoriesService {
@@ -121,5 +122,34 @@ export class CategoriesService {
 
     await this.prisma.client.category.delete({ where: { id } });
     return category;
+  }
+
+  async findFiscalProfiles(categoryId: string, companyId: string) {
+    await this.findByIdOrThrow(categoryId, companyId);
+    return this.prisma.client.categoryFiscalProfile.findMany({
+      where: { categoryId },
+      orderBy: { channelType: 'asc' },
+    });
+  }
+
+  async upsertFiscalProfile(categoryId: string, companyId: string, dto: UpsertCategoryFiscalProfileDto) {
+    await this.findByIdOrThrow(categoryId, companyId);
+
+    const { channelType, ...data } = dto;
+    return this.prisma.client.categoryFiscalProfile.upsert({
+      where: { categoryId_channelType: { categoryId, channelType } },
+      create: { companyId, categoryId, channelType, ...data },
+      update: data,
+    });
+  }
+
+  async removeFiscalProfile(categoryId: string, companyId: string, channelType: ChannelType) {
+    await this.findByIdOrThrow(categoryId, companyId);
+    const existing = await this.prisma.client.categoryFiscalProfile.findUnique({
+      where: { categoryId_channelType: { categoryId, channelType } },
+    });
+    if (!existing) throw new NotFoundException('Dados fiscais não encontrados para esta categoria/plataforma');
+    await this.prisma.client.categoryFiscalProfile.delete({ where: { id: existing.id } });
+    return existing;
   }
 }

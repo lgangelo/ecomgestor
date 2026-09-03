@@ -1,6 +1,6 @@
 'use client';
 
-import { FolderTree, Pencil, Plus, Trash2 } from 'lucide-react';
+import { FileText, FolderTree, Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TableSkeleton } from '@/components/shared/table-skeleton';
@@ -10,6 +10,7 @@ import { useCategories } from '@/hooks/use-categories';
 import { CategoryFormDialog } from './category-form-dialog';
 import { CategoryEditDialog } from './category-edit-dialog';
 import { CategoryDeleteDialog } from './category-delete-dialog';
+import { CategoryFiscalProfileDialog } from './category-fiscal-profile-dialog';
 
 export function CategoriesView() {
   const { data, isLoading } = useCategories();
@@ -55,6 +56,16 @@ export function CategoriesView() {
                 <TableCell>{category.productCount}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
+                    <CategoryFiscalProfileDialog
+                      categoryId={category.id}
+                      categoryName={category.name}
+                      trigger={
+                        <Button variant="ghost" size="sm">
+                          <FileText className="h-4 w-4" />
+                          Dados fiscais
+                        </Button>
+                      }
+                    />
                     <CategoryEditDialog
                       category={category}
                       trigger={

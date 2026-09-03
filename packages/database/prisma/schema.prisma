@@ -51,6 +51,7 @@ model Company {
   integrations       Integration[]
   products           Product[]
   categories         Category[]
+  categoryFiscalProfiles CategoryFiscalProfile[]
   suppliers          Supplier[]
   stockEntries       StockEntry[]
   inventories        Inventory[]
@@ -271,13 +272,52 @@ model Category {
   parentId  String?  @map("parent_id")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  company  Company    @relation(fields: [companyId], references: [id])
-  parent   Category?  @relation("CategoryToCategory", fields: [parentId], references: [id])
-  children Category[] @relation("CategoryToCategory")
-  products Product[]
+  company       Company                 @relation(fields: [companyId], references: [id])
+  parent        Category?               @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children      Category[]              @relation("CategoryToCategory")
+  products      Product[]
+  fiscalProfiles CategoryFiscalProfile[]
 
   @@unique([companyId, name])
   @@map("categories")
+}
+
+// Dados fiscais (NCM, CFOP, CSOSN...) necessários pra emitir NF-e de produtos de uma categoria
+// numa plataforma específica — cada marketplace pede um conjunto diferente de campos no
+// cadastro fiscal do produto (confirmado contra o formulário da TikTok Shop). Um por
+// (categoria, plataforma): todo produto daquela categoria usa os mesmos dados pra aquela
+// plataforma, sem precisar cadastrar item a item. Uma categoria com regra fiscal diferente de
+// suas "irmãs" (ex.: "Carteiras" tem NCM diferente de "Bolsas, mochilas e malas") deve virar sua
+// própria categoria — este modelo não tem mecanismo de exceção por produto de propósito.
+model CategoryFiscalProfile {
+  id          String      @id @default(uuid())
+  companyId   String      @map("company_id")
+  categoryId  String      @map("category_id")
+  channelType ChannelType @map("channel_type")
+
+  ncm                     String
+  cest                    String?
+  exTipi                  String?  @map("ex_tipi")
+  naturezaOperacao        String   @map("natureza_operacao")
+  cfopIntraestadual       String   @map("cfop_intraestadual")
+  cfopInterestadual       String   @map("cfop_interestadual")
+  pisCofinsCode           String   @map("pis_cofins_code")
+  origem                  String
+  csosn                   String
+  unidadeMedida           String   @map("unidade_medida")
+  recopi                  String?
+  fichaConteudoImportacao String?  @map("ficha_conteudo_importacao")
+  aliquotaAproximada      Decimal? @db.Decimal(5, 2) @map("aliquota_aproximada")
+  dadosAdicionais         String?  @map("dados_adicionais")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  company  Company  @relation(fields: [companyId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, channelType])
+  @@map("category_fiscal_profiles")
 }
 
 enum ProductStatus {
