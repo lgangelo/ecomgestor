@@ -29,11 +29,24 @@ const MANUAL_CHANNELS = [
   { value: 'OUTRO', label: 'Outro' },
 ];
 
+// Venda manual normalmente é lançada DEPOIS do fato (a venda já aconteceu de verdade) — "Entregue"
+// como padrão evita que toda venda manual nasça presa em "Criado" (aguardando pagamento), status
+// que o dashboard já exclui de propósito dos números por não ser "venda confirmada" ainda.
+const STATUS_OPTIONS = [
+  { value: 'CREATED', label: 'Aguardando pagamento' },
+  { value: 'PAID', label: 'Pago' },
+  { value: 'PROCESSING', label: 'Em processamento' },
+  { value: 'READY_TO_SHIP', label: 'Pronto para envio' },
+  { value: 'SHIPPED', label: 'Enviado' },
+  { value: 'DELIVERED', label: 'Entregue' },
+];
+
 export function ManualSaleForm() {
   const router = useRouter();
   const createManualOrder = useCreateManualOrder();
 
   const [channelType, setChannelType] = React.useState('INSTAGRAM');
+  const [status, setStatus] = React.useState('DELIVERED');
   const [customerName, setCustomerName] = React.useState('');
   const [orderDate, setOrderDate] = React.useState(toDateInputValue(new Date()));
   const [shipping, setShipping] = React.useState('0');
@@ -64,6 +77,7 @@ export function ManualSaleForm() {
     e.preventDefault();
     const order = await createManualOrder.mutateAsync({
       channelType,
+      status,
       customerName,
       orderDate,
       shipping: Number(shipping || 0),
@@ -97,6 +111,21 @@ export function ManualSaleForm() {
                   {MANUAL_CHANNELS.map((c) => (
                     <SelectItem key={c.value} value={c.value}>
                       {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
+                      {s.label}
                     </SelectItem>
                   ))}
                 </SelectContent>

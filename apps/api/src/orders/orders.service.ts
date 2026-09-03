@@ -163,32 +163,46 @@ export class OrdersService {
       total: order.total,
       paymentMethod: order.paymentMethod,
       notes: order.notes,
-      items: order.items.map((item) => ({
-        id: item.id,
-        variantId: item.variantId,
-        // Só preenchido quando o item ainda não tem vínculo (`variantId` nulo) — permite criar o
-        // produto interno manualmente a partir do próprio pedido quando o produto some do
-        // catálogo da TikTok (nunca mais aparece na aba Produtos pra "Vincular"/"Criar" de lá).
-        externalSku: item.externalSku,
-        sku: item.skuAtSale,
-        productName: item.productNameAtSale,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        sellerDiscount: item.sellerDiscount,
-        platformDiscount: item.platformDiscount,
-        shippingRevenue: item.shippingRevenue,
-        shippingCost: item.shippingCost,
-        marketplaceFee: item.marketplaceFee,
-        unitCost: item.unitCost,
-        // Preço de tabela (antes de qualquer desconto) — só para exibição, não entra em nenhum
-        // cálculo de receita/lucro (esses continuam baseados em `unitPrice`, já líquido).
-        listPrice: Number(item.unitPrice) * item.quantity + Number(item.sellerDiscount) + Number(item.platformDiscount),
-        // `unitPrice` já vem líquido dos dois descontos (confirmado contra o extrato real da
-        // TikTok) — o desconto do vendedor NÃO se subtrai de novo. O desconto que a TikTok
-        // bancou volta pro vendedor no repasse, então soma-se de volta: lineTotal =
-        // unitPrice*qty + platformDiscount (bate com a "Receita total" do extrato da TikTok).
-        lineTotal: Number(item.unitPrice) * item.quantity + Number(item.platformDiscount),
-      })),
+      items: order.items.map((item) => {
+        // `unitPrice` tem convenção OPOSTA dependendo de onde o pedido nasceu: num pedido
+        // externo (TikTok), `unitPrice` já vem LÍQUIDO dos dois descontos (confirmado contra o
+        // extrato real) — precisa somar os descontos de volta pra reconstruir o preço de tabela.
+        // Numa venda manual (`createManualSale`), `unitPrice` é o preço de tabela BRUTO digitado
+        // pelo usuário no formulário ("Preço") — o desconto ("Desconto") é subtraído dele nesse
+        // caso, nunca somado. Usar a fórmula do TikTok pra uma venda manual dobrava o desconto
+        // pro lado errado (ex.: preço digitado R$66 com desconto R$31 aparecia como "R$97" na
+        // coluna Preço, e o Valor Total mostrava R$66 em vez dos R$35 líquidos de verdade).
+        const isManualSale = !order.externalOrderId;
+        const listPrice = isManualSale
+          ? Number(item.unitPrice) * item.quantity
+          : Number(item.unitPrice) * item.quantity + Number(item.sellerDiscount) + Number(item.platformDiscount);
+        const lineTotal = isManualSale
+          ? Number(item.unitPrice) * item.quantity - Number(item.sellerDiscount) - Number(item.platformDiscount)
+          : Number(item.unitPrice) * item.quantity + Number(item.platformDiscount);
+
+        return {
+          id: item.id,
+          variantId: item.variantId,
+          // Só preenchido quando o item ainda não tem vínculo (`variantId` nulo) — permite criar
+          // o produto interno manualmente a partir do próprio pedido quando o produto some do
+          // catálogo da TikTok (nunca mais aparece na aba Produtos pra "Vincular"/"Criar" de lá).
+          externalSku: item.externalSku,
+          sku: item.skuAtSale,
+          productName: item.productNameAtSale,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          sellerDiscount: item.sellerDiscount,
+          platformDiscount: item.platformDiscount,
+          shippingRevenue: item.shippingRevenue,
+          shippingCost: item.shippingCost,
+          marketplaceFee: item.marketplaceFee,
+          unitCost: item.unitCost,
+          // Preço de tabela (antes de qualquer desconto) — só para exibição, não entra em nenhum
+          // cálculo de receita/lucro (esses continuam baseados em `order.subtotal`/`order.total`).
+          listPrice,
+          lineTotal,
+        };
+      }),
       payments: order.payments,
       statusHistory: order.statusHistory,
       fiscalDocuments: order.fiscalDocuments,
