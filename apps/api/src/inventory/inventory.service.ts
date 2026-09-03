@@ -83,7 +83,10 @@ export class InventoryService {
     let items = rows.map((row) => {
       const latestCost = row.variant.costHistory[0]?.cost ?? null;
       const available = row.onHand - row.reserved;
-      const belowMinimum = available < row.variant.minStock;
+      // <=, não < : um SKU EXATAMENTE no mínimo já é o momento de agir, não só abaixo dele —
+      // mesmo critério de `getInsights` (antes esta tela e a de insights discordavam bem na
+      // borda: um item com available === minStock aparecia como "baixo" numa tela e "ok" na outra).
+      const belowMinimum = available <= row.variant.minStock;
       return {
         variantId: row.variantId,
         sku: row.variant.sku,
@@ -127,7 +130,7 @@ export class InventoryService {
       const latestCost = row.variant.costHistory[0]?.cost;
       if (latestCost) estimatedValue += Number(latestCost) * row.onHand;
       const available = row.onHand - row.reserved;
-      if (available < row.variant.minStock) belowMinimumCount += 1;
+      if (available <= row.variant.minStock) belowMinimumCount += 1;
     }
 
     return {

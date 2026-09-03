@@ -83,6 +83,12 @@ export class TikTokOrdersSyncService {
     // falhas e usá-lo como novo checkpoint garante que a próxima sincronização tente de novo.
     let minFailedUpdateTime: Date | undefined;
     let pageToken: string | undefined;
+    // Se o laço parar por ter atingido MAX_PAGES (não por acabar as páginas de verdade), ainda
+    // existe backlog não buscado além da página 20 — avançar o checkpoint pra `startedAt` (agora)
+    // faria a próxima sincronização nunca mais buscar esse excedente (a TikTok só reporta
+    // `update_time` de novo se algo mudar do lado dela, e nada muda num pedido já entregue há
+    // tempos parado na fila). Detectado explicitamente abaixo, nunca inferido do `break`.
+    let truncatedByPageLimit = false;
 
     for (let page = 0; page < MAX_PAGES; page++) {
       const result = await connector.getOrders(companyId, { pageSize: 50, pageToken, updatedAfter, createdAfter });
@@ -128,15 +134,35 @@ export class TikTokOrdersSyncService {
       }
       if (!result.nextPageToken) break;
       pageToken = result.nextPageToken;
+      if (page === MAX_PAGES - 1) {
+        // Chegou na última iteração permitida e AINDA existe próxima página — o laço vai parar
+        // pela condição do `for`, não pelo `break` acima, então sobra backlog não buscado.
+        truncatedByPageLimit = true;
+        this.logger.warn('tiktok_order_sync_truncated', {
+          operation: 'sync_orders',
+          companyId,
+          maxPages: MAX_PAGES,
+        });
+      }
     }
 
-    const nextCheckpoint = minFailedUpdateTime && minFailedUpdateTime < startedAt ? minFailedUpdateTime : startedAt;
+    // Truncado: nunca avança o checkpoint — mantém o valor antigo, garantindo que a próxima
+    // sincronização refaça a MESMA janela (reprocessar pedido já importado é seguro, é upsert)
+    // até dar conta do backlog inteiro, em vez de perder pra sempre o que ficou além da página 20.
+    const nextCheckpoint = truncatedByPageLimit
+      ? lastSync
+      : minFailedUpdateTime && minFailedUpdateTime < startedAt
+        ? minFailedUpdateTime
+        : startedAt;
 
     await this.prisma.client.integration.update({
       where: { id: integration.id },
       data: {
         lastSyncAt: new Date(),
-        syncCheckpoints: { ...checkpoints, ordersSyncAt: nextCheckpoint.toISOString() },
+        syncCheckpoints: {
+          ...checkpoints,
+          ...(nextCheckpoint ? { ordersSyncAt: nextCheckpoint.toISOString() } : {}),
+        },
       },
     });
 

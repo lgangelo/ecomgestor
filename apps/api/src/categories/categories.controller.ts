@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseEnumPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { ChannelType } from '@ecommerce-manager/database';
 import { PERMISSIONS } from '@ecommerce-manager/shared';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
@@ -109,7 +109,7 @@ export class CategoriesController {
   async removeFiscalProfile(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
-    @Param('channelType') channelType: ChannelType,
+    @Param('channelType', new ParseEnumPipe(ChannelType)) channelType: ChannelType,
   ) {
     const removed = await this.categoriesService.removeFiscalProfile(id, user.companyId, channelType);
     await this.auditService.log({
