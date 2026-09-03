@@ -53,7 +53,9 @@ export class TikTokInventorySyncService {
 
     const { connector } = await this.connectorFactory.forCompany(companyId);
     const externalSkus = mappings.map((m) => m.externalSku!).filter(Boolean);
-    const externalInventory = await connector.getInventory(companyId, { externalSkus });
+    // `page_size` é obrigatório em "Search Products" (confirmado em produção: "PageSize is a
+    // required field and has not been provided") — sem isto, "Comparar estoque" falhava sempre.
+    const externalInventory = await connector.getInventory(companyId, { externalSkus, pageSize: 50 });
     const externalBySku = new Map(externalInventory.map((e) => [e.externalSku, e.available]));
 
     return mappings

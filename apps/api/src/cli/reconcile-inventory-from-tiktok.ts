@@ -87,7 +87,7 @@ async function main() {
     const { connector } = await connectorFactory.forCompany(companyId);
 
     const externalSkus = mappings.map((m) => m.externalSku!).filter(Boolean);
-    const externalInventory = await connector.getInventory(companyId, { externalSkus });
+    const externalInventory = await connector.getInventory(companyId, { externalSkus, pageSize: 50 });
     const externalBySku = new Map(externalInventory.map((e) => [e.externalSku, e.available]));
 
     for (const mapping of mappings) {
