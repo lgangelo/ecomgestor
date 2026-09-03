@@ -57,6 +57,9 @@ async function main() {
           .slice(0, 10)} valor=R$ ${stmt.totalAmount} status_bruto_tiktok="${stmt.status}"`,
       );
     }
+    console.log('----------------------------------------------------');
+    console.log('Payload bruto COMPLETO do extrato mais recente (pra achar o nome real do campo de status):');
+    console.log(JSON.stringify((page.items[0] as unknown as { raw?: unknown })?.raw ?? null, null, 2));
   } finally {
     await app.close();
   }
