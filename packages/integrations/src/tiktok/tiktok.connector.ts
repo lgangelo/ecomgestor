@@ -188,6 +188,13 @@ export class TikTokConnector implements MarketplaceConnector {
    * quem pagina é o service chamador, na API), aqui pagina dentro do próprio conector — o
    * chamador (`compare()`) só quer "todo o estoque externo dessas SKUs", não uma página de
    * cada vez.
+   *
+   * CONFIRMADO em produção: `params.externalSkus` (o que `channel_product_mapping.externalSku`
+   * guarda) é o `id` da SKU no nível do recurso — nunca `seller_sku` (o código que o VENDEDOR
+   * atribui, um campo totalmente diferente). Mandar esses valores como filtro `seller_skus` no
+   * corpo da busca nunca acha nada (chaves de universos diferentes) — a comparação de estoque
+   * sempre voltava "SKU não encontrado" para tudo. Sem filtro server-side confiável, busca o
+   * catálogo inteiro (já paginado) e filtra client-side pelo `id` de verdade.
    */
   async getInventory(companyId: string, params: InventorySyncParams): Promise<ExternalInventory[]> {
     void companyId;
@@ -197,7 +204,7 @@ export class TikTokConnector implements MarketplaceConnector {
     for (let page = 0; page < MAX_INVENTORY_PAGES; page++) {
       const raw: RawPage = await this.client.request<RawPage>('POST', TIKTOK_PATHS.productsSearch, {
         query: buildPageQuery({ ...params, pageToken }),
-        body: params.externalSkus?.length ? { seller_skus: params.externalSkus } : {},
+        body: {},
       });
       const items = raw.products ?? raw.items ?? [];
       results.push(
@@ -208,7 +215,9 @@ export class TikTokConnector implements MarketplaceConnector {
       pageToken = raw.next_page_token;
     }
 
-    return results;
+    if (!params.externalSkus?.length) return results;
+    const wanted = new Set(params.externalSkus);
+    return results.filter((r) => wanted.has(r.externalSku));
   }
 
   async updateInventory(companyId: string, updates: InventoryUpdate[]): Promise<void> {

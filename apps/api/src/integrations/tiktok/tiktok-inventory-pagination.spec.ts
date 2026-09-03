@@ -53,4 +53,35 @@ describe('TikTokConnector.getInventory — pagina sozinho até esgotar, nunca s�
     expect((global as unknown as { fetch: jest.Mock }).fetch).toHaveBeenCalledTimes(1);
     expect(result).toEqual([{ externalSku: 'sku-1', available: 5 }]);
   });
+
+  it('filtra por externalSkus (id de verdade) client-side, nunca manda seller_skus no corpo (campo errado, confirmado em produção)', async () => {
+    let requestBody: unknown;
+    (global as unknown as { fetch: jest.Mock }).fetch = jest.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      requestBody = JSON.parse(init.body as string);
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({
+          code: 0,
+          message: 'ok',
+          data: { products: [rawProduct('p1', 'sku-1', 5), rawProduct('p2', 'sku-2', 8), rawProduct('p3', 'sku-3', 2)] },
+        }),
+      };
+    });
+
+    const client = new TikTokClient({ appKey: 'k', appSecret: 's', accessToken: 'token' });
+    const connector = new TikTokConnector(client);
+
+    const result = await connector.getInventory('company-1', { externalSkus: ['sku-1', 'sku-3'] });
+
+    expect(requestBody).toEqual({});
+    expect(result).toEqual(
+      expect.arrayContaining([
+        { externalSku: 'sku-1', available: 5 },
+        { externalSku: 'sku-3', available: 2 },
+      ]),
+    );
+    expect(result).toHaveLength(2);
+  });
 });
