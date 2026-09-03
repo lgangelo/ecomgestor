@@ -52,13 +52,16 @@ export const TIKTOK_PATHS = {
   financeStatementTransactions: (statementId: string) =>
     `/finance/${API_VERSION}/statements/${statementId}/statement_transactions`,
   financeOrderTransactions: (orderId: string) => `/finance/${API_VERSION}/orders/${orderId}/statement_transactions`,
-  /** "Get Unsettled Transactions" — dinheiro já ganho mas ainda dentro da janela de conclusão
-   * (não juntou em nenhum extrato/statement ainda); é a fonte real do saldo "a receber" no
-   * curto prazo, distinta de `financeStatements` (que só cobre extratos JÁ fechados — confirmado
-   * em produção que, uma vez que um extrato existe, ele quase sempre já está com payment_status
-   * PAID). Path a confirmar no Partner Center — segue o padrão público de outros endpoints de
-   * finance já confirmados (mesma versão `202309`), nunca testado contra produção ainda. */
-  financeUnsettledTransactions: `/finance/${API_VERSION}/transactions/unsettled`,
+  /** "Get Unsettled Transactions" — TENTATIVA, rejeitada pela TikTok em produção ("Invalid
+   * path"): `/finance/${API_VERSION}/transactions/unsettled` não existe. Mantido comentado como
+   * registro de que esse chute (só de um blog de terceiro, nunca de fonte oficial) NÃO é o path
+   * certo — não reusar. */
+  /** "Get Payments" — lista de lotes de repasse (cada um com `status`); path CONFIRMADO contra um
+   * SDK open-source real (github.com/hsib19/tiktok-shop-sdk, com link para a doc oficial
+   * `get-payments-202309`), mesmo padrão de versão dos demais endpoints de finance já usados
+   * aqui. Ainda não testado contra a conta real desta empresa — é a melhor candidata a fonte do
+   * saldo "a receber" de curto prazo, mas só usar de verdade depois de ver o payload real. */
+  financePayments: `/finance/${API_VERSION}/payments`,
 } as const;
 
 export interface TikTokCredentials {

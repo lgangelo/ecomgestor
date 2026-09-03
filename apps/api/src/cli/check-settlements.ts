@@ -63,12 +63,13 @@ async function main() {
 
     console.log('----------------------------------------------------');
     console.log(
-      'Buscando "Get Unsettled Transactions" (dinheiro já ganho, ainda dentro da janela de conclusão, ' +
-        'que não juntou em nenhum extrato ainda — provável fonte real do saldo "a receber" de curto prazo):',
+      '"Get Unsettled Transactions" (/finance/.../transactions/unsettled) NÃO existe — confirmado ' +
+        '"Invalid path" contra a API real. Tentando "Get Payments" em vez disso (lista de lotes de ' +
+        'repasse, cada um com status — path confirmado contra um SDK open-source real):',
     );
     try {
-      const unsettled = await connector.getUnsettledTransactionsRaw(companyId);
-      console.log(JSON.stringify(unsettled, null, 2));
+      const payments = await connector.getPaymentsRaw(companyId);
+      console.log(JSON.stringify(payments, null, 2));
     } catch (err) {
       console.log(`Falhou (path/parâmetro ainda não confirmado): ${(err as Error).message}`);
     }

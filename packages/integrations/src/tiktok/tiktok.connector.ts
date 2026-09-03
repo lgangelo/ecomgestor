@@ -271,16 +271,17 @@ export class TikTokConnector implements MarketplaceConnector {
   }
 
   /**
-   * Diagnóstico "Get Unsettled Transactions" — devolve o payload bruto sem nenhuma normalização,
-   * de propósito: nem os nomes de campo nem a exigência de `sort_field` (como em `getStatements`)
-   * foram confirmados ainda contra produção. Usado só pelo `check-settlements` CLI até um payload
-   * real justificar escrever um `normalizeUnsettledTransaction` de verdade — nunca chamado pelo
-   * fluxo de sincronização normal.
+   * Diagnóstico "Get Payments" — devolve o payload bruto sem nenhuma normalização, de propósito:
+   * nem os nomes de campo nem a exigência de `sort_field` (como em `getStatements`) foram
+   * confirmados ainda contra a conta real desta empresa. Usado só pelo `check-settlements` CLI
+   * até um payload real justificar escrever um `normalizePayment` de verdade — nunca chamado pelo
+   * fluxo de sincronização normal. (`/transactions/unsettled`, tentado antes, não existe —
+   * "Invalid path" confirmado em produção; `financePayments` é a próxima candidata.)
    */
-  async getUnsettledTransactionsRaw(companyId: string): Promise<unknown> {
+  async getPaymentsRaw(companyId: string): Promise<unknown> {
     void companyId;
-    return this.client.request('GET', TIKTOK_PATHS.financeUnsettledTransactions, {
-      query: { page_size: '20' },
+    return this.client.request('GET', TIKTOK_PATHS.financePayments, {
+      query: { page_size: '20', sort_field: 'create_time', sort_order: 'DESC' },
     });
   }
 }
