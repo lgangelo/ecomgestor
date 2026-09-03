@@ -36,7 +36,8 @@
     "backfill-manual-channels": "npm run backfill-manual-channels --workspace=@ecommerce-manager/api",
     "check-settlements": "npm run check-settlements --workspace=@ecommerce-manager/api",
     "backfill-settlement-status": "npm run backfill-settlement-status --workspace=@ecommerce-manager/api",
-    "check-order-sync-errors": "npm run check-order-sync-errors --workspace=@ecommerce-manager/api"
+    "check-order-sync-errors": "npm run check-order-sync-errors --workspace=@ecommerce-manager/api",
+    "reconcile-inventory-from-tiktok": "npm run reconcile-inventory-from-tiktok --workspace=@ecommerce-manager/api"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",

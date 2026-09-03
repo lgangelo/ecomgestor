@@ -29,6 +29,7 @@
     "check-settlements": "node dist/cli/check-settlements.js",
     "backfill-settlement-status": "node dist/cli/backfill-settlement-status.js",
     "check-order-sync-errors": "node dist/cli/check-order-sync-errors.js",
+    "reconcile-inventory-from-tiktok": "node dist/cli/reconcile-inventory-from-tiktok.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
