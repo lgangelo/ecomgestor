@@ -34,6 +34,14 @@ export class InventoryCountService {
 
   /** Inicia a contagem com o saldo do sistema (onHand) congelado no momento do início. */
   async start(companyId: string, userId: string, dto: CreateCountDto) {
+    const openCount = await this.prisma.client.inventoryCount.findFirst({
+      where: { companyId, status: 'OPEN' },
+      select: { id: true },
+    });
+    if (openCount) {
+      throw new BadRequestException('Já existe uma contagem de inventário em aberto — finalize-a antes de iniciar outra.');
+    }
+
     const inventories = await this.prisma.client.inventory.findMany({
       where: { companyId },
       select: { variantId: true, onHand: true },
@@ -95,10 +103,28 @@ export class InventoryCountService {
       );
     }
 
-    const divergences = count.items.filter((item) => (item.difference ?? 0) !== 0);
-
     await this.prisma.client.$transaction(async (tx) => {
-      for (const item of divergences) {
+      // `item.difference` foi calculado contra o saldo CONGELADO no início da contagem
+      // (`systemQuantity`) — nada impede o estoque de se mover normalmente (venda, compra)
+      // enquanto a contagem está aberta, então esse valor pode estar desatualizado na hora de
+      // fechar. Usá-lo direto aqui gerava um ajuste fantasma: se 10 unidades foram vendidas
+      // legitimamente durante a contagem (onHand caiu de 100 pra 90) e o contador achou 90 de
+      // verdade na prateleira (contagem correta!), `difference = 90 - 100 = -10` ainda assim
+      // debitava mais 10 do saldo JÁ correto de 90, levando a 80 — um furo de estoque criado
+      // pela própria ferramenta que deveria corrigir furos. Por isso o delta real de cada item é
+      // recalculado aqui contra o saldo ATUAL (lido dentro desta mesma transação, na hora do
+      // fechamento), nunca contra o saldo congelado do início.
+      const currentInventories = await tx.inventory.findMany({
+        where: { companyId, variantId: { in: count.items.map((item) => item.variantId) } },
+        select: { variantId: true, onHand: true },
+      });
+      const currentOnHandByVariant = new Map(currentInventories.map((inv) => [inv.variantId, inv.onHand]));
+
+      for (const item of count.items) {
+        const currentOnHand = currentOnHandByVariant.get(item.variantId) ?? 0;
+        const realDelta = item.countedQuantity! - currentOnHand;
+        if (realDelta === 0) continue;
+
         await this.ledger.adjust(
           tx,
           {
@@ -109,7 +135,7 @@ export class InventoryCountService {
             userId,
             reason: 'Ajuste gerado por inventário físico',
           },
-          item.difference!,
+          realDelta,
         );
       }
 

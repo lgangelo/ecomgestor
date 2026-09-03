@@ -226,12 +226,22 @@ export class ReportsService {
     const useWeeklyBuckets = spanDays > 45;
     const bucketOf = (date: Date) => (useWeeklyBuckets ? isoWeekKey(date) : date.toISOString().slice(0, 10));
 
+    // Mesma base de receita usada no card "Receita líquida" (computeCards): subtotal + frete -
+    // desconto do vendedor (o da TikTok nunca sai da receita, é reembolsado no repasse) — antes
+    // este gráfico e o de canais somavam `order.total`, que é líquido dos DOIS descontos, então
+    // o total somado aqui nunca batia com o card equivalente pro mesmo período (a diferença era
+    // exatamente o desconto da TikTok do período). `unitPrice` já vem líquido dos dois descontos
+    // (seção 15 do mapper), então soma-se de volta só o da TikTok — nunca o do vendedor.
+    const orderRevenue = (order: PeriodOrder) =>
+      order.items.reduce((s, i) => s + Number(i.unitPrice) * i.quantity + Number(i.platformDiscount), 0) +
+      Number(order.shipping);
+
     const revenueByBucket = new Map<string, { total: number; cmv: number; fees: number }>();
     const ordersByDay = new Map<string, number>();
     for (const order of active) {
       const bucket = bucketOf(order.orderDate);
       const entry = revenueByBucket.get(bucket) ?? { total: 0, cmv: 0, fees: 0 };
-      entry.total += Number(order.total);
+      entry.total += orderRevenue(order);
       entry.cmv += order.items.reduce((s, i) => s + Number(i.unitCost) * i.quantity, 0);
       entry.fees += feesByOrderId.get(order.id) ?? 0;
       revenueByBucket.set(bucket, entry);
@@ -261,7 +271,7 @@ export class ReportsService {
 
       const channelKey = order.channel.name;
       const channelEntry = channelStats.get(channelKey) ?? { total: 0, cmv: 0, orders: 0, fees: 0 };
-      channelEntry.total += Number(order.total);
+      channelEntry.total += orderRevenue(order);
       channelEntry.cmv += order.items.reduce((s, i) => s + Number(i.unitCost) * i.quantity, 0);
       channelEntry.orders += 1;
       channelEntry.fees += orderFee;
@@ -269,8 +279,9 @@ export class ReportsService {
 
       // A taxa é só do PEDIDO (a TikTok não devolve por item) — rateia entre os itens
       // proporcionalmente à receita de cada um, mesmo critério já usado para custos extras nas
-      // Entradas de Estoque (rateio por valor).
-      const orderRevenue = order.items.reduce(
+      // Entradas de Estoque (rateio por valor). Sem frete aqui (diferente de `orderRevenue`
+      // acima) — o rateio é só entre os ITENS do pedido, frete não é atribuível a um item.
+      const orderItemsRevenue = order.items.reduce(
         (s, i) => s + Number(i.unitPrice) * i.quantity + Number(i.platformDiscount),
         0,
       );
@@ -282,7 +293,7 @@ export class ReportsService {
         const itemRevenue = Number(item.unitPrice) * item.quantity + Number(item.platformDiscount);
         entry.revenue += itemRevenue;
         entry.cmv += Number(item.unitCost) * item.quantity;
-        entry.fees += orderRevenue > 0 ? orderFee * (itemRevenue / orderRevenue) : 0;
+        entry.fees += orderItemsRevenue > 0 ? orderFee * (itemRevenue / orderItemsRevenue) : 0;
         productStats.set(name, entry);
       }
     }

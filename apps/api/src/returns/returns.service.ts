@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { OrderStatus, Prisma, RefundType } from '@ecommerce-manager/database';
+import { OrderStatus, Prisma, RefundType, ReturnStatus } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
 import { InventoryLedgerService } from '../inventory/ledger.service';
+import { assertValidTransition } from '../orders/order-state-machine';
 import { QueryReturnsDto } from './dto/query-returns.dto';
 import { CreateReturnDto } from './dto/create-return.dto';
 import { UpdateReturnStatusDto } from './dto/update-return-status.dto';
@@ -72,15 +73,47 @@ export class ReturnsService {
     });
     if (!order) throw new NotFoundException('Pedido não encontrado');
 
+    // Um pedido que nunca chegou a ser enviado não pode ter devolução aberta contra ele — antes
+    // nada checava isso, então dava pra abrir devolução (e, na sequência, reembolso) num pedido
+    // ainda CREATED/PAID/PROCESSING.
+    assertValidTransition(order.status, OrderStatus.RETURN_REQUESTED);
+
     const orderItemsById = new Map(order.items.map((i) => [i.id, i]));
+
+    // Soma quanto já foi devolvido de cada item em devoluções ANTERIORES (não rejeitadas) —
+    // sem isso, duas devoluções separadas (ou duas linhas iguais na mesma requisição) do mesmo
+    // item conseguiam, juntas, devolver mais unidades do que foram vendidas, e — pior — repor
+    // estoque em dobro quando ambas marcassem `restockOnReturn`.
+    const orderItemIds = dto.items.map((i) => i.orderItemId);
+    const priorReturnItems = await this.prisma.client.returnItem.findMany({
+      where: {
+        orderItemId: { in: orderItemIds },
+        return: { orderId, status: { not: ReturnStatus.REJECTED } },
+      },
+      select: { orderItemId: true, quantity: true },
+    });
+    const alreadyReturnedByItem = new Map<string, number>();
+    for (const ri of priorReturnItems) {
+      alreadyReturnedByItem.set(ri.orderItemId, (alreadyReturnedByItem.get(ri.orderItemId) ?? 0) + ri.quantity);
+    }
+
+    // Também soma as linhas dentro desta MESMA requisição — sem isso, listar o mesmo
+    // orderItemId duas vezes numa única chamada contornava a checagem acima.
+    const requestedByItem = new Map<string, number>();
     for (const item of dto.items) {
-      const orderItem = orderItemsById.get(item.orderItemId);
+      requestedByItem.set(item.orderItemId, (requestedByItem.get(item.orderItemId) ?? 0) + item.quantity);
+    }
+
+    for (const [orderItemId, requestedQuantity] of requestedByItem) {
+      const orderItem = orderItemsById.get(orderItemId);
       if (!orderItem) {
-        throw new BadRequestException(`O item ${item.orderItemId} não pertence a este pedido`);
+        throw new BadRequestException(`O item ${orderItemId} não pertence a este pedido`);
       }
-      if (item.quantity > orderItem.quantity) {
+      const alreadyReturned = alreadyReturnedByItem.get(orderItemId) ?? 0;
+      const remaining = orderItem.quantity - alreadyReturned;
+      if (requestedQuantity > remaining) {
         throw new BadRequestException(
-          `Quantidade devolvida (${item.quantity}) maior que a quantidade vendida (${orderItem.quantity}) para ${orderItem.skuAtSale}`,
+          `Quantidade devolvida (${requestedQuantity}) maior que a quantidade ainda devolvível (${remaining} de ${orderItem.quantity} vendida(s), ${alreadyReturned} já devolvida(s) antes) para ${orderItem.skuAtSale}`,
         );
       }
     }
@@ -168,6 +201,22 @@ export class ReturnsService {
     }
 
     const orderStatus = dto.type === RefundType.FULL ? OrderStatus.REFUNDED : OrderStatus.PARTIALLY_REFUNDED;
+    assertValidTransition(ret.order.status, orderStatus);
+
+    // Soma todo reembolso PROCESSED já lançado pra este pedido (em qualquer devolução dele, não
+    // só nesta) — sem isso, nada impedia dois reembolsos "totais" seguidos (ex.: duplo clique)
+    // dobrarem o valor reembolsado registrado. Pequena tolerância de arredondamento (1 centavo).
+    const priorRefunds = await this.prisma.client.refund.aggregate({
+      where: { status: 'PROCESSED', return: { orderId: ret.orderId } },
+      _sum: { amount: true },
+    });
+    const alreadyRefunded = Number(priorRefunds._sum.amount ?? 0);
+    const orderTotal = Number(ret.order.total);
+    if (alreadyRefunded + dto.amount > orderTotal + 0.01) {
+      throw new BadRequestException(
+        `Reembolso de R$ ${dto.amount.toFixed(2)} excede o valor ainda reembolsável (R$ ${(orderTotal - alreadyRefunded).toFixed(2)} restante de R$ ${orderTotal.toFixed(2)}, R$ ${alreadyRefunded.toFixed(2)} já reembolsado).`,
+      );
+    }
 
     const refund = await this.prisma.client.$transaction(async (tx) => {
       const created = await tx.refund.create({

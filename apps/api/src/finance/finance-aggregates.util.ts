@@ -1,3 +1,4 @@
+import { OrderStatus } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 
 export { getCurrentMonthRange, getMonthRangeFromReference } from '../common/date/month-range.util';
@@ -52,10 +53,15 @@ export async function computeFinanceAggregates(
   start: Date,
   end: Date,
 ): Promise<FinanceAggregates> {
+  // CANCELLED nunca conta; CREATED (pedido ainda não pago) também não — mesmo critério já usado
+  // no dashboard (reports.service.ts) e nas pendências fiscais (fiscal.service.ts). Faltava aqui:
+  // o fechamento mensal contava pedido não pago como receita bruta, então o mesmo mês podia
+  // mostrar um número na tela de Financeiro/Fechamento diferente do que o Dashboard já mostrava
+  // corretamente (a diferença sendo exatamente o total de pedidos ainda não pagos no período).
   const orderWhere = {
     companyId,
     orderDate: { gte: start, lt: end },
-    status: { not: 'CANCELLED' as const },
+    status: { notIn: [OrderStatus.CANCELLED, OrderStatus.CREATED] },
   };
 
   const [orderAgg, discountAgg, refundAgg, feeAgg, orderItems, expenses, taxRate] = await Promise.all([
@@ -95,10 +101,10 @@ export async function computeFinanceAggregates(
     getVigentTaxRate(prisma, companyId, start),
   ]);
 
-  const grossRevenue = Number(orderAgg._sum.subtotal ?? 0) + Number(orderAgg._sum.shipping ?? 0);
-  const discounts = Number(discountAgg._sum.sellerDiscount ?? 0);
-  const returnsAmount = Number(refundAgg._sum.amount ?? 0);
-  const fees = Number(feeAgg._sum.amount ?? 0);
+  const grossRevenue = Number(orderAgg._sum?.subtotal ?? 0) + Number(orderAgg._sum?.shipping ?? 0);
+  const discounts = Number(discountAgg._sum?.sellerDiscount ?? 0);
+  const returnsAmount = Number(refundAgg._sum?.amount ?? 0);
+  const fees = Number(feeAgg._sum?.amount ?? 0);
 
   const cmv = orderItems.reduce((sum, item) => sum + Number(item.unitCost) * item.quantity, 0);
 

@@ -181,6 +181,49 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     expect(byKey.has('tiktok_sync_failed')).toBe(false); // count 0 nunca aparece (seção 63)
   });
 
+  it('gráfico principal e canais reconciliam com o card de receita líquida (mesma base: nunca soma order.total)', async () => {
+    const orders = [
+      order({
+        id: 'o1',
+        // subtotal = unitPrice*qty + sellerDiscount + platformDiscount = 100*2 + 10 + 5 = 215
+        // (mesma fórmula de `importExternalOrder`/`createManualSale` — sellerDiscount/
+        // platformDiscount são valores da LINHA inteira, não por unidade).
+        total: 210,
+        subtotal: 215,
+        shipping: 10,
+        // sellerDiscount reduz a receita; platformDiscount (bancado pela TikTok) nunca deveria
+        // sair nem do card nem do gráfico nem do canal — antes desta correção, o gráfico e o
+        // canal somavam `order.total` (líquido dos DOIS descontos), então nunca batiam com o
+        // card "Receita líquida" (que só desconta o do vendedor) pro mesmo período.
+        items: [{ quantity: 2, unitPrice: 100, sellerDiscount: 10, platformDiscount: 5, unitCost: 40, productNameAtSale: 'Bolsa' }],
+      }),
+    ];
+    const prisma = makeFakePrisma({
+      orders,
+      returnsAmount: 0,
+      inventories: [],
+      integrations: [],
+      unmappedOrdersCount: 0,
+      syncJobFailedCount: 0,
+    });
+    const fiscal = makeFakeFiscalService({ salesWithoutInvoice: [], returnsWithoutDocument: [] });
+    const service = new ReportsService(prisma, fiscal);
+
+    const result = await service.getDashboard('company-1', { dateFrom: '2026-08-01', dateTo: '2026-08-31' });
+    const { cards, charts } = result as {
+      cards: { netRevenue: number };
+      charts: {
+        revenueByPeriod: Array<{ total: number }>;
+        salesByChannel: Array<{ total: number }>;
+      };
+    };
+
+    // netRevenue = (subtotal 215 + frete 10) - sellerDiscount 10 - devoluções 0 = 215
+    expect(cards.netRevenue).toBe(215);
+    expect(charts.revenueByPeriod[0].total).toBe(cards.netRevenue);
+    expect(charts.salesByChannel[0].total).toBe(cards.netRevenue);
+  });
+
   it('gráfico principal: agrupa por semana ISO quando o período é longo (> 45 dias)', async () => {
     const orders = [
       order({ id: 'o1', orderDate: new Date('2026-06-01T00:00:00Z'), total: 50 }),

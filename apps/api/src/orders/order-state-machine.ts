@@ -14,7 +14,18 @@ const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.SHIPPED]: [OrderStatus.DELIVERED, OrderStatus.RETURN_REQUESTED, OrderStatus.CANCELLED],
   [OrderStatus.DELIVERED]: [OrderStatus.RETURN_REQUESTED],
   [OrderStatus.CANCELLED]: [],
-  [OrderStatus.RETURN_REQUESTED]: [OrderStatus.RETURNED, OrderStatus.DELIVERED],
+  // REFUNDED/PARTIALLY_REFUNDED direto a partir daqui (além de via RETURNED) porque o fluxo real
+  // de reembolso (`ReturnsService.createRefund`) nunca passa por um passo separado "mercadoria
+  // recebida de volta" antes de reembolsar — `RETURNED` existe no modelo mas nenhum código hoje
+  // o define. Widened aqui pra bater com o uso real, não pra remover a validação (que antes era
+  // nenhuma: `createRefund` forçava o status sem checar nada, permitindo reembolso num pedido que
+  // nem tinha sido enviado ainda).
+  [OrderStatus.RETURN_REQUESTED]: [
+    OrderStatus.RETURNED,
+    OrderStatus.DELIVERED,
+    OrderStatus.REFUNDED,
+    OrderStatus.PARTIALLY_REFUNDED,
+  ],
   [OrderStatus.RETURNED]: [OrderStatus.REFUNDED, OrderStatus.PARTIALLY_REFUNDED],
   [OrderStatus.REFUNDED]: [],
   [OrderStatus.PARTIALLY_REFUNDED]: [OrderStatus.REFUNDED],
