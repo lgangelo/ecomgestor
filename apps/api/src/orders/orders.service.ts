@@ -222,7 +222,17 @@ export class OrdersService {
     });
     if (!existing) throw new NotFoundException('Pedido não encontrado');
 
-    assertValidTransition(existing.status, dto.status);
+    // Pedido manual (sem externalOrderId) reflete uma venda que já aconteceu de verdade —
+    // quem está corrigindo o status é a mesma pessoa que registrou a venda, então não faz
+    // sentido forçar passar por cada estágio intermediário (ex.: "Criado" -> "Entregue" direto,
+    // pra uma venda lançada bem depois do fato). Pedido de canal externo continua com a validação
+    // estrita: ali um "pulo" de estágio normalmente é sinal de engano, não de correção legítima.
+    // `applyStockEffectsForTransition` abaixo já é compartilhado com `applyExternalStatusUpdate`
+    // (que também pula estágio) e já lida corretamente com isso, então nenhum ajuste é necessário
+    // ali — só a validação de transição estrita precisa deixar de bloquear.
+    if (existing.externalOrderId) {
+      assertValidTransition(existing.status, dto.status);
+    }
 
     if (dto.status === OrderStatus.CANCELLED && !dto.note?.trim()) {
       throw new BadRequestException('Informe o motivo do cancelamento');
