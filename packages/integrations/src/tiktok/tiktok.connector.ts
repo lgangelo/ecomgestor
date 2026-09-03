@@ -51,6 +51,10 @@ interface RawPage {
   products?: unknown[];
 }
 
+/** Limite de segurança pra `getInventory` paginar sozinho (ver comentário no método) — 50
+ * páginas cobre milhares de SKUs mapeadas, bem além do que uma loja real teria hoje. */
+const MAX_INVENTORY_PAGES = 50;
+
 // Debug temporário: loga só a primeira transação real vista no processo, para confirmar os
 // campos de tipo (`type`/`transaction_type`) e referência ao pedido (`order_id`) sem inundar o
 // log — 146 transações sincronizadas mas nenhuma taxa aparecendo no pedido é sinal de que um dos
@@ -174,14 +178,37 @@ export class TikTokConnector implements MarketplaceConnector {
     }
   }
 
+  /**
+   * Sem paginação interna, comparava só a PRIMEIRA página de `products/search` (o tamanho de
+   * página padrão da TikTok pra este endpoint nunca foi confirmado, mas certamente é menor que
+   * um catálogo real inteiro) — qualquer SKU mapeado além da primeira página nunca era
+   * comparado, e como `TikTokInventorySyncService.compare()` trata "não achado" como "não
+   * divergente" (nunca como erro), uma divergência real de estoque num produto assim ficava
+   * completamente invisível, sem nenhum aviso. Diferente dos outros endpoints paginados (onde
+   * quem pagina é o service chamador, na API), aqui pagina dentro do próprio conector — o
+   * chamador (`compare()`) só quer "todo o estoque externo dessas SKUs", não uma página de
+   * cada vez.
+   */
   async getInventory(companyId: string, params: InventorySyncParams): Promise<ExternalInventory[]> {
     void companyId;
-    const raw = await this.client.request<RawPage>('POST', TIKTOK_PATHS.productsSearch, {
-      query: buildPageQuery(params),
-      body: params.externalSkus?.length ? { seller_skus: params.externalSkus } : {},
-    });
-    const items = raw.products ?? raw.items ?? [];
-    return items.flatMap(normalizeProductSkus).map((product) => ({ externalSku: product.externalSku, available: product.stock }));
+    const results: ExternalInventory[] = [];
+    let pageToken: string | undefined = params.pageToken;
+
+    for (let page = 0; page < MAX_INVENTORY_PAGES; page++) {
+      const raw: RawPage = await this.client.request<RawPage>('POST', TIKTOK_PATHS.productsSearch, {
+        query: buildPageQuery({ ...params, pageToken }),
+        body: params.externalSkus?.length ? { seller_skus: params.externalSkus } : {},
+      });
+      const items = raw.products ?? raw.items ?? [];
+      results.push(
+        ...items.flatMap(normalizeProductSkus).map((product) => ({ externalSku: product.externalSku, available: product.stock })),
+      );
+
+      if (!raw.next_page_token) break;
+      pageToken = raw.next_page_token;
+    }
+
+    return results;
   }
 
   async updateInventory(companyId: string, updates: InventoryUpdate[]): Promise<void> {
