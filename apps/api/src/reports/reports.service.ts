@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { OrderStatus, Prisma, SettlementStatus } from '@ecommerce-manager/database';
+import { OrderStatus, Prisma } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { csvEscape } from '../common/csv.util';
 import { endOfDayExclusive } from '../common/date/day-range.util';
@@ -122,18 +122,38 @@ export class ReportsService {
     return Number(agg._sum.amount ?? 0);
   }
 
-  /** "A receber" (seção 63) — saldo em aberto de verdade que a plataforma ainda deve repassar,
-   * direto dos extratos (`Settlement`) que a própria TikTok reporta. É um saldo de conta
-   * corrente (só muda quando o dinheiro efetivamente cai, status PAID), não uma métrica de
-   * período — por isso nunca filtrado pela janela de data do dashboard, ao contrário dos
-   * outros cards. (O modelo `Payment` usado aqui antes nunca era gravado por nenhum código do
-   * sistema — o card sempre mostrava zero.) */
+  /** "A receber" (seção 63) — ESTIMATIVA, não saldo oficial: confirmado via `check-settlements`
+   * CLI que a TikTok não expõe em NENHUMA API (Statements, Payments, Transactions by Order) o
+   * saldo ainda não repassado — ela só cria um registro financeiro depois que o dinheiro já se
+   * moveu (extratos vêm quase sempre com payment_status PAID no mesmo dia). Em vez disso, estima
+   * a partir dos próprios pedidos: soma a receita líquida dos pedidos de canal externo (TikTok)
+   * ainda não entregues (PAID/PROCESSING/READY_TO_SHIP/SHIPPED — DELIVERED em diante já foi
+   * liquidado, CREATED/CANCELLED nunca foram venda de verdade) e desconta a taxa média histórica
+   * da plataforma (16%, valor informado pelo usuário — a taxa real só é conhecida depois que o
+   * extrato fecha). Saldo de conta corrente, não métrica de período — nunca filtrado pela janela
+   * de data do dashboard, ao contrário dos outros cards. */
+  private static readonly RECEIVABLE_ESTIMATED_FEE_RATE = 0.16;
+  private static readonly RECEIVABLE_PENDING_STATUSES: OrderStatus[] = [
+    OrderStatus.PAID,
+    OrderStatus.PROCESSING,
+    OrderStatus.READY_TO_SHIP,
+    OrderStatus.SHIPPED,
+  ];
+
   private async fetchReceivable(companyId: string): Promise<number> {
-    const agg = await this.prisma.client.settlement.aggregate({
-      where: { companyId, status: { not: SettlementStatus.PAID } },
-      _sum: { totalAmount: true },
+    const orders = await this.prisma.client.order.findMany({
+      where: {
+        companyId,
+        externalOrderId: { not: null },
+        status: { in: ReportsService.RECEIVABLE_PENDING_STATUSES },
+      },
+      select: { subtotal: true, shipping: true, items: { select: { sellerDiscount: true } } },
     });
-    return Number(agg._sum.totalAmount ?? 0);
+    const netRevenue = orders.reduce((sum, o) => {
+      const sellerDiscount = o.items.reduce((s, i) => s + Number(i.sellerDiscount), 0);
+      return sum + Number(o.subtotal) + Number(o.shipping) - sellerDiscount;
+    }, 0);
+    return netRevenue * (1 - ReportsService.RECEIVABLE_ESTIMATED_FEE_RATE);
   }
 
   private resolvePeriod(dateFrom?: string, dateTo?: string): { start: Date; end: Date } {

@@ -12,6 +12,7 @@ interface FakeOrder {
   orderDate: Date;
   channelId: string;
   channel: { name: string };
+  externalOrderId: string | null;
   items: Array<{
     quantity: number;
     unitPrice: number;
@@ -30,15 +31,22 @@ interface FakePrismaConfig {
   integrations: Array<{ status: string; lastSyncAt: Date | null }>;
   unmappedOrdersCount: number;
   syncJobFailedCount: number;
-  // "A receber" (Settlement.totalAmount, status != PAID) — não depende de orders/período.
-  openSettlementsTotal?: number;
 }
 
 function makeFakePrisma(config: FakePrismaConfig): PrismaService {
-  const orderFindMany = async ({ where }: { where: { orderDate: { gte: Date; lt: Date }; channelId?: string } }) => {
+  // Duas formas de `where` batem aqui: a busca por PERÍODO (`fetchOrders`, com `orderDate`/
+  // `channelId`) e a estimativa de "a receber" (`fetchReceivable`, com `externalOrderId`/`status.in`,
+  // sem filtro de data — é um saldo de conta corrente, não uma métrica de período).
+  const orderFindMany = async ({
+    where,
+  }: {
+    where: { orderDate?: { gte: Date; lt: Date }; channelId?: string; externalOrderId?: { not: null }; status?: { in: string[] } };
+  }) => {
     return config.orders
-      .filter((o) => o.orderDate >= where.orderDate.gte && o.orderDate < where.orderDate.lt)
-      .filter((o) => !where.channelId || o.channelId === where.channelId);
+      .filter((o) => !where.orderDate || (o.orderDate >= where.orderDate.gte && o.orderDate < where.orderDate.lt))
+      .filter((o) => !where.channelId || o.channelId === where.channelId)
+      .filter((o) => !where.externalOrderId || o.externalOrderId !== null)
+      .filter((o) => !where.status?.in || where.status.in.includes(o.status));
   };
 
   return {
@@ -49,7 +57,6 @@ function makeFakePrisma(config: FakePrismaConfig): PrismaService {
       },
       refund: { aggregate: async () => ({ _sum: { amount: config.returnsAmount } }) },
       marketplaceFee: { groupBy: async () => [] },
-      settlement: { aggregate: async () => ({ _sum: { totalAmount: config.openSettlementsTotal ?? 0 } }) },
       inventory: { findMany: async () => config.inventories },
       integration: { findMany: async () => config.integrations },
       syncJob: { count: async () => config.syncJobFailedCount },
@@ -78,6 +85,7 @@ function order(overrides: Partial<FakeOrder>): FakeOrder {
     orderDate: new Date('2026-08-10T12:00:00Z'),
     channelId: 'ch-1',
     channel: { name: 'TikTok' },
+    externalOrderId: null,
     items: [],
     fiscalDocuments: [],
     ...overrides,
@@ -247,11 +255,25 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     expect(revenueByPeriod.every((p) => /^\d{4}-W\d{2}$/.test(p.date))).toBe(true);
   });
 
-  it('"a receber": soma o saldo em aberto dos extratos (Settlement), nunca o filtro de período do dashboard', async () => {
-    // Nenhum pedido cai dentro do período filtrado — se "a receber" dependesse de `orders`
-    // (como o antigo cálculo via `Payment`, nunca gravado por nenhum código), daria 0. Vindo de
-    // `Settlement` (saldo de conta corrente, não métrica de período), o valor aparece de qualquer forma.
-    const orders = [order({ id: 'o1', orderDate: new Date('2020-01-01T00:00:00Z') })];
+  it('"a receber": estimativa pelos pedidos TikTok ainda não entregues, descontada a taxa média de 16%, nunca o filtro de período', async () => {
+    const orders = [
+      // Fora da janela filtrada e ainda assim conta — é saldo de conta corrente, não métrica de período.
+      order({
+        id: 'shipped-1',
+        status: 'SHIPPED',
+        externalOrderId: 'tt-1',
+        orderDate: new Date('2020-01-01T00:00:00Z'),
+        subtotal: 200,
+        shipping: 10,
+        items: [{ quantity: 2, unitPrice: 100, sellerDiscount: 10, platformDiscount: 0, unitCost: 40, productNameAtSale: 'Bolsa' }],
+      }),
+      // DELIVERED já foi liquidado (extrato fecha logo após a entrega) — nunca entra na estimativa.
+      order({ id: 'delivered-1', status: 'DELIVERED', externalOrderId: 'tt-2', subtotal: 500, shipping: 0 }),
+      // Venda manual (sem externalOrderId) não passa pelo repasse da plataforma — nunca entra.
+      order({ id: 'manual-1', status: 'SHIPPED', externalOrderId: null, subtotal: 500, shipping: 0 }),
+      // CREATED nunca é venda de verdade.
+      order({ id: 'created-1', status: 'CREATED', externalOrderId: 'tt-3', subtotal: 500, shipping: 0 }),
+    ];
     const prisma = makeFakePrisma({
       orders,
       returnsAmount: 0,
@@ -259,7 +281,6 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
       integrations: [],
       unmappedOrdersCount: 0,
       syncJobFailedCount: 0,
-      openSettlementsTotal: 1234.56,
     });
     const fiscal = makeFakeFiscalService({ salesWithoutInvoice: [], returnsWithoutDocument: [] });
     const service = new ReportsService(prisma, fiscal);
@@ -267,6 +288,8 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     const result = await service.getDashboard('company-1', { dateFrom: '2026-08-01', dateTo: '2026-08-31' });
     const cards = (result as { cards: Record<string, number> }).cards;
 
-    expect(cards.receivable).toBe(1234.56);
+    // netRevenue do único pedido elegível = subtotal 200 + frete 10 - sellerDiscount 10 = 200;
+    // estimativa = 200 * (1 - 0.16) = 168.
+    expect(cards.receivable).toBeCloseTo(168, 2);
   });
 });

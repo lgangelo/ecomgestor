@@ -95,7 +95,12 @@ export function DashboardView() {
                   : undefined
               }
             />
-            <StatCard title="A receber" value={formatBRL(data.cards.receivable)} icon={Wallet} />
+            <StatCard
+              title="A receber"
+              value={formatBRL(data.cards.receivable)}
+              icon={Wallet}
+              hint="Estimativa — pedidos ainda não entregues, já descontada a taxa média da plataforma"
+            />
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
