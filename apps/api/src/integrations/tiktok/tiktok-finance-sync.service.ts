@@ -7,11 +7,11 @@ import { TikTokConnectorFactory } from './tiktok-connector.factory';
 import { TikTokCredentialsService } from './tiktok-credentials.service';
 
 const MAX_PAGES = 10;
-
-// Debug temporário: marketplace_fees continua vazia mesmo com transactionsSynced > 0 — loga só a
-// primeira transação processada no processo para ver exatamente onde a condição de gravação
-// falha (pedido não encontrado? amount zero? id da transação ausente?), sem inundar o log.
-let loggedFirstTxDiagnostic = false;
+/** Margem de segurança pra parar de paginar em `syncStatements` (ver comentário no método) —
+ * generosa de propósito, já que o STATUS de um extrato muda ao longo de alguns dias após a
+ * entrega (PENDING -> SETTLED), então reprocessar a última semana de novo a cada execução é
+ * barato e seguro (upsert), diferente de nunca mais tocar num extrato que ainda pode mudar. */
+const FINANCE_RESCAN_OVERLAP_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface SyncCheckpoints {
   ordersSyncAt?: string;
@@ -57,14 +57,29 @@ export class TikTokFinanceSyncService {
     const { connector } = await this.connectorFactory.forCompany(companyId);
     const checkpoints = (integration.syncCheckpoints as SyncCheckpoints | null) ?? {};
 
+    // `getStatements` não tem um filtro de data confirmado contra a API real (o parâmetro
+    // `updatedAfter` existe no tipo mas nunca foi de fato ligado à query — nunca inventar um
+    // nome de parâmetro não confirmado). Em vez disso, aproveita que a lista já vem ordenada por
+    // `statement_time` DESC (mais recente primeiro, confirmado): assim que aparece um extrato
+    // mais antigo que o último checkpoint (com uma margem de segurança, já que o STATUS de um
+    // extrato pode mudar sem o período mudar), para de paginar — sem isso, agora que esta
+    // sincronização roda sozinha a cada hora, ela rebuscava os ~500 extratos mais recentes
+    // inteiros em toda execução, sempre, mesmo sem nada nunca ter mudado.
+    const lastSync = checkpoints.financeSyncAt ? new Date(checkpoints.financeSyncAt) : undefined;
+    const rescanCutoff = lastSync ? new Date(lastSync.getTime() - FINANCE_RESCAN_OVERLAP_MS) : undefined;
+
     let statementsSynced = 0;
     let transactionsSynced = 0;
     let pageToken: string | undefined;
 
-    for (let page = 0; page < MAX_PAGES; page++) {
+    outer: for (let page = 0; page < MAX_PAGES; page++) {
       const statementPage = await connector.getStatements(companyId, { pageSize: 50, pageToken });
 
       for (const stmt of statementPage.items) {
+        if (rescanCutoff && stmt.periodEnd < rescanCutoff) {
+          break outer;
+        }
+
         // Confirmado em produção: um extrato sem `id` nem `statement_id` grava com chave vazia —
         // como a chave de upsert é (channelId, externalStatementId), TODO extrato sem id colide
         // na MESMA linha (nunca duas linhas distintas), sobrescrevendo silenciosamente o extrato
@@ -190,22 +205,6 @@ export class TikTokFinanceSyncService {
               where: { companyId_channelId_externalOrderId: { companyId, channelId, externalOrderId: tx.externalOrderId } },
             })
           : null;
-
-        if (!loggedFirstTxDiagnostic) {
-          loggedFirstTxDiagnostic = true;
-          // eslint-disable-next-line no-console -- debug temporário: marketplace_fees continua vazia mesmo com transactionsSynced > 0
-          console.log(
-            '[tiktok-fee-write-debug]',
-            JSON.stringify({
-              externalTransactionId: tx.externalTransactionId,
-              externalOrderId: tx.externalOrderId,
-              amount: tx.amount,
-              orderFound: Boolean(order),
-              orderId: order?.id ?? null,
-              willWriteFee: Boolean(order) && Number(tx.amount) !== 0 && Boolean(tx.externalTransactionId),
-            }),
-          );
-        }
 
         const data = {
           settlementId,
