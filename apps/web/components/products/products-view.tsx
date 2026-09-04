@@ -17,9 +17,10 @@ import { PRODUCT_STATUS_PRESENTATION } from '@ecommerce-manager/ui';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { apiFetch } from '@/lib/api-client';
 import type { Paginated } from '@/lib/types/pagination';
-import { useProducts, useBulkUpdateProductStatus, type ProductListItem } from '@/hooks/use-products';
+import { resolveProductImageUrl, useProducts, useBulkUpdateProductStatus, type ProductListItem } from '@/hooks/use-products';
 import { useCategories } from '@/hooks/use-categories';
 import { useUrlFilters } from '@/hooks/use-url-filters';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { buildQueryString } from '@/lib/query-string';
 import { ProductFormDialog } from './product-form-dialog';
 import { ProductBulkDeleteDialog } from './product-bulk-delete-dialog';
@@ -31,6 +32,16 @@ export function ProductsView() {
   const [filters, setFilters] = useUrlFilters(DEFAULT_FILTERS);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [selectingAll, setSelectingAll] = React.useState(false);
+
+  // Campo de busca sempre responde na hora ao digitar (estado local); só o filtro de verdade
+  // (URL + busca) atualiza com atraso — sem isso, CADA caractere disparava um `router.replace`
+  // (navegação) mais uma busca na API, deixando a digitação visivelmente lenta.
+  const [searchInput, setSearchInput] = React.useState(filters.search);
+  const debouncedSearch = useDebouncedValue(searchInput, 400);
+  React.useEffect(() => {
+    if (debouncedSearch !== filters.search) setFilters({ search: debouncedSearch, page: 1 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch]);
 
   const { data: categories } = useCategories();
   const bulkUpdateStatus = useBulkUpdateProductStatus();
@@ -118,8 +129,8 @@ export function ProductsView() {
           <Input
             placeholder="Buscar por nome ou SKU..."
             className="pl-8"
-            value={filters.search}
-            onChange={(e) => setFilters({ search: e.target.value, page: 1 })}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
           />
         </div>
         <Select
@@ -234,8 +245,8 @@ export function ProductsView() {
                   </TableCell>
                   <TableCell>
                     {product.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo ou cadastrada manualmente
-                      <img src={product.imageUrl} alt="" className="h-14 w-14 rounded object-cover" />
+                      // eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo, ou enviada por upload e servida pela nossa própria API
+                      <img src={resolveProductImageUrl(product.imageUrl)} alt="" className="h-14 w-14 rounded object-cover" />
                     ) : (
                       <div className="h-14 w-14 rounded bg-muted" />
                     )}
