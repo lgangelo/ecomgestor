@@ -24,6 +24,11 @@ import { MercadoLivreConnectorFactory } from '../integrations/mercadolivre/merca
 const SITE_ID = 'MLB';
 const CURRENCY_ID = 'BRL';
 const BRAND_FALLBACK_NAME = 'Generic';
+// CONFIRMADO em produção (erro real "body.required_fields" sem isso): pra Marketplace (não
+// Mercado Shops), os tipos disponíveis são free/gold_special/gold_pro — "Clássico" é o padrão
+// mais comum entre esses três; usado só como preferência, o script sempre confirma contra a
+// lista real da conta (`getListingTypes`) antes de usar.
+const PREFERRED_LISTING_TYPE_ID = 'gold_special';
 
 async function main() {
   const productId = process.argv[2];
@@ -74,6 +79,15 @@ async function main() {
     }
     console.log(`Categoria: ${categoryId} (${predictions[0]?.category_name})`);
 
+    const listingTypes = await client.getListingTypes(SITE_ID);
+    const listingType = listingTypes.find((t) => t.id === PREFERRED_LISTING_TYPE_ID) ?? listingTypes[0];
+    if (!listingType) {
+      console.error(`Nenhum tipo de publicação disponível pro site ${SITE_ID}.`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`Tipo de publicação: ${listingType.id} (${listingType.name})`);
+
     const categoryAttributes = await client.getCategoryAttributes(categoryId);
     const brandAttribute = categoryAttributes.find((a) => a.id === 'BRAND');
     const brandValue = brandAttribute?.values?.find((v) => v.name.toLowerCase() === BRAND_FALLBACK_NAME.toLowerCase());
@@ -100,6 +114,7 @@ async function main() {
       available_quantity: Math.max(variant.inventory.available, 1),
       buying_mode: 'buy_it_now' as const,
       condition: 'new' as const,
+      listing_type_id: listingType.id,
       pictures: [{ source: product.imageUrl }],
       attributes: [
         { id: 'BRAND', value_id: brandValue.id },

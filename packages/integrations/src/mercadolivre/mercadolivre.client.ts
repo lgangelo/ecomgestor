@@ -60,6 +60,14 @@ export class MercadoLivreClient {
     return this.request('GET', '/users/me');
   }
 
+  /** Tipos de publicação disponíveis pro site (ex.: MLB) — CONFIRMADO em produção que
+   * `listing_type_id` é obrigatório no payload de `createItem` (a API recusa com
+   * "body.required_fields" sem ele). Valores variam por site/conta (reputação, categoria) — nunca
+   * hard-codar um id fixo, sempre consultar este endpoint antes de montar o payload. */
+  async getListingTypes(siteId: string): Promise<Array<{ id: string; name: string }>> {
+    return this.request('GET', `/sites/${siteId}/listing_types`);
+  }
+
   /** Sugere a categoria mais provável a partir de um título de anúncio — primeiro passo antes de
    * publicar qualquer item: cada categoria tem sua própria ficha de atributos obrigatórios (ver
    * `getCategoryAttributes`), então descobrir a categoria certa vem sempre antes. `limit` (1-8,

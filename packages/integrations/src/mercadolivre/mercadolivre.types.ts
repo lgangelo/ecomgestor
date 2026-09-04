@@ -84,11 +84,12 @@ export interface MercadoLivreItemAttributeInput {
   value_name?: string;
 }
 
-/** Payload de `POST /items` — NÃO CONFIRMADO contra uma chamada real ainda (ver
- * docs/integrations/mercado-livre.md, "Próximos passos"); campos baseados no formato mais
- * comumente citado da API pública. `listing_type_id` foi deixado OPCIONAL de propósito: não há
- * fonte confirmando quais valores são válidos pra uma conta nova sem revisão prévia — melhor
- * deixar a API recusar com uma mensagem clara do que adivinhar um valor errado. */
+/** Payload de `POST /items` — a maioria dos campos foi CONFIRMADA contra uma chamada real em
+ * produção (ver docs/integrations/mercado-livre.md). `listing_type_id` é opcional no TIPO (a
+ * API aceita omitir), mas CONFIRMADO como obrigatório NA PRÁTICA: sem ele, a API recusa com
+ * HTTP 400 "body.required_fields" pedindo `listing_type_id` ou `family_name` — sempre resolver
+ * via `getListingTypes` antes de montar o payload, nunca hard-codar um id fixo (varia por
+ * site/conta). */
 export interface MercadoLivreCreateItemInput {
   title: string;
   category_id: string;
