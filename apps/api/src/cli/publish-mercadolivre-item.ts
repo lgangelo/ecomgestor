@@ -55,9 +55,21 @@ async function main() {
     const priceMarkupPercent = configService.get<{ priceMarkupPercent: number }>('mercadoLivre')!.priceMarkupPercent;
 
     const product = await productsService.findOne(productId, company.id);
+    // Nunca publica um produto que o próprio sistema não considera vendável — mesmo critério de
+    // "ativo" já usado em todo o resto da aplicação (ex.: filtro "só com estoque" da listagem).
+    if (product.status !== 'ACTIVE') {
+      console.error(`Produto está com status ${product.status} (não ATIVO) — não publicado.`);
+      process.exitCode = 1;
+      return;
+    }
     const variant = product.variants[0];
     if (!variant) {
       console.error('Produto sem nenhuma variação — não há SKU/preço/estoque pra publicar.');
+      process.exitCode = 1;
+      return;
+    }
+    if (variant.inventory.available <= 0) {
+      console.error(`Variação ${variant.sku} sem estoque disponível (${variant.inventory.available}) — não publicado.`);
       process.exitCode = 1;
       return;
     }
@@ -112,7 +124,8 @@ async function main() {
       category_id: categoryId,
       price: publishedPrice,
       currency_id: CURRENCY_ID,
-      available_quantity: Math.max(variant.inventory.available, 1),
+      // Estoque real (já validado > 0 acima) — nunca inventar uma quantidade mínima artificial.
+      available_quantity: variant.inventory.available,
       buying_mode: 'buy_it_now' as const,
       condition: 'new' as const,
       listing_type_id: listingType.id,
