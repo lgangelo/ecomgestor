@@ -1,6 +1,18 @@
 import { BadGatewayException } from '@nestjs/common';
-import { GoogleGenAI, Type } from '@google/genai';
+import { ApiError, GoogleGenAI, Type } from '@google/genai';
 import { AiCopyProvider, buildProductCopyPrompt, GenerateProductCopyInput, GenerateProductCopyOutput, PRODUCT_COPY_SCHEMA } from './ai-copy.types';
+
+/** Confirmado em produção: a camada gratuita do Gemini devolve 503 ("high demand") com alguma
+ * frequência — transitório, quase sempre some numa segunda tentativa alguns segundos depois.
+ * Nunca reage a 4xx (chave inválida, modelo não encontrado, etc.) — isso é erro de configuração,
+ * tentar de novo nunca resolveria. */
+const RETRYABLE_STATUS_CODES = new Set([429, 503]);
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 1500;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Provedor Gemini (Google AI Studio) — opção gratuita em baixa escala (chave sem cartão de
@@ -26,22 +38,7 @@ export class GeminiCopyProvider implements AiCopyProvider {
 
     let raw: string | undefined;
     try {
-      const response = await client.models.generateContent({
-        model: this.model,
-        contents: [{ role: 'user', parts }],
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              description: { type: Type.STRING },
-            },
-            required: ['title', 'description'],
-          },
-        },
-      });
-      raw = response.text;
+      raw = await this.callWithRetry(client, parts);
     } catch (error) {
       throw new BadGatewayException(`Falha ao gerar título/descrição via Gemini: ${(error as Error).message}`);
     }
@@ -62,5 +59,36 @@ export class GeminiCopyProvider implements AiCopyProvider {
       throw new BadGatewayException('O Gemini devolveu um formato inesperado (sem title/description).');
     }
     return result.data;
+  }
+
+  private async callWithRetry(
+    client: GoogleGenAI,
+    parts: Array<{ text?: string; inlineData?: { data: string; mimeType: string } }>,
+  ): Promise<string | undefined> {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const response = await client.models.generateContent({
+          model: this.model,
+          contents: [{ role: 'user', parts }],
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                description: { type: Type.STRING },
+              },
+              required: ['title', 'description'],
+            },
+          },
+        });
+        return response.text;
+      } catch (error) {
+        const retryable = error instanceof ApiError && RETRYABLE_STATUS_CODES.has(error.status);
+        if (!retryable || attempt === MAX_ATTEMPTS) throw error;
+        await sleep(RETRY_DELAY_MS * attempt);
+      }
+    }
+    return undefined;
   }
 }
