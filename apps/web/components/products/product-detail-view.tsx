@@ -338,9 +338,9 @@ interface MeasurementDraft {
   height: string;
 }
 
-/** Sem tamanho definido: nenhuma variação compartilha medida com outra automaticamente — cada
- * uma vira seu próprio grupo (chave prefixada pelo id pra nunca colidir entre si). */
-const NO_SIZE_GROUP_PREFIX = '__sem-tamanho__';
+/** Sem tamanho definido: as variações só diferem pela cor, então são fisicamente o mesmo produto
+ * — todas caem num único grupo (1 linha só), em vez de uma linha por variação/cor. */
+const NO_SIZE_GROUP_KEY = '__sem-tamanho__';
 
 function measurementDraftFrom(variant: ProductVariantDetail): MeasurementDraft {
   return {
@@ -365,7 +365,7 @@ function MedidasTab({ productId, product }: { productId: string; product: { vari
   const groups = React.useMemo(() => {
     const map = new Map<string, ProductVariantDetail[]>();
     for (const variant of product.variants) {
-      const key = variant.size ?? `${NO_SIZE_GROUP_PREFIX}${variant.id}`;
+      const key = variant.size ?? NO_SIZE_GROUP_KEY;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(variant);
     }
