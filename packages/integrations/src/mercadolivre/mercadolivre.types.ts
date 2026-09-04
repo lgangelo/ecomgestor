@@ -91,7 +91,11 @@ export interface MercadoLivreItemAttributeInput {
  * via `getListingTypes` antes de montar o payload, nunca hard-codar um id fixo (varia por
  * site/conta). */
 export interface MercadoLivreCreateItemInput {
-  title: string;
+  /** CONFIRMADO em produção: NUNCA enviar `title` junto com `family_name` — API recusa com
+   * "body.invalid_fields" ("The fields [title] are invalid for requested call"). No modelo
+   * "User Products", o Mercado Livre gera o título sozinho a partir do domínio/atributos/
+   * family_name — `title` só se aplica a item SEM family_name (fora do modelo novo). */
+  title?: string;
   category_id: string;
   price: number;
   currency_id: string;

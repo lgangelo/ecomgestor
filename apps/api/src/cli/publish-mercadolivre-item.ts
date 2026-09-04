@@ -107,7 +107,8 @@ async function main() {
       console.log(`Preço base: R$ ${basePrice.toFixed(2)} — com markup de ${priceMarkupPercent}%: R$ ${publishedPrice.toFixed(2)}`);
     }
     const payload = {
-      title,
+      // CONFIRMADO em produção: nunca enviar `title` junto com `family_name` — o Mercado Livre
+      // recusa ("body.invalid_fields") e gera o título sozinho a partir dos atributos/família.
       category_id: categoryId,
       price: publishedPrice,
       currency_id: CURRENCY_ID,
