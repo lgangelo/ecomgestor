@@ -115,6 +115,7 @@ async function main() {
       buying_mode: 'buy_it_now' as const,
       condition: 'new' as const,
       listing_type_id: listingType.id,
+      family_name: title,
       pictures: [{ source: product.imageUrl }],
       attributes: [
         { id: 'BRAND', value_id: brandValue.id },

@@ -99,6 +99,12 @@ export interface MercadoLivreCreateItemInput {
   buying_mode: 'buy_it_now';
   condition: 'new' | 'used';
   listing_type_id?: string;
+  /** CONFIRMADO obrigatório em produção (mesmo erro "body.required_fields", só some depois de
+   * incluir isso) — nome genérico que agrupa variações do mesmo produto sob o modelo "User
+   * Products"/"Preço por variação" do Mercado Livre. NÃO CONFIRMADO qual granularidade exata
+   * esperada (nome do produto sem cor/tamanho? nome completo?) — usamos o nome do produto como
+   * primeira tentativa. */
+  family_name?: string;
   pictures: Array<{ source: string }>;
   attributes: MercadoLivreItemAttributeInput[];
 }
