@@ -51,5 +51,11 @@ COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
+# Necessário só pro `npm run prisma:seed` (`ts-node`, roda direto do .ts em vez de compilado —
+# todo o resto desta imagem já roda `node` sobre JS compilado). `packages/database/tsconfig.json`
+# faz `"extends": "../../tsconfig.base.json"` (raiz do monorepo); sem este arquivo aqui, `ts-node`
+# falha com "Cannot read file '/app/tsconfig.base.json'" (CONFIRMADO em produção) porque a imagem
+# nunca copiava nada fora de `packages/`.
+COPY --from=build /app/tsconfig.base.json ./tsconfig.base.json
 EXPOSE 3001
 CMD ["node", "apps/api/dist/main.js"]
