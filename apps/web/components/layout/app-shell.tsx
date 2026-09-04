@@ -54,7 +54,7 @@ export function AppShell({
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <SidebarNav permissions={user.permissions} />
+            <SidebarNav permissions={user.permissions} onNavigate={() => setMobileOpen(false)} />
           </aside>
         </div>
       )}

@@ -24,10 +24,11 @@ function isGroupVisible(group: NavGroup, permissions: string[]): boolean {
   return (group.items ?? []).some((item) => hasPermission(permissions, item.permission));
 }
 
-function GroupLink({ group, active }: { group: NavGroup; active: boolean }) {
+function GroupLink({ group, active, onNavigate }: { group: NavGroup; active: boolean; onNavigate?: () => void }) {
   return (
     <Link
       href={group.href!}
+      onClick={onNavigate}
       className={cn(
         'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
         active
@@ -45,10 +46,12 @@ function CollapsibleGroup({
   group,
   permissions,
   pathname,
+  onNavigate,
 }: {
   group: NavGroup;
   permissions: string[];
   pathname: string;
+  onNavigate?: () => void;
 }) {
   const items = (group.items ?? []).filter((item) => hasPermission(permissions, item.permission));
   const isActiveGroup = items.some((item) => pathname === item.href);
@@ -86,6 +89,7 @@ function CollapsibleGroup({
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onNavigate}
                 className={cn(
                   'block rounded-md px-2.5 py-1.5 text-sm transition-colors',
                   active
@@ -103,20 +107,21 @@ function CollapsibleGroup({
   );
 }
 
-export function SidebarNav({ permissions }: { permissions: string[] }) {
+export function SidebarNav({ permissions, onNavigate }: { permissions: string[]; onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
     <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-2 py-4">
       {NAV_GROUPS.filter((g) => isGroupVisible(g, permissions)).map((group) =>
         group.href ? (
-          <GroupLink key={group.label} group={group} active={pathname === group.href} />
+          <GroupLink key={group.label} group={group} active={pathname === group.href} onNavigate={onNavigate} />
         ) : (
           <CollapsibleGroup
             key={group.label}
             group={group}
             permissions={permissions}
             pathname={pathname}
+            onNavigate={onNavigate}
           />
         ),
       )}
