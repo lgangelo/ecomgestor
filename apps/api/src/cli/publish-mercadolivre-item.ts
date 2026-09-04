@@ -103,6 +103,10 @@ async function main() {
       pictures: [{ source: product.imageUrl }],
       attributes: [
         { id: 'BRAND', value_id: brandValue.id },
+        // SELLER_SKU (opcional, mas confirmado disponível na ficha da categoria) — grava o
+        // NOSSO SKU interno no anúncio, essencial pra reidentificar depois qual variação
+        // interna corresponde a este item quando a sincronização de pedidos/estoque existir.
+        { id: 'SELLER_SKU', value_name: variant.sku },
         { id: 'MODEL', value_name: product.baseSku },
       ],
     };
