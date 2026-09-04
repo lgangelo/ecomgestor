@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { formatBRL } from '@ecommerce-manager/shared';
-import { useProducts, useProduct } from '@/hooks/use-products';
+import { resolveProductImageUrl, useProducts, useProduct } from '@/hooks/use-products';
 
 export interface PickedVariant {
   variantId: string;
@@ -66,13 +66,21 @@ export function VariantPickerDialog({
                   key={p.id}
                   type="button"
                   onClick={() => setSelectedProductId(p.id)}
-                  className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
+                  className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
                 >
-                  <span>
-                    <span className="font-medium">{p.name}</span>{' '}
-                    <span className="text-muted-foreground">({p.baseSku})</span>
+                  <span className="flex min-w-0 items-center gap-3">
+                    {p.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo, ou enviada por upload e servida pela nossa própria API
+                      <img src={resolveProductImageUrl(p.imageUrl)} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
+                    ) : (
+                      <div className="h-10 w-10 shrink-0 rounded bg-muted" />
+                    )}
+                    <span className="min-w-0">
+                      <span className="font-medium">{p.name}</span>{' '}
+                      <span className="text-muted-foreground">({p.baseSku})</span>
+                    </span>
                   </span>
-                  <span className="text-xs text-muted-foreground">{p.variantCount} SKU(s)</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{p.variantCount} SKU(s)</span>
                 </button>
               ))}
             </div>
@@ -83,24 +91,37 @@ export function VariantPickerDialog({
               ← Voltar para busca
             </Button>
             <div className="max-h-72 space-y-1 overflow-y-auto">
-              {product?.variants.map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => handlePick(v.id, v.sku, v.suggestedPrice)}
-                  className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
-                >
-                  <span>
-                    <span className="font-medium">{v.sku}</span>{' '}
-                    <span className="text-muted-foreground">
-                      {[v.color, v.size].filter(Boolean).join(' / ')}
+              {product?.variants.map((v) => {
+                // Nem toda variação tem foto própria — cai na capa do produto (mesmo padrão
+                // usado na tela de detalhe do produto), pra nunca ficar sem nenhuma imagem à toa.
+                const thumbnail = resolveProductImageUrl(v.imageUrl ?? product.imageUrl);
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => handlePick(v.id, v.sku, v.suggestedPrice)}
+                    className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
+                  >
+                    <span className="flex min-w-0 items-center gap-3">
+                      {thumbnail ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo, ou enviada por upload e servida pela nossa própria API
+                        <img src={thumbnail} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
+                      ) : (
+                        <div className="h-10 w-10 shrink-0 rounded bg-muted" />
+                      )}
+                      <span className="min-w-0">
+                        <span className="font-medium">{v.sku}</span>{' '}
+                        <span className="text-muted-foreground">
+                          {[v.color, v.size].filter(Boolean).join(' / ')}
+                        </span>
+                      </span>
                     </span>
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatBRL(v.suggestedPrice)} · {v.inventory.available} disp.
-                  </span>
-                </button>
-              ))}
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {formatBRL(v.suggestedPrice)} · {v.inventory.available} disp.
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
