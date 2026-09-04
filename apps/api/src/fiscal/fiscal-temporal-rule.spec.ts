@@ -1,7 +1,10 @@
 import type { PrismaService } from '../common/prisma/prisma.service';
 import type { ConfigService } from '@nestjs/config';
+import type { R2StorageService } from '../common/storage/r2-storage.service';
 import { FiscalService } from './fiscal.service';
 import { ManualFiscalProvider } from './manual-fiscal-provider.service';
+
+const fakeR2 = {} as unknown as R2StorageService;
 
 /**
  * Regra temporal da Fase 4 (seção 5): o fechamento/exportação fiscal por mês usa SEMPRE
@@ -61,7 +64,7 @@ describe('FiscalService — regra temporal (seção 5 da Fase 4)', () => {
         channelId: 'channel-1',
       },
     ];
-    const service = new FiscalService(makeFakePrisma(docs), makeConfig(), new ManualFiscalProvider());
+    const service = new FiscalService(makeFakePrisma(docs), makeConfig(), new ManualFiscalProvider(makeConfig(), fakeR2), fakeR2);
 
     const july = await service.getMonthlySummary('company-1', '2026-07');
     const august = await service.getMonthlySummary('company-1', '2026-08');
@@ -102,7 +105,7 @@ describe('FiscalService — regra temporal (seção 5 da Fase 4)', () => {
         channelId: 'channel-1',
       },
     ];
-    const service = new FiscalService(makeFakePrisma(docs), makeConfig(), new ManualFiscalProvider());
+    const service = new FiscalService(makeFakePrisma(docs), makeConfig(), new ManualFiscalProvider(makeConfig(), fakeR2), fakeR2);
 
     const july = await service.getMonthlySummary('company-1', '2026-07');
     const august = await service.getMonthlySummary('company-1', '2026-08');
@@ -130,7 +133,7 @@ describe('FiscalService — regra temporal (seção 5 da Fase 4)', () => {
         channelId: 'channel-1',
       },
     ];
-    const service = new FiscalService(makeFakePrisma(docs), makeConfig(), new ManualFiscalProvider());
+    const service = new FiscalService(makeFakePrisma(docs), makeConfig(), new ManualFiscalProvider(makeConfig(), fakeR2), fakeR2);
 
     const august = await service.getMonthlySummary('company-1', '2026-08');
     expect(august.documentsCount).toBe(0);

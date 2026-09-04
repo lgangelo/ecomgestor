@@ -23,7 +23,7 @@ describe('ProductsService.findAll — filtro "só com estoque" (hasStock)', () =
     const findMany = jest.fn().mockResolvedValue([product('p1', 0, 0)]);
     const count = jest.fn().mockResolvedValue(1);
     const prisma = { client: { product: { findMany, count } } };
-    const service = new ProductsService(prisma as unknown as PrismaService, {} as ConfigService);
+    const service = new ProductsService(prisma as unknown as PrismaService, {} as ConfigService, {} as never);
 
     const result = await service.findAll(COMPANY_ID, { page: 1, pageSize: 20 } as never);
 
@@ -46,7 +46,7 @@ describe('ProductsService.findAll — filtro "só com estoque" (hasStock)', () =
     const findMany = jest.fn().mockResolvedValue(all);
     const count = jest.fn();
     const prisma = { client: { product: { findMany, count } } };
-    const service = new ProductsService(prisma as unknown as PrismaService, {} as ConfigService);
+    const service = new ProductsService(prisma as unknown as PrismaService, {} as ConfigService, {} as never);
 
     const result = await service.findAll(COMPANY_ID, { page: 1, pageSize: 2, hasStock: true } as never);
 

@@ -45,6 +45,22 @@ export interface AppConfig {
     geminiApiKey: string;
     geminiModel: string;
   };
+  /** Armazenamento de objetos no Cloudflare R2 (compatível com a API S3) — dois buckets
+   * separados por nível de sensibilidade: `imagesBucket` é PÚBLICO (servido por um domínio
+   * customizado do R2, ver `imagesPublicBaseUrl`) e guarda só fotos de produto/variação, sem
+   * nada sensível; `fiscalBucket` é PRIVADO (sem domínio público nenhum) e guarda XML de NF-e
+   * (dado fiscal/cliente), só acessível via a API S3 autenticada com as credenciais abaixo —
+   * nunca um link direto. `enabled` (ambos os buckets configurados) decide se o código usa R2 ou
+   * cai no fallback de disco local (compatibilidade com instalações que ainda não migraram). */
+  r2: {
+    enabled: boolean;
+    endpoint: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    imagesBucket: string;
+    imagesPublicBaseUrl: string;
+    fiscalBucket: string;
+  };
 }
 
 export default (): AppConfig => ({
@@ -108,5 +124,18 @@ export default (): AppConfig => ({
     // sem reconfirmar, a Gemini troca a geração "current" com alguma frequência.
     geminiApiKey: process.env.GEMINI_API_KEY ?? '',
     geminiModel: process.env.AI_GEMINI_MODEL ?? 'gemini-3.6-flash',
+  },
+  r2: {
+    enabled: Boolean(
+      process.env.R2_ENDPOINT && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_IMAGES_BUCKET,
+    ),
+    endpoint: process.env.R2_ENDPOINT ?? '',
+    accessKeyId: process.env.R2_ACCESS_KEY_ID ?? '',
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? '',
+    imagesBucket: process.env.R2_IMAGES_BUCKET ?? '',
+    imagesPublicBaseUrl: (process.env.R2_IMAGES_PUBLIC_BASE_URL ?? '').replace(/\/+$/, ''),
+    // Fiscal é opcional e independente das fotos — pode ficar desligado (fallback pro disco
+    // local em modo PERSIST) mesmo com as fotos já migradas pra R2.
+    fiscalBucket: process.env.R2_FISCAL_BUCKET ?? '',
   },
 });

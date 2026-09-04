@@ -12,7 +12,8 @@ import { UploadFiscalDocumentDto } from './dto/upload-fiscal-document.dto';
 import { AssociateFiscalDocumentDto } from './dto/associate-fiscal-document.dto';
 import { extractFiscalData, sha256Hex } from './xml-extraction.util';
 import { FiscalDocumentProvider, FiscalDocumentReference } from './fiscal-document-provider.interface';
-import { ManualFiscalProvider } from './manual-fiscal-provider.service';
+import { ManualFiscalProvider, R2_XML_KEY_PREFIX } from './manual-fiscal-provider.service';
+import { R2StorageService } from '../common/storage/r2-storage.service';
 
 const MAX_XML_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_MIME_TYPES = ['application/xml', 'text/xml'];
@@ -47,6 +48,7 @@ export class FiscalService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly manualProvider: ManualFiscalProvider,
+    private readonly r2: R2StorageService,
   ) {}
 
   /**
@@ -269,10 +271,19 @@ export class FiscalService {
     const persistMode = this.isPersistMode();
     let xmlPath: string | null = null;
     if (persistMode) {
-      const dir = join(this.config.get<string>('fiscalXmlStorageDir')!, companyId);
-      await mkdir(dir, { recursive: true });
-      xmlPath = join(dir, `${xmlSha256}.xml`);
-      await writeFile(xmlPath, file.buffer);
+      const r2Config = this.config.get<{ enabled: boolean; fiscalBucket: string }>('r2')!;
+      if (r2Config.enabled && r2Config.fiscalBucket) {
+        // Bucket PRIVADO (sem domínio público) — nunca vira link direto, só a API S3
+        // autenticada consegue ler (ver ManualFiscalProvider.downloadXml).
+        const key = `xml/${companyId}/${xmlSha256}.xml`;
+        await this.r2.putObject(r2Config.fiscalBucket, key, file.buffer, 'application/xml');
+        xmlPath = `${R2_XML_KEY_PREFIX}${key}`;
+      } else {
+        const dir = join(this.config.get<string>('fiscalXmlStorageDir')!, companyId);
+        await mkdir(dir, { recursive: true });
+        xmlPath = join(dir, `${xmlSha256}.xml`);
+        await writeFile(xmlPath, file.buffer);
+      }
     }
 
     const document = await this.prisma.client.fiscalDocument.create({

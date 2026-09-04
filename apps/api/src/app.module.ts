@@ -7,6 +7,7 @@ import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
+import { StorageModule } from './common/storage/storage.module';
 import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
@@ -47,6 +48,7 @@ import { AiModule } from './ai/ai.module';
     ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 120 }] }),
     PrismaModule,
     RedisModule,
+    StorageModule,
     QueueModule,
     AuditModule,
     AuthModule,

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Prisma, ProductStatus } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { R2StorageService } from '../common/storage/r2-storage.service';
 import { paginate } from '../common/dto/pagination.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -38,6 +39,7 @@ export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly r2: R2StorageService,
   ) {}
 
   async findAll(companyId: string, query: QueryProductDto) {
@@ -616,23 +618,44 @@ export class ProductsService {
     }
   }
 
-  /** Grava a foto num diretório por empresa (mesmo padrão de `FiscalService.uploadDocument`) e
-   * devolve o path servido por `GET /products/images/:companyId/:filename` — nunca a URL de
-   * disco real, que fica isolada num volume Docker (ver docker-compose.yml). */
+  /**
+   * Grava a foto — no bucket público do R2 (`R2_IMAGES_BUCKET`, servido pelo domínio customizado
+   * `R2_IMAGES_PUBLIC_BASE_URL`) quando configurado, senão em disco local (compatibilidade com
+   * instalações que ainda não migraram, mesmo path servido por
+   * `GET /products/images/:companyId/:filename`). Nunca mistura os dois: a escolha é feita uma
+   * vez, no momento do upload, e o tipo de URL devolvida (absoluta do R2 vs. relativa local) é o
+   * que diferencia os dois casos depois (ver `deleteImageIfAny`).
+   */
   private async saveImageFile(companyId: string, file: UploadedImageFile): Promise<string> {
     this.validateImageFile(file);
+    const filename = `${randomUUID()}${MIME_TO_EXT[file.mimetype]}`;
+    const r2Config = this.config.get<{ enabled: boolean; imagesBucket: string; imagesPublicBaseUrl: string }>('r2')!;
+    if (r2Config.enabled) {
+      const key = `imagens/${companyId}/${filename}`;
+      await this.r2.putObject(r2Config.imagesBucket, key, file.buffer, file.mimetype);
+      return `${r2Config.imagesPublicBaseUrl}/${key}`;
+    }
     const dir = join(this.config.get<string>('productImageStorageDir')!, companyId);
     await mkdir(dir, { recursive: true });
-    const filename = `${randomUUID()}${MIME_TO_EXT[file.mimetype]}`;
     await writeFile(join(dir, filename), file.buffer);
     return `/products/images/${companyId}/${filename}`;
   }
 
-  /** Best-effort: apaga a foto anterior do disco ao trocar por uma nova — só quando ela foi
-   * armazenada por este mesmo mecanismo (nunca tenta apagar uma URL externa, ex.: importada da
-   * TikTok, que não existe no nosso disco). */
-  private async deleteLocalImageIfAny(companyId: string, previousImageUrl: string | null) {
+  /** Best-effort: apaga a foto anterior ao trocar por uma nova — só quando ela foi armazenada por
+   * este mesmo mecanismo (R2 público ou disco local), nunca uma URL externa de verdade (ex.: uma
+   * ainda não migrada de um canal externo). */
+  private async deleteImageIfAny(companyId: string, previousImageUrl: string | null) {
     if (!previousImageUrl) return;
+    const r2Config = this.config.get<{ imagesBucket: string; imagesPublicBaseUrl: string }>('r2')!;
+    if (r2Config.imagesPublicBaseUrl && previousImageUrl.startsWith(`${r2Config.imagesPublicBaseUrl}/`)) {
+      const key = previousImageUrl.slice(`${r2Config.imagesPublicBaseUrl}/`.length);
+      try {
+        await this.r2.deleteObject(r2Config.imagesBucket, key);
+      } catch {
+        // Best-effort — nunca bloqueia a troca por causa de uma falha ao apagar a antiga.
+      }
+      return;
+    }
     const prefix = `/products/images/${companyId}/`;
     if (!previousImageUrl.startsWith(prefix)) return;
     const filename = previousImageUrl.slice(prefix.length);
@@ -646,14 +669,14 @@ export class ProductsService {
   async uploadProductImage(id: string, companyId: string, file: UploadedImageFile) {
     const existing = await this.findProductOrThrow(id, companyId);
     const imageUrl = await this.saveImageFile(companyId, file);
-    await this.deleteLocalImageIfAny(companyId, existing.imageUrl);
+    await this.deleteImageIfAny(companyId, existing.imageUrl);
     return this.prisma.client.product.update({ where: { id }, data: { imageUrl } });
   }
 
   async uploadVariantImage(variantId: string, companyId: string, file: UploadedImageFile) {
     const existing = await this.getVariantOrThrow(variantId, companyId);
     const imageUrl = await this.saveImageFile(companyId, file);
-    await this.deleteLocalImageIfAny(companyId, existing.imageUrl);
+    await this.deleteImageIfAny(companyId, existing.imageUrl);
     return this.prisma.client.productVariant.update({ where: { id: variantId }, data: { imageUrl } });
   }
 
@@ -678,7 +701,7 @@ export class ProductsService {
 
   async removeProductImage(productId: string, imageId: string, companyId: string) {
     const image = await this.getProductImageOrThrow(productId, imageId, companyId);
-    await this.deleteLocalImageIfAny(companyId, image.url);
+    await this.deleteImageIfAny(companyId, image.url);
     await this.prisma.client.productImage.delete({ where: { id: imageId } });
   }
 

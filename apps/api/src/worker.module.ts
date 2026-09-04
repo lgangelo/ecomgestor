@@ -4,6 +4,7 @@ import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
+import { StorageModule } from './common/storage/storage.module';
 import { AppLoggerModule } from './common/logger/app-logger.module';
 import { HousekeepingWorkerService } from './queue/housekeeping.worker.service';
 import { TikTokWorkerService } from './queue/tiktok.worker.service';
@@ -20,6 +21,7 @@ import { TikTokModule } from './integrations/tiktok/tiktok.module';
     AppLoggerModule,
     PrismaModule,
     RedisModule,
+    StorageModule,
     TikTokModule,
   ],
   providers: [HousekeepingWorkerService, TikTokWorkerService],
