@@ -10,6 +10,7 @@ import {
   DialogDescription,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCategories } from '@/hooks/use-categories';
 import { resolveProductImageUrl, useUpdateProduct, useUploadProductImage, type ProductDetail } from '@/hooks/use-products';
+import { useGenerateProductCopy } from '@/hooks/use-ai-copy';
 import { ImageUploadField } from './image-upload-field';
 
 export function ProductEditDialog({ product, trigger }: { product: ProductDetail; trigger: React.ReactNode }) {
@@ -24,6 +26,7 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
   const { data: categories } = useCategories();
   const updateProduct = useUpdateProduct(product.id);
   const uploadImage = useUploadProductImage(product.id);
+  const generateCopy = useGenerateProductCopy();
   const [imageFile, setImageFile] = React.useState<File | null>(null);
 
   const [form, setForm] = React.useState({
@@ -68,6 +71,30 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
       setImageFile(null);
     }
     setOpen(false);
+  }
+
+  async function handleGenerateCopy() {
+    const categoryName = categories?.find((c) => c.id === form.categoryId)?.name;
+    // Usa o arquivo recém-selecionado se houver; senão busca a foto já cadastrada (mesma origem
+    // — cookies de sessão acompanham o fetch normalmente) pra mandar junto mesmo sem reenviar.
+    let image: File | Blob | undefined = imageFile ?? undefined;
+    const existingUrl = resolveProductImageUrl(product.imageUrl);
+    if (!image && existingUrl) {
+      try {
+        image = await fetch(existingUrl).then((r) => r.blob());
+      } catch {
+        // Best-effort — segue sem foto se a busca falhar (ex.: URL externa sem CORS liberado).
+      }
+    }
+
+    const result = await generateCopy.mutateAsync({
+      titleHint: form.name || undefined,
+      descriptionHint: form.description || undefined,
+      category: categoryName,
+      brand: form.brand || undefined,
+      image,
+    });
+    setForm((f) => ({ ...f, name: result.title, description: result.description }));
   }
 
   return (
@@ -160,12 +187,27 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
               />
             </div>
             <div className="col-span-2 space-y-1.5">
-              <Label htmlFor="edit-description">Descrição</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="edit-description">Descrição</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={generateCopy.isPending || (!form.name && !form.description)}
+                  onClick={handleGenerateCopy}
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {generateCopy.isPending ? 'Gerando...' : 'Gerar com IA'}
+                </Button>
+              </div>
               <Textarea
                 id="edit-description"
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               />
+              <p className="text-xs text-muted-foreground">
+                Preenche nome e descrição a partir do que já foi digitado e da foto atual — revise antes de salvar.
+              </p>
             </div>
           </div>
           <DialogFooter>

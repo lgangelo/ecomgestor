@@ -37,6 +37,7 @@ import { SearchModule } from './search/search.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { JobsModule } from './jobs/jobs.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { OnboardingModule } from './onboarding/onboarding.module';
     NotificationsModule,
     JobsModule,
     OnboardingModule,
+    AiModule,
   ],
   providers: [
     // Ordem importa: rate limit -> autenticação (popula req.user) -> autorização por

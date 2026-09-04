@@ -34,6 +34,15 @@ export interface AppConfig {
      * testar contra uma loja de produção — ver docs/integrations/shopee.md. */
     sandbox: boolean;
   };
+  /** Geração de título/descrição de produto por IA — provedor neutro, escolhido por env var
+   * (nunca os dois ativos ao mesmo tempo). Desligado por padrão (provider indefinido). */
+  ai: {
+    provider: 'anthropic' | 'openai' | null;
+    anthropicApiKey: string;
+    anthropicModel: string;
+    openaiApiKey: string;
+    openaiModel: string;
+  };
 }
 
 export default (): AppConfig => ({
@@ -80,5 +89,13 @@ export default (): AppConfig => ({
     // Default true (sandbox) de propósito — nunca aponta para produção sem decisão explícita,
     // já que nenhum endpoint de negócio foi confirmado ainda (ver docs/integrations/shopee.md).
     sandbox: process.env.SHOPEE_SANDBOX !== 'false',
+  },
+  ai: {
+    provider: process.env.AI_PROVIDER === 'anthropic' || process.env.AI_PROVIDER === 'openai' ? process.env.AI_PROVIDER : null,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+    // Modelo padrão: Claude Opus 5. Configurável via env pra trocar sem precisar de deploy de código.
+    anthropicModel: process.env.AI_ANTHROPIC_MODEL ?? 'claude-opus-5',
+    openaiApiKey: process.env.OPENAI_API_KEY ?? '',
+    openaiModel: process.env.AI_OPENAI_MODEL ?? 'gpt-4o',
   },
 });

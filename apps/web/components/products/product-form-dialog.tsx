@@ -14,16 +14,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Sparkles } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
 import { useCategories } from '@/hooks/use-categories';
 import { useCreateProduct } from '@/hooks/use-products';
+import { useGenerateProductCopy } from '@/hooks/use-ai-copy';
 import { ImageUploadField } from './image-upload-field';
 
 export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const { data: categories } = useCategories();
   const createProduct = useCreateProduct();
+  const generateCopy = useGenerateProductCopy();
   const queryClient = useQueryClient();
   const [imageFile, setImageFile] = React.useState<File | null>(null);
 
@@ -60,6 +63,19 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
     setOpen(false);
     setImageFile(null);
     setForm({ name: '', baseSku: '', brand: '', description: '', categoryId: '', imageUrl: '', status: 'DRAFT' });
+  }
+
+  async function handleGenerateCopy() {
+    const categoryName = categories?.find((c) => c.id === form.categoryId)?.name;
+    const result = await generateCopy.mutateAsync({
+      titleHint: form.name || undefined,
+      descriptionHint: form.description || undefined,
+      category: categoryName,
+      brand: form.brand || undefined,
+      image: imageFile ?? undefined,
+    });
+    // Sugestão editável — preenche os campos, mas o usuário ainda pode ajustar antes de salvar.
+    setForm((f) => ({ ...f, name: result.title, description: result.description }));
   }
 
   return (
@@ -142,12 +158,28 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
               />
             </div>
             <div className="col-span-2 space-y-1.5">
-              <Label htmlFor="description">Descrição</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="description">Descrição</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={generateCopy.isPending || (!form.name && !form.description)}
+                  onClick={handleGenerateCopy}
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {generateCopy.isPending ? 'Gerando...' : 'Gerar com IA'}
+                </Button>
+              </div>
               <Textarea
                 id="description"
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               />
+              <p className="text-xs text-muted-foreground">
+                Preenche nome e descrição a partir do que já foi digitado (e da foto, se enviada) — revise antes de
+                salvar.
+              </p>
             </div>
           </div>
           <DialogFooter>
