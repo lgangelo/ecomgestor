@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
 import { Plus, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -42,7 +41,6 @@ const STATUS_OPTIONS = [
 ];
 
 export function ManualSaleForm() {
-  const router = useRouter();
   const createManualOrder = useCreateManualOrder();
 
   const [channelType, setChannelType] = React.useState('INSTAGRAM');
@@ -75,7 +73,7 @@ export function ManualSaleForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const order = await createManualOrder.mutateAsync({
+    await createManualOrder.mutateAsync({
       channelType,
       status,
       customerName,
@@ -91,7 +89,13 @@ export function ManualSaleForm() {
         discount: Number(r.discount || 0),
       })),
     });
-    router.push(`/vendas/pedidos/${order.id}`);
+    // Fica na mesma tela em vez de navegar para o pedido — lançar várias vendas manuais em
+    // sequência (o caso de uso real) precisa só limpar o que é específico DESTA venda; canal,
+    // status, data e frete tendem a se repetir num mesmo lote de lançamentos, então continuam.
+    setCustomerName('');
+    setPaymentMethod('');
+    setNotes('');
+    setRows([]);
   }
 
   return (
