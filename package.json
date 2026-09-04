@@ -39,7 +39,8 @@
     "check-order-sync-errors": "npm run check-order-sync-errors --workspace=@ecommerce-manager/api",
     "reconcile-inventory-from-tiktok": "npm run reconcile-inventory-from-tiktok --workspace=@ecommerce-manager/api",
     "check-stock-catchup-backlog": "npm run check-stock-catchup-backlog --workspace=@ecommerce-manager/api",
-    "backfill-mirror-product-images": "npm run backfill-mirror-product-images --workspace=@ecommerce-manager/api"
+    "backfill-mirror-product-images": "npm run backfill-mirror-product-images --workspace=@ecommerce-manager/api",
+    "check-mercadolivre-category": "npm run check-mercadolivre-category --workspace=@ecommerce-manager/api"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",

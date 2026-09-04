@@ -1,4 +1,4 @@
-import { MERCADO_LIVRE_HOSTS } from './mercadolivre.types';
+import { MERCADO_LIVRE_HOSTS, MercadoLivreCategoryAttribute, MercadoLivreCategoryPrediction } from './mercadolivre.types';
 import { MercadoLivreApiError, MercadoLivreErrorCategory } from './mercadolivre.errors';
 
 export interface MercadoLivreClientConfig {
@@ -48,10 +48,25 @@ export class MercadoLivreClient {
     return json as T;
   }
 
-  /** Único endpoint de negócio CONFIRMADO pela pesquisa (mercado-livre.md) além do próprio OAuth
-   * — usado hoje só pelo health check da integração, pra validar que o token ainda funciona. */
+  /** Único endpoint de negócio usado hoje pelo health check da integração, pra validar que o
+   * token ainda funciona. */
   async getMe(): Promise<{ id: number; nickname?: string }> {
     return this.request('GET', '/users/me');
+  }
+
+  /** Sugere a categoria mais provável a partir de um título de anúncio — primeiro passo antes de
+   * publicar qualquer item: cada categoria tem sua própria ficha de atributos obrigatórios (ver
+   * `getCategoryAttributes`), então descobrir a categoria certa vem sempre antes. `limit` (1-8,
+   * confirmado pela doc) controla quantas sugestões voltam; a primeira é a de maior probabilidade. */
+  async predictCategory(siteId: string, title: string, limit = 3): Promise<MercadoLivreCategoryPrediction[]> {
+    return this.request('GET', `/sites/${siteId}/domain_discovery/search`, { query: { q: title, limit: String(limit) } });
+  }
+
+  /** Ficha de atributos de uma categoria — cada atributo vem marcado com `tags.required` quando
+   * é obrigatório pra publicar nela; `value_type` e `values` (quando existem) dizem se é texto
+   * livre, número, ou uma lista fechada de opções. */
+  async getCategoryAttributes(categoryId: string): Promise<MercadoLivreCategoryAttribute[]> {
+    return this.request('GET', `/categories/${categoryId}/attributes`);
   }
 
   private classifyError(status: number, json: unknown): MercadoLivreApiError {

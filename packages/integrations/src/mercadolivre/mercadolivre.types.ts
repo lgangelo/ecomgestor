@@ -45,3 +45,29 @@ export interface MercadoLivreTokenResponse {
   refreshToken: string;
   accessTokenExpiresAt: Date;
 }
+
+/** Resposta de `GET /sites/{site}/domain_discovery/search?q=...` — CONFIRMADO via resultado de
+ * busca citando o formato oficial (campos domain_id/domain_name/category_id/category_name). */
+export interface MercadoLivreCategoryPrediction {
+  domain_id?: string;
+  domain_name?: string;
+  category_id: string;
+  category_name: string;
+}
+
+/** Um valor possível de um atributo de categoria com lista fechada de opções (ex.: "Material":
+ * Couro/Sintético/Nylon...). */
+export interface MercadoLivreAttributeValue {
+  id: string;
+  name: string;
+}
+
+/** Um atributo da ficha técnica de uma categoria (`GET /categories/{id}/attributes`) —
+ * CONFIRMADO via resultado de busca citando a tag `required` dentro de `tags`. */
+export interface MercadoLivreCategoryAttribute {
+  id: string;
+  name: string;
+  value_type?: string;
+  tags?: { required?: boolean; fixed?: boolean; hidden?: boolean; [key: string]: boolean | undefined };
+  values?: MercadoLivreAttributeValue[];
+}
