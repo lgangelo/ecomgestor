@@ -1,4 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { Prisma, ProductStatus } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
@@ -9,9 +13,26 @@ import { CreateVariantDto } from './dto/create-variant.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { CreateCostHistoryDto } from './dto/create-cost-history.dto';
 
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MIME_TO_EXT: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+};
+
+export interface UploadedImageFile {
+  originalname: string;
+  mimetype: string;
+  size: number;
+  buffer: Buffer;
+}
+
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   async findAll(companyId: string, query: QueryProductDto) {
     const where: Prisma.ProductWhereInput = {
@@ -123,6 +144,7 @@ export class ProductsService {
         suggestedPrice: variant.suggestedPrice,
         minStock: variant.minStock,
         status: variant.status,
+        imageUrl: variant.imageUrl,
         latestCost: variant.costHistory[0]?.cost ?? null,
         inventory: {
           onHand: variant.inventory?.onHand ?? 0,
@@ -354,6 +376,7 @@ export class ProductsService {
             width: dto.width ?? null,
             height: dto.height ?? null,
             suggestedPrice: dto.suggestedPrice,
+            imageUrl: dto.imageUrl ?? null,
             ...(dto.minStock !== undefined ? { minStock: dto.minStock } : {}),
             ...(dto.status ? { status: dto.status } : {}),
           },
@@ -396,6 +419,7 @@ export class ProductsService {
           ...(dto.suggestedPrice !== undefined ? { suggestedPrice: dto.suggestedPrice } : {}),
           ...(dto.minStock !== undefined ? { minStock: dto.minStock } : {}),
           ...(dto.status !== undefined ? { status: dto.status } : {}),
+          ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl } : {}),
         },
       });
       return { old: existing, updated };
@@ -555,5 +579,63 @@ export class ProductsService {
       externalSku: m.externalSku,
       syncStatus: m.syncStatus,
     }));
+  }
+
+  private validateImageFile(file: UploadedImageFile) {
+    if (!file) throw new BadRequestException('Nenhum arquivo enviado');
+    if (!MIME_TO_EXT[file.mimetype]) {
+      throw new BadRequestException('Formato de imagem não suportado — envie JPEG, PNG ou WEBP.');
+    }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      throw new BadRequestException(`Imagem excede o tamanho máximo de ${MAX_IMAGE_SIZE_BYTES / 1024 / 1024}MB`);
+    }
+  }
+
+  /** Grava a foto num diretório por empresa (mesmo padrão de `FiscalService.uploadDocument`) e
+   * devolve o path servido por `GET /products/images/:companyId/:filename` — nunca a URL de
+   * disco real, que fica isolada num volume Docker (ver docker-compose.yml). */
+  private async saveImageFile(companyId: string, file: UploadedImageFile): Promise<string> {
+    this.validateImageFile(file);
+    const dir = join(this.config.get<string>('productImageStorageDir')!, companyId);
+    await mkdir(dir, { recursive: true });
+    const filename = `${randomUUID()}${MIME_TO_EXT[file.mimetype]}`;
+    await writeFile(join(dir, filename), file.buffer);
+    return `/products/images/${companyId}/${filename}`;
+  }
+
+  /** Best-effort: apaga a foto anterior do disco ao trocar por uma nova — só quando ela foi
+   * armazenada por este mesmo mecanismo (nunca tenta apagar uma URL externa, ex.: importada da
+   * TikTok, que não existe no nosso disco). */
+  private async deleteLocalImageIfAny(companyId: string, previousImageUrl: string | null) {
+    if (!previousImageUrl) return;
+    const prefix = `/products/images/${companyId}/`;
+    if (!previousImageUrl.startsWith(prefix)) return;
+    const filename = previousImageUrl.slice(prefix.length);
+    try {
+      await unlink(join(this.config.get<string>('productImageStorageDir')!, companyId, filename));
+    } catch {
+      // Best-effort — o arquivo já pode não existir (ex.: volume recriado). Nunca bloqueia a troca.
+    }
+  }
+
+  async uploadProductImage(id: string, companyId: string, file: UploadedImageFile) {
+    const existing = await this.findProductOrThrow(id, companyId);
+    const imageUrl = await this.saveImageFile(companyId, file);
+    await this.deleteLocalImageIfAny(companyId, existing.imageUrl);
+    return this.prisma.client.product.update({ where: { id }, data: { imageUrl } });
+  }
+
+  async uploadVariantImage(variantId: string, companyId: string, file: UploadedImageFile) {
+    const existing = await this.getVariantOrThrow(variantId, companyId);
+    const imageUrl = await this.saveImageFile(companyId, file);
+    await this.deleteLocalImageIfAny(companyId, existing.imageUrl);
+    return this.prisma.client.productVariant.update({ where: { id: variantId }, data: { imageUrl } });
+  }
+
+  /** Path absoluto no disco de uma foto já salva — usado só pelo endpoint de servir imagem
+   * (`GET /products/images/:companyId/:filename`), depois de o controller já ter confirmado que
+   * `companyId` bate com a empresa do usuário autenticado. */
+  resolveImageFilePath(companyId: string, filename: string): string {
+    return join(this.config.get<string>('productImageStorageDir')!, companyId, filename);
   }
 }

@@ -60,4 +60,8 @@ export class CreateVariantDto {
   @IsOptional()
   @IsEnum(VariantStatus)
   status?: VariantStatus;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
 }

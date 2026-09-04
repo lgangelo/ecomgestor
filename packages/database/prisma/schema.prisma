@@ -367,6 +367,7 @@ model ProductVariant {
   suggestedPrice Decimal       @default(0) @map("suggested_price") @db.Decimal(14, 2)
   minStock       Int           @default(0) @map("min_stock")
   status         VariantStatus @default(ACTIVE)
+  imageUrl       String?       @map("image_url")
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 

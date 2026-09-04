@@ -13,6 +13,7 @@ import { PRODUCT_STATUS_PRESENTATION, VARIANT_STATUS_PRESENTATION, INVENTORY_MOV
 import { formatBRL } from '@ecommerce-manager/shared';
 import { formatDate, stripHtmlForPreview } from '@/lib/format';
 import {
+  resolveProductImageUrl,
   useProduct,
   useProductChannels,
   useProductCostHistory,
@@ -51,8 +52,8 @@ export function ProductDetailView({ productId }: { productId: string }) {
         title={
           <div className="flex items-center gap-3">
             {product.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo ou cadastrada manualmente
-              <img src={product.imageUrl} alt="" className="h-12 w-12 rounded object-cover" />
+              // eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo, ou enviada por upload e servida pela nossa própria API
+              <img src={resolveProductImageUrl(product.imageUrl)} alt="" className="h-12 w-12 rounded object-cover" />
             ) : (
               <div className="h-12 w-12 rounded bg-muted" />
             )}
@@ -204,7 +205,17 @@ function ResumoTab({
             <TableBody>
               {product.variants.map((variant) => (
                 <TableRow key={variant.id}>
-                  <TableCell className="font-medium">{variant.sku}</TableCell>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      {variant.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo, ou enviada por upload e servida pela nossa própria API
+                        <img src={resolveProductImageUrl(variant.imageUrl)} alt="" className="h-8 w-8 rounded object-cover" />
+                      ) : (
+                        <div className="h-8 w-8 rounded bg-muted" />
+                      )}
+                      {variant.sku}
+                    </div>
+                  </TableCell>
                   <TableCell>{[variant.color, variant.size].filter(Boolean).join(' / ') || '—'}</TableCell>
                   <TableCell>{formatBRL(variant.suggestedPrice)}</TableCell>
                   <TableCell>

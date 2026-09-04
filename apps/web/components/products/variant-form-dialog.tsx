@@ -9,14 +9,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { apiFetch } from '@/lib/api-client';
 import { useCreateVariant } from '@/hooks/use-products';
+import { ImageUploadField } from './image-upload-field';
 
 export function VariantFormDialog({ productId, trigger }: { productId: string; trigger: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const createVariant = useCreateVariant(productId);
+  const queryClient = useQueryClient();
+  const [imageFile, setImageFile] = React.useState<File | null>(null);
 
   const [form, setForm] = React.useState({
     sku: '',
@@ -29,7 +34,7 @@ export function VariantFormDialog({ productId, trigger }: { productId: string; t
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await createVariant.mutateAsync({
+    const variant = await createVariant.mutateAsync({
       sku: form.sku,
       barcode: form.barcode || undefined,
       color: form.color || undefined,
@@ -37,7 +42,14 @@ export function VariantFormDialog({ productId, trigger }: { productId: string; t
       suggestedPrice: Number(form.suggestedPrice),
       minStock: Number(form.minStock),
     });
+    if (imageFile) {
+      const body = new FormData();
+      body.append('file', imageFile);
+      await apiFetch(`/products/variants/${(variant as { id: string }).id}/image`, { method: 'POST', body });
+      queryClient.invalidateQueries({ queryKey: ['products', productId] });
+    }
     setOpen(false);
+    setImageFile(null);
     setForm({ sku: '', barcode: '', color: '', size: '', suggestedPrice: '', minStock: '0' });
   }
 
@@ -87,6 +99,9 @@ export function VariantFormDialog({ productId, trigger }: { productId: string; t
                 value={form.minStock}
                 onChange={(e) => setForm((f) => ({ ...f, minStock: e.target.value }))}
               />
+            </div>
+            <div className="col-span-2">
+              <ImageUploadField id="variantImageFile" label="Foto desta variação (opcional)" onFileSelect={setImageFile} />
             </div>
           </div>
           <DialogFooter>

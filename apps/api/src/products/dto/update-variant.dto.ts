@@ -62,4 +62,8 @@ export class UpdateVariantDto {
   @IsOptional()
   @IsEnum(VariantStatus)
   status?: VariantStatus;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
 }

@@ -50,12 +50,21 @@ async function silentRefresh(): Promise<boolean> {
 }
 
 async function doFetch(path: string, method: string, headers: Headers, options: ApiFetchOptions) {
+  // Upload de arquivo (FormData) nunca vira JSON — o navegador já define o Content-Type certo
+  // (multipart, com o boundary) sozinho quando o body é um FormData passado direto ao fetch;
+  // sobrescrever isso quebraria o parsing do multer no backend.
+  const body =
+    options.body instanceof FormData
+      ? options.body
+      : options.body !== undefined
+        ? JSON.stringify(options.body)
+        : undefined;
   return fetch(`${API_BASE_URL}${path}`, {
     ...options,
     method,
     headers,
     credentials: 'include',
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body,
   });
 }
 
@@ -67,7 +76,7 @@ async function doFetch(path: string, method: string, headers: Headers, options: 
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const method = (options.method ?? 'GET').toUpperCase();
   const headers = new Headers(options.headers);
-  if (options.body !== undefined) headers.set('Content-Type', 'application/json');
+  if (options.body !== undefined && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
   if (MUTATING_METHODS.has(method)) {
     const csrfToken = readCookie(CSRF_COOKIE_NAME);
     if (csrfToken) headers.set(CSRF_HEADER_NAME, csrfToken);

@@ -8,6 +8,7 @@ volumes:
   redis-data:
   traefik-certs:
   fiscal-xml-storage:
+  product-image-storage:
 
 services:
   traefik:
@@ -65,6 +66,7 @@ services:
       - 'host.docker.internal:host-gateway'
     volumes:
       - fiscal-xml-storage:/data/fiscal-xml
+      - product-image-storage:/data/product-images
     depends_on:
       redis:
         condition: service_healthy

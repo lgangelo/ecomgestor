@@ -16,12 +16,15 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCategories } from '@/hooks/use-categories';
-import { useUpdateProduct, type ProductDetail } from '@/hooks/use-products';
+import { resolveProductImageUrl, useUpdateProduct, useUploadProductImage, type ProductDetail } from '@/hooks/use-products';
+import { ImageUploadField } from './image-upload-field';
 
 export function ProductEditDialog({ product, trigger }: { product: ProductDetail; trigger: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const { data: categories } = useCategories();
   const updateProduct = useUpdateProduct(product.id);
+  const uploadImage = useUploadProductImage(product.id);
+  const [imageFile, setImageFile] = React.useState<File | null>(null);
 
   const [form, setForm] = React.useState({
     name: product.name,
@@ -60,6 +63,10 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
       imageUrl: form.imageUrl || undefined,
       status: form.status,
     });
+    if (imageFile) {
+      await uploadImage.mutateAsync(imageFile);
+      setImageFile(null);
+    }
     setOpen(false);
   }
 
@@ -142,6 +149,14 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
                 placeholder="https://..."
                 value={form.imageUrl}
                 onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
+              />
+            </div>
+            <div className="col-span-2">
+              <ImageUploadField
+                id="edit-coverImageFile"
+                label="Ou envie uma foto de capa (se enviar, tem prioridade sobre a URL acima)"
+                existingUrl={resolveProductImageUrl(product.imageUrl)}
+                onFileSelect={setImageFile}
               />
             </div>
             <div className="col-span-2 space-y-1.5">

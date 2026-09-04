@@ -14,13 +14,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useQueryClient } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api-client';
 import { useCategories } from '@/hooks/use-categories';
 import { useCreateProduct } from '@/hooks/use-products';
+import { ImageUploadField } from './image-upload-field';
 
 export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const { data: categories } = useCategories();
   const createProduct = useCreateProduct();
+  const queryClient = useQueryClient();
+  const [imageFile, setImageFile] = React.useState<File | null>(null);
 
   const [form, setForm] = React.useState({
     name: '',
@@ -34,7 +39,7 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await createProduct.mutateAsync({
+    const product = await createProduct.mutateAsync({
       name: form.name,
       baseSku: form.baseSku,
       brand: form.brand || undefined,
@@ -43,7 +48,17 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
       imageUrl: form.imageUrl || undefined,
       status: form.status,
     });
+    // A foto enviada como arquivo sempre prevalece sobre a URL colada acima, se as duas foram
+    // preenchidas — só dá pra anexar depois que o produto já existe (precisa do id), por isso é
+    // uma chamada separada em vez de ir junto no corpo de `createProduct`.
+    if (imageFile) {
+      const body = new FormData();
+      body.append('file', imageFile);
+      await apiFetch(`/products/${product.id}/image`, { method: 'POST', body });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    }
     setOpen(false);
+    setImageFile(null);
     setForm({ name: '', baseSku: '', brand: '', description: '', categoryId: '', imageUrl: '', status: 'DRAFT' });
   }
 
@@ -111,12 +126,19 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
               </Select>
             </div>
             <div className="col-span-2 space-y-1.5">
-              <Label htmlFor="imageUrl">URL da imagem de capa</Label>
+              <Label htmlFor="imageUrl">URL da imagem de capa (opcional)</Label>
               <Input
                 id="imageUrl"
                 placeholder="https://..."
                 value={form.imageUrl}
                 onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
+              />
+            </div>
+            <div className="col-span-2">
+              <ImageUploadField
+                id="coverImageFile"
+                label="Ou envie uma foto de capa (opcional — se enviar, tem prioridade sobre a URL acima)"
+                onFileSelect={setImageFile}
               />
             </div>
             <div className="col-span-2 space-y-1.5">

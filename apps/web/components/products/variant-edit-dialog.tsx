@@ -12,8 +12,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useUpdateProduct, useUpdateVariant } from '@/hooks/use-products';
+import { resolveProductImageUrl, useUpdateProduct, useUpdateVariant, useUploadVariantImage } from '@/hooks/use-products';
 import type { ProductVariantDetail } from '@/hooks/use-products';
+import { ImageUploadField } from './image-upload-field';
 
 export function VariantEditDialog({
   productId,
@@ -32,6 +33,8 @@ export function VariantEditDialog({
   const [open, setOpen] = React.useState(false);
   const updateVariant = useUpdateVariant(productId, variant.id);
   const updateProduct = useUpdateProduct(productId);
+  const uploadImage = useUploadVariantImage(productId, variant.id);
+  const [imageFile, setImageFile] = React.useState<File | null>(null);
 
   const [form, setForm] = React.useState({
     sku: variant.sku,
@@ -67,6 +70,10 @@ export function VariantEditDialog({
     });
     if (syncBaseSku && form.sku !== variant.sku) {
       await updateProduct.mutateAsync({ baseSku: form.sku });
+    }
+    if (imageFile) {
+      await uploadImage.mutateAsync(imageFile);
+      setImageFile(null);
     }
     setOpen(false);
   }
@@ -120,6 +127,14 @@ export function VariantEditDialog({
                 min="0"
                 value={form.minStock}
                 onChange={(e) => setForm((f) => ({ ...f, minStock: e.target.value }))}
+              />
+            </div>
+            <div className="col-span-2">
+              <ImageUploadField
+                id="edit-variantImageFile"
+                label="Foto desta variação (opcional)"
+                existingUrl={resolveProductImageUrl(variant.imageUrl)}
+                onFileSelect={setImageFile}
               />
             </div>
           </div>

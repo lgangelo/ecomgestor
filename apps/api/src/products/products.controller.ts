@@ -1,10 +1,29 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
+import { existsSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 import { PERMISSIONS } from '@ecommerce-manager/shared';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { AuditService } from '../audit/audit.service';
-import { ProductsService } from './products.service';
+import { ProductsService, UploadedImageFile } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { QueryProductDto } from './dto/query-product.dto';
@@ -13,6 +32,10 @@ import { UpdateVariantDto } from './dto/update-variant.dto';
 import { CreateCostHistoryDto } from './dto/create-cost-history.dto';
 import { BulkDeleteProductsDto } from './dto/bulk-delete-products.dto';
 import { BulkUpdateProductStatusDto } from './dto/bulk-update-product-status.dto';
+
+// Nome gerado por `ProductsService.saveImageFile` (`randomUUID() + extensão`) — nunca aceita
+// nada fora desse formato no path da requisição (trava tentativa de path traversal, ex.: `../..`).
+const IMAGE_FILENAME_PATTERN = /^[0-9a-f-]+\.(jpg|png|webp)$/;
 
 @Controller('products')
 export class ProductsController {
@@ -77,6 +100,67 @@ export class ProductsController {
   @RequirePermissions(PERMISSIONS.PRODUCT_READ)
   getChannelMappings(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.productsService.getChannelMappings(id, user.companyId);
+  }
+
+  /** Serve a foto salva localmente (capa do produto ou de uma variação) — nunca as importadas de
+   * um canal externo (ex.: TikTok), essas continuam sendo a URL do CDN deles direto.
+   * `companyId` no path (não vem de `@CurrentUser`) só para checar, antes de ler o arquivo, que o
+   * usuário autenticado pertence à MESMA empresa dona da foto — nunca serve a foto de outra
+   * empresa mesmo que o nome do arquivo seja adivinhado. */
+  @Get('images/:companyId/:filename')
+  @RequirePermissions(PERMISSIONS.PRODUCT_READ)
+  getImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('companyId') companyId: string,
+    @Param('filename') filename: string,
+    @Res() res: Response,
+  ) {
+    if (companyId !== user.companyId) throw new NotFoundException('Imagem não encontrada');
+    if (!IMAGE_FILENAME_PATTERN.test(filename)) throw new BadRequestException('Nome de arquivo inválido');
+
+    const path = resolvePath(this.productsService.resolveImageFilePath(companyId, filename));
+    if (!existsSync(path)) throw new NotFoundException('Imagem não encontrada');
+    res.sendFile(path);
+  }
+
+  @Post(':id/image')
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @UploadedFile() file: UploadedImageFile,
+  ) {
+    const updated = await this.productsService.uploadProductImage(id, user.companyId, file);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'UPDATE',
+      entity: 'product',
+      entityId: updated.id,
+      newValue: { imageUrl: updated.imageUrl },
+    });
+    return updated;
+  }
+
+  @Post('variants/:variantId/image')
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadVariantImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('variantId') variantId: string,
+    @UploadedFile() file: UploadedImageFile,
+  ) {
+    const updated = await this.productsService.uploadVariantImage(variantId, user.companyId, file);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'UPDATE',
+      entity: 'product_variant',
+      entityId: updated.id,
+      newValue: { imageUrl: updated.imageUrl },
+    });
+    return updated;
   }
 
   @Post()

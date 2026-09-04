@@ -1,10 +1,18 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch, ApiError } from '@/lib/api-client';
+import { apiFetch, apiUrl, ApiError } from '@/lib/api-client';
 import { buildQueryString } from '@/lib/query-string';
 import type { Paginated } from '@/lib/types/pagination';
 import { toast } from '@/components/ui/use-toast';
+
+/** `imageUrl` é ou uma URL externa completa (produto importado de um canal, ex.: CDN da TikTok)
+ * ou um path relativo servido pela nossa própria API (`/products/images/...`, foto enviada por
+ * upload) — só o segundo caso precisa da URL base da API na frente. */
+export function resolveProductImageUrl(imageUrl: string | null | undefined): string | undefined {
+  if (!imageUrl) return undefined;
+  return /^https?:\/\//.test(imageUrl) ? imageUrl : apiUrl(imageUrl);
+}
 
 export interface ProductListItem {
   id: string;
@@ -33,6 +41,7 @@ export interface ProductVariantDetail {
   suggestedPrice: string;
   minStock: number;
   status: 'ACTIVE' | 'INACTIVE';
+  imageUrl: string | null;
   latestCost: string | null;
   inventory: { available: number; reserved: number };
 }
@@ -191,6 +200,41 @@ export function useCreateVariant(productId: string) {
       toast({ title: 'Variação (SKU) criada com sucesso.' });
     },
     onError: onErrorToast('Não foi possível criar a variação'),
+  });
+}
+
+/** Upload da foto de capa do produto — sempre substitui a anterior (o backend apaga a antiga do
+ * disco quando ela também tinha sido enviada por aqui; nunca mexe numa URL externa). */
+export function useUploadProductImage(productId: string) {
+  const queryClient = useQueryClient();
+  const onErrorToast = useErrorToast();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return apiFetch<ProductDetail>(`/products/${productId}/image`, { method: 'POST', body: form });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products', productId] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    onError: onErrorToast('Não foi possível enviar a foto'),
+  });
+}
+
+export function useUploadVariantImage(productId: string, variantId: string) {
+  const queryClient = useQueryClient();
+  const onErrorToast = useErrorToast();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return apiFetch<ProductVariantDetail>(`/products/variants/${variantId}/image`, { method: 'POST', body: form });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products', productId] });
+    },
+    onError: onErrorToast('Não foi possível enviar a foto'),
   });
 }
 
