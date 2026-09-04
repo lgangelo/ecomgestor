@@ -342,10 +342,28 @@ model Product {
   company  Company          @relation(fields: [companyId], references: [id])
   category Category?        @relation(fields: [categoryId], references: [id])
   variants ProductVariant[]
+  images   ProductImage[]
 
   @@unique([companyId, baseSku])
   @@index([companyId, status])
   @@map("products")
+}
+
+/// Galeria de fotos adicionais do produto (seção 4, limite de 5 por produto aplicado no service,
+/// nunca no schema — mesma filosofia de `ProductCostHistory`: histórico/galeria vive numa tabela
+/// própria, `imageUrl` em `Product` continua sendo só a foto de CAPA atual, escolhida entre estas
+/// (ou enviada avulsa, sem precisar estar na galeria). `position` ordena a exibição.
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String   @map("product_id")
+  url       String
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_images")
 }
 
 enum VariantStatus {

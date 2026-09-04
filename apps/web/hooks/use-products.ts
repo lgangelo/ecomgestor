@@ -46,6 +46,14 @@ export interface ProductVariantDetail {
   inventory: { available: number; reserved: number };
 }
 
+export interface ProductImageDetail {
+  id: string;
+  url: string;
+  position: number;
+}
+
+export const MAX_PRODUCT_IMAGES = 5;
+
 export interface ProductDetail {
   id: string;
   name: string;
@@ -55,6 +63,7 @@ export interface ProductDetail {
   baseSku: string;
   imageUrl: string | null;
   category: { id: string; name: string } | null;
+  images: ProductImageDetail[];
   variants: ProductVariantDetail[];
 }
 
@@ -220,6 +229,51 @@ export function useUploadProductImage(productId: string) {
       queryClient.invalidateQueries({ queryKey: ['products'] });
     },
     onError: onErrorToast('Não foi possível enviar a foto'),
+  });
+}
+
+/** Galeria de fotos adicionais do produto (até `MAX_PRODUCT_IMAGES`, independente da foto de
+ * capa) — adicionar/remover/promover a capa. */
+export function useAddProductImage(productId: string) {
+  const queryClient = useQueryClient();
+  const onErrorToast = useErrorToast();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return apiFetch<ProductImageDetail>(`/products/${productId}/images`, { method: 'POST', body: form });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products', productId] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    onError: onErrorToast('Não foi possível adicionar a foto'),
+  });
+}
+
+export function useRemoveProductImage(productId: string) {
+  const queryClient = useQueryClient();
+  const onErrorToast = useErrorToast();
+  return useMutation({
+    mutationFn: (imageId: string) => apiFetch<void>(`/products/${productId}/images/${imageId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products', productId] });
+    },
+    onError: onErrorToast('Não foi possível remover a foto'),
+  });
+}
+
+export function useSetProductCoverImage(productId: string) {
+  const queryClient = useQueryClient();
+  const onErrorToast = useErrorToast();
+  return useMutation({
+    mutationFn: (imageId: string) => apiFetch<ProductDetail>(`/products/${productId}/images/${imageId}/cover`, { method: 'POST' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products', productId] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast({ title: 'Foto de capa atualizada.' });
+    },
+    onError: onErrorToast('Não foi possível definir a foto de capa'),
   });
 }
 

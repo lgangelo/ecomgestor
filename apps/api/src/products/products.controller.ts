@@ -143,6 +143,64 @@ export class ProductsController {
     return updated;
   }
 
+  @Post(':id/images')
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  @UseInterceptors(FileInterceptor('file'))
+  async addImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @UploadedFile() file: UploadedImageFile,
+  ) {
+    const image = await this.productsService.addProductImage(id, user.companyId, file);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'UPDATE',
+      entity: 'product',
+      entityId: id,
+      newValue: { imageAdded: image.url },
+    });
+    return image;
+  }
+
+  @Delete(':id/images/:imageId')
+  @HttpCode(204)
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  async removeImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('imageId') imageId: string,
+  ) {
+    await this.productsService.removeProductImage(id, imageId, user.companyId);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'UPDATE',
+      entity: 'product',
+      entityId: id,
+      newValue: { imageRemoved: imageId },
+    });
+  }
+
+  @Post(':id/images/:imageId/cover')
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  async setCoverImage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('imageId') imageId: string,
+  ) {
+    const updated = await this.productsService.setProductCoverImage(id, imageId, user.companyId);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'UPDATE',
+      entity: 'product',
+      entityId: id,
+      newValue: { imageUrl: updated.imageUrl },
+    });
+    return updated;
+  }
+
   @Post('variants/:variantId/image')
   @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
   @UseInterceptors(FileInterceptor('file'))

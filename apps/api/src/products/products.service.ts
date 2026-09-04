@@ -22,6 +22,9 @@ const MIME_TO_EXT: Record<string, string> = {
 // Espelhamento de foto externa (ex.: CDN da TikTok) — nunca deixa pendurado esperando um host de
 // terceiro que pode estar lento/inacessível pra sempre.
 const MIRROR_EXTERNAL_IMAGE_TIMEOUT_MS = 10_000;
+// Limite de fotos na galeria adicional do produto (nunca conta a foto de capa, `Product.imageUrl`,
+// que é independente) — pedido explícito do usuário.
+const MAX_PRODUCT_IMAGES = 5;
 
 export interface UploadedImageFile {
   originalname: string;
@@ -121,6 +124,7 @@ export class ProductsService {
       where: { id, companyId },
       include: {
         category: { select: { id: true, name: true } },
+        images: { orderBy: { position: 'asc' } },
         variants: {
           include: {
             // Desempate por createdAt: duas entradas registradas no mesmo dia (comum, o diálogo sempre
@@ -149,6 +153,9 @@ export class ProductsService {
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
       category: product.category ? { id: product.category.id, name: product.category.name } : null,
+      // Galeria adicional (até MAX_PRODUCT_IMAGES) — independente da foto de capa (`imageUrl`),
+      // que pode ou não coincidir com uma delas.
+      images: product.images.map((image) => ({ id: image.id, url: image.url, position: image.position })),
       variants: product.variants.map((variant) => ({
         id: variant.id,
         sku: variant.sku,
@@ -648,6 +655,40 @@ export class ProductsService {
     const imageUrl = await this.saveImageFile(companyId, file);
     await this.deleteLocalImageIfAny(companyId, existing.imageUrl);
     return this.prisma.client.productVariant.update({ where: { id: variantId }, data: { imageUrl } });
+  }
+
+  /** Galeria de fotos adicionais do produto (nunca a foto de capa, que continua sendo só
+   * `Product.imageUrl` — ver comentário no schema). Adiciona ao final (maior `position` + 1). */
+  async addProductImage(productId: string, companyId: string, file: UploadedImageFile) {
+    await this.findProductOrThrow(productId, companyId);
+    const count = await this.prisma.client.productImage.count({ where: { productId } });
+    if (count >= MAX_PRODUCT_IMAGES) {
+      throw new BadRequestException(`Cada produto pode ter no máximo ${MAX_PRODUCT_IMAGES} fotos na galeria.`);
+    }
+    const url = await this.saveImageFile(companyId, file);
+    return this.prisma.client.productImage.create({ data: { productId, url, position: count } });
+  }
+
+  private async getProductImageOrThrow(productId: string, imageId: string, companyId: string) {
+    await this.findProductOrThrow(productId, companyId);
+    const image = await this.prisma.client.productImage.findFirst({ where: { id: imageId, productId } });
+    if (!image) throw new NotFoundException('Foto não encontrada');
+    return image;
+  }
+
+  async removeProductImage(productId: string, imageId: string, companyId: string) {
+    const image = await this.getProductImageOrThrow(productId, imageId, companyId);
+    await this.deleteLocalImageIfAny(companyId, image.url);
+    await this.prisma.client.productImage.delete({ where: { id: imageId } });
+  }
+
+  /** Promove uma foto da galeria a foto de CAPA (`Product.imageUrl`) — nunca apaga a capa
+   * anterior do disco: ela pode ainda estar referenciada em outro lugar (ex.: uma foto que também
+   * está na galeria), diferente de `uploadProductImage`, que sabe que está SUBSTITUINDO a única
+   * referência a ela. */
+  async setProductCoverImage(productId: string, imageId: string, companyId: string) {
+    const image = await this.getProductImageOrThrow(productId, imageId, companyId);
+    return this.prisma.client.product.update({ where: { id: productId }, data: { imageUrl: image.url } });
   }
 
   /** Path absoluto no disco de uma foto já salva — usado só pelo endpoint de servir imagem
