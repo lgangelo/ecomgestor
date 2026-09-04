@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AnthropicCopyProvider } from './anthropic-copy.provider';
 import { OpenAiCopyProvider } from './openai-copy.provider';
+import { GeminiCopyProvider } from './gemini-copy.provider';
 import { GenerateProductCopyInput, GenerateProductCopyOutput } from './ai-copy.types';
 
 /**
@@ -18,11 +19,12 @@ export class AiCopyService {
     const provider = this.config.get<string | null>('ai.provider', { infer: true });
     if (provider === 'anthropic') return Boolean(this.config.get<string>('ai.anthropicApiKey', { infer: true }));
     if (provider === 'openai') return Boolean(this.config.get<string>('ai.openaiApiKey', { infer: true }));
+    if (provider === 'gemini') return Boolean(this.config.get<string>('ai.geminiApiKey', { infer: true }));
     return false;
   }
 
   async generateProductCopy(input: GenerateProductCopyInput): Promise<GenerateProductCopyOutput> {
-    const provider = this.config.get<'anthropic' | 'openai' | null>('ai.provider', { infer: true });
+    const provider = this.config.get<'anthropic' | 'openai' | 'gemini' | null>('ai.provider', { infer: true });
 
     if (provider === 'anthropic') {
       const apiKey = this.config.get<string>('ai.anthropicApiKey', { infer: true }) as string;
@@ -38,8 +40,15 @@ export class AiCopyService {
       return new OpenAiCopyProvider(apiKey, model).generateProductCopy(input);
     }
 
+    if (provider === 'gemini') {
+      const apiKey = this.config.get<string>('ai.geminiApiKey', { infer: true }) as string;
+      if (!apiKey) throw new BadRequestException('GEMINI_API_KEY não configurada.');
+      const model = this.config.get<string>('ai.geminiModel', { infer: true }) as string;
+      return new GeminiCopyProvider(apiKey, model).generateProductCopy(input);
+    }
+
     throw new BadRequestException(
-      'Geração de título/descrição por IA não configurada. Defina AI_PROVIDER=anthropic ou AI_PROVIDER=openai (e a respectiva chave de API) para habilitar.',
+      'Geração de título/descrição por IA não configurada. Defina AI_PROVIDER=anthropic, AI_PROVIDER=openai ou AI_PROVIDER=gemini (e a respectiva chave de API) para habilitar.',
     );
   }
 }

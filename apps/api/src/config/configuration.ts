@@ -35,13 +35,15 @@ export interface AppConfig {
     sandbox: boolean;
   };
   /** Geração de título/descrição de produto por IA — provedor neutro, escolhido por env var
-   * (nunca os dois ativos ao mesmo tempo). Desligado por padrão (provider indefinido). */
+   * (nunca mais de um ativo ao mesmo tempo). Desligado por padrão (provider indefinido). */
   ai: {
-    provider: 'anthropic' | 'openai' | null;
+    provider: 'anthropic' | 'openai' | 'gemini' | null;
     anthropicApiKey: string;
     anthropicModel: string;
     openaiApiKey: string;
     openaiModel: string;
+    geminiApiKey: string;
+    geminiModel: string;
   };
 }
 
@@ -91,11 +93,17 @@ export default (): AppConfig => ({
     sandbox: process.env.SHOPEE_SANDBOX !== 'false',
   },
   ai: {
-    provider: process.env.AI_PROVIDER === 'anthropic' || process.env.AI_PROVIDER === 'openai' ? process.env.AI_PROVIDER : null,
+    provider:
+      process.env.AI_PROVIDER === 'anthropic' || process.env.AI_PROVIDER === 'openai' || process.env.AI_PROVIDER === 'gemini'
+        ? process.env.AI_PROVIDER
+        : null,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
     // Modelo padrão: Claude Opus 5. Configurável via env pra trocar sem precisar de deploy de código.
     anthropicModel: process.env.AI_ANTHROPIC_MODEL ?? 'claude-opus-5',
     openaiApiKey: process.env.OPENAI_API_KEY ?? '',
     openaiModel: process.env.AI_OPENAI_MODEL ?? 'gpt-4o',
+    // Gemini (Google AI Studio) — opção com camada gratuita real, sem cartão de crédito.
+    geminiApiKey: process.env.GEMINI_API_KEY ?? '',
+    geminiModel: process.env.AI_GEMINI_MODEL ?? 'gemini-2.5-flash',
   },
 });
