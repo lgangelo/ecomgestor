@@ -98,6 +98,19 @@ export class MercadoLivreClient {
     await this.request('POST', `/items/${itemId}/description`, { body: { plain_text: plainText } });
   }
 
+  /** Detalhe completo de um item já criado — usado pra inspecionar o estado real antes/depois de
+   * uma atualização (ex.: conferir os `id`s reais atribuídos às fotos depois de enviá-las). */
+  async getItem(itemId: string): Promise<Record<string, unknown>> {
+    return this.request('GET', `/items/${itemId}`);
+  }
+
+  /** Atualiza um item já existente (preço, estoque, fotos, variações, etc.) — NÃO CONFIRMADO
+   * ainda contra uma chamada real com `variations`/`pictures` (ver docs/integrations/
+   * mercado-livre.md); primeira tentativa deve vir de um script de diagnóstico. */
+  async updateItem(itemId: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.request('PUT', `/items/${itemId}`, { body: input });
+  }
+
   private classifyError(status: number, json: unknown): MercadoLivreApiError {
     const envelope = json as { message?: string; error?: string } | null;
     const message = envelope?.message || envelope?.error || `Erro HTTP ${status} da API Mercado Livre`;
