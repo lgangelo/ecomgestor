@@ -89,27 +89,86 @@ seguido nos outros dois documentos.
 
 ## 2. Items API (produtos/anúncios)
 
-**Confirmado:**
+**Atualização 2026-09-04 — CONFIRMADO com uma chamada real de `POST /items` em produção**
+(script `apps/api/src/cli/publish-mercadolivre-item.ts`), depois de 4 tentativas reais/4 erros
+reais corrigidos um a um. Isso substitui as suposições da pesquisa original abaixo.
 
-- **Criar anúncio:** `POST https://api.mercadolibre.com/items` — corpo JSON com `title`,
-  `category_id` (obrigatório — categoria real do Mercado Livre, não uma categoria nossa; precisa
-  de uma chamada prévia à API de categorias pra descobrir o id certo por site), `price`,
-  `currency_id`, `available_quantity`, `buying_mode`, `listing_type_id`, `condition`, `pictures[]`
-  e `attributes[]`.
-- **Pegadinha real, confirmada por fonte dedicada** ("Item description" nos resultados de busca):
-  a **descrição do anúncio é um recurso separado** (`/items/{id}/description`), não um campo
-  dentro do payload de criação do item — diferente do nosso modelo (`Product.description` é só um
-  campo). Implementação futura precisa de uma segunda chamada para gravar a descrição.
-- **Atributos obrigatórios variam por categoria** — cada categoria do Mercado Livre define sua
-  própria "ficha técnica" de atributos obrigatórios (ex.: para bolsas: material, gênero, etc.); a
-  API rejeita a criação do item se um atributo obrigatório da categoria não for enviado. Isso
-  exige, antes de criar qualquer item, uma chamada a `GET /categories/{category_id}/attributes`
-  pra descobrir o que é obrigatório — **não dá pra assumir um conjunto fixo de campos**, cada
-  categoria (e cada categoria por site, já que os ids de categoria são específicos de cada país)
-  tem sua própria ficha.
-- **Variações** (SKU por combinação de atributos, ex. Tamanho/Cor): citadas como suportadas, mas
-  nenhuma fonte consultada trouxe o payload completo de uma variação — **não confirmado o formato
-  exato**, precisa de validação com uma chamada real.
+- **Criar anúncio:** `POST https://api.mercadolibre.com/items` — payload real que funcionou:
+  `category_id`, `price`, `currency_id`, `available_quantity`, `buying_mode: "buy_it_now"`,
+  `condition: "new"`, `listing_type_id`, `family_name`, `pictures: [{ source }]`, `attributes[]`.
+- **`listing_type_id` é obrigatório NA PRÁTICA** (não confirmado pela pesquisa original, que
+  citava fontes divergentes) — sem ele, a API recusa com HTTP 400 `body.required_fields`. Valores
+  válidos por site: `GET /sites/{site}/listing_types` (pra MLB/Marketplace normal, geralmente
+  `free`/`gold_special`/`gold_pro` — nunca hard-codar, sempre consultar).
+- **`family_name` é obrigatório NA PRÁTICA** — modelo "User Products"/"Preço por variação" do
+  Mercado Livre, que agora é o padrão pra publicação (pelo menos nesta categoria/conta). É uma
+  string genérica que agrupa variações do mesmo produto sob a mesma família.
+- **`title` NUNCA deve ser enviado junto com `family_name`** — CONFIRMADO (API recusa com
+  `body.invalid_fields`, "The fields [title] are invalid for requested call"): no modelo User
+  Products, o Mercado Livre GERA o título sozinho a partir do domínio/atributos/family_name. Isso
+  significa que o título "altamente buscável" que já geramos com IA (`ai-copy.types.ts`) não se
+  aplica diretamente ao anúncio do Mercado Livre — só serve de contexto pro `family_name` e pros
+  valores de atributo, o texto final visível é decidido pela própria plataforma.
+- **Pegadinha confirmada (fonte + teste real)**: a **descrição do anúncio é um recurso separado**
+  (`POST /items/{id}/description`, corpo `{ "plain_text": "..." }`), não um campo do payload de
+  criação — precisa de uma segunda chamada depois de criar o item.
+- **Atributos obrigatórios variam por categoria** — CONFIRMADO contra a categoria real "Bolsas"
+  (MLB7022): de 88 atributos, só 2 são obrigatórios (`BRAND`, `MODEL`); todo o resto é opcional.
+  Descoberto via `GET /categories/{category_id}/attributes`, sempre necessário antes de montar
+  qualquer payload — nunca assumir um conjunto fixo.
+- **`BRAND` tem lista fechada de marcas conhecidas** — marca própria/não-catalogada (ex.:
+  "Venticelli") não aparece na lista; usar o valor de catálogo `"Generic"` (`value_id` real
+  resolvido via busca por nome na lista de `values` do atributo) evita rejeição, ao custo de não
+  identificar a marca própria no anúncio.
+- **`SELLER_SKU`** (opcional, mas disponível): usado pra gravar nosso SKU interno no atributo,
+  essencial pra reidentificar depois qual variação interna corresponde ao item quando a
+  sincronização de pedidos/estoque existir.
+- **Item recém-criado veio com `status: "paused"`**, não `active` — **NÃO CONFIRMADO o motivo**
+  (revisão automática de conta reativada após período inativo? comportamento padrão de item criado
+  via API? falta de algum dado opcional relevante?). Precisa checar no painel do vendedor o motivo
+  exibido e, se for só uma questão de ativação manual, confirmar se existe uma chamada
+  (`PUT /items/{id}` com `status: "active"`) pra automatizar isso depois.
+- **Variações de verdade** (múltiplos SKUs/cores sob o mesmo anúncio, preço por variação): o
+  teste real só cobriu um item de UMA variação — o payload completo de múltiplas variações sob o
+  modelo `family_name`/User Products **continua não confirmado**, precisa de outro teste real
+  dedicado antes de qualquer produto com mais de uma cor/tamanho ser publicado como variações de
+  um mesmo anúncio (hoje cada variação viraria um anúncio "family" separado, sem ligação entre si
+  visível pro comprador).
+
+### Dados fiscais (NCM/CSOSN/CEST) — mecanismo SEPARADO, ainda não testado
+
+- Existe um endpoint dedicado, citado pela doc oficial como "Envio dos dados fiscais" — formato de
+  payload encontrado via fonte secundária (exemplo real citado, mas endpoint exato não confirmado
+  em primeira mão):
+  ```json
+  {
+    "sku": "QW123",
+    "tax_information": {
+      "ncm": "39263000",
+      "origin_type": "reseller",
+      "origin_detail": "2",
+      "tax_rule_id": 651,
+      "csosn": "500",
+      "cest": "0100500",
+      "fci": "A3F1D0A2-...",
+      "ex_tipi": "01",
+      "ean": "4242002824628",
+      "net_weight": 123.0,
+      "gross_weight": 123.0
+    }
+  }
+  ```
+- `tax_rule_id` só se aplica a Regime Normal — **deixar em branco pra Simples Nacional** (o caso
+  desta empresa, confirmado pelo CSOSN default "102" visto no painel do usuário).
+- Isso mapeia quase 1:1 com o modelo `CategoryFiscalProfile` já existente no nosso schema
+  (`ncm`, `cest`, `csosn`, `origem`, `unidadeMedida`, `exTipi`, `fichaConteudoImportacao`) — já
+  tem uma tela pronta pra cadastrar isso por categoria (`/produtos/categorias` → "Dados fiscais",
+  Mercado Livre já disponível como opção de canal) — só falta CONECTAR esse cadastro ao fluxo de
+  publicação (ainda não lido/usado em nenhum lugar hoje, nem no nosso módulo fiscal nem no script
+  de publicação do Mercado Livre).
+- **Não confirmado**: o endpoint exato (path/método), se é por item ou por SKU, e se é obrigatório
+  pra todo anúncio ou só quando o vendedor quer emitir NF-e pelo "Emissor" do próprio Mercado
+  Livre — precisa de um teste real dedicado antes de implementar.
 
 ## 3. Estoque
 
