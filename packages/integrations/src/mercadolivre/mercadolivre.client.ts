@@ -1,4 +1,10 @@
-import { MERCADO_LIVRE_HOSTS, MercadoLivreCategoryAttribute, MercadoLivreCategoryPrediction } from './mercadolivre.types';
+import {
+  MERCADO_LIVRE_HOSTS,
+  MercadoLivreCategoryAttribute,
+  MercadoLivreCategoryPrediction,
+  MercadoLivreCreateItemInput,
+  MercadoLivreCreatedItem,
+} from './mercadolivre.types';
 import { MercadoLivreApiError, MercadoLivreErrorCategory } from './mercadolivre.errors';
 
 export interface MercadoLivreClientConfig {
@@ -69,6 +75,21 @@ export class MercadoLivreClient {
     return this.request('GET', `/categories/${categoryId}/attributes`);
   }
 
+  /** Cria um anúncio novo — PÚBLICO assim que criado (nunca some criado como rascunho invisível
+   * por padrão, salvo indicação em contrário da própria API). NÃO CONFIRMADO contra uma chamada
+   * real ainda — primeira tentativa real deve vir de um script de diagnóstico, nunca de um botão
+   * de UI direto, até confirmarmos o formato exato de erro/sucesso. */
+  async createItem(input: MercadoLivreCreateItemInput): Promise<MercadoLivreCreatedItem> {
+    return this.request('POST', '/items', { body: input });
+  }
+
+  /** Descrição é um recurso SEPARADO do item (confirmado pela pesquisa — mercado-livre.md,
+   * seção 2) — precisa desta segunda chamada depois de criar o item, nunca um campo do payload
+   * de criação. */
+  async setItemDescription(itemId: string, plainText: string): Promise<void> {
+    await this.request('POST', `/items/${itemId}/description`, { body: { plain_text: plainText } });
+  }
+
   private classifyError(status: number, json: unknown): MercadoLivreApiError {
     const envelope = json as { message?: string; error?: string } | null;
     const message = envelope?.message || envelope?.error || `Erro HTTP ${status} da API Mercado Livre`;
@@ -80,6 +101,9 @@ export class MercadoLivreClient {
     else if (status === 400 || status === 422) category = 'VALIDATION';
     else if (/token/i.test(message)) category = 'AUTH';
 
-    return new MercadoLivreApiError(message, category, status);
+    // `rawResponse` guarda o corpo inteiro (inclui `cause`, quando a API detalha exatamente qual
+    // atributo falhou) — essencial pra diagnosticar erro de validação numa API sem sandbox, onde
+    // cada tentativa real é a única fonte de verdade sobre o formato esperado.
+    return new MercadoLivreApiError(message, category, status, undefined, json);
   }
 }

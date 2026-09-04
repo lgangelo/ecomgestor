@@ -42,6 +42,11 @@ export interface AppConfig {
     clientId: string;
     clientSecret: string;
     redirectUri: string;
+    /** Markup aplicado só no preço PUBLICADO no Mercado Livre (nunca no preço interno/de outros
+     * canais) — decisão do usuário: a taxa do Mercado Livre é mais alta que a da TikTok, então o
+     * preço de lá precisa de uma margem a mais pra manter o mesmo lucro líquido. 0 (default) não
+     * aplica nenhum acréscimo. */
+    priceMarkupPercent: number;
   };
   /** Geração de título/descrição de produto por IA — provedor neutro, escolhido por env var
    * (nunca mais de um ativo ao mesmo tempo). Desligado por padrão (provider indefinido). */
@@ -122,6 +127,7 @@ export default (): AppConfig => ({
     clientId: process.env.MERCADOLIVRE_CLIENT_ID ?? '',
     clientSecret: process.env.MERCADOLIVRE_CLIENT_SECRET ?? '',
     redirectUri: process.env.MERCADOLIVRE_REDIRECT_URI ?? '',
+    priceMarkupPercent: Number(process.env.MERCADOLIVRE_PRICE_MARKUP_PERCENT ?? '0'),
   },
   ai: {
     provider:

@@ -71,3 +71,39 @@ export interface MercadoLivreCategoryAttribute {
   tags?: { required?: boolean; fixed?: boolean; hidden?: boolean; [key: string]: boolean | undefined };
   values?: MercadoLivreAttributeValue[];
 }
+
+/** Valor de atributo enviado na criação de item — `value_id` quando o valor vem da lista fechada
+ * da categoria (ver `MercadoLivreCategoryAttribute.values`), `value_name` como texto livre pros
+ * atributos que aceitam (ex.: MODEL). NÃO CONFIRMADO se todo atributo com lista fechada aceita
+ * `value_name` como alternativa (varia por categoria) — usar `value_id` sempre que houver um
+ * valor de catálogo correspondente, só cair pra `value_name` quando não houver.
+ */
+export interface MercadoLivreItemAttributeInput {
+  id: string;
+  value_id?: string;
+  value_name?: string;
+}
+
+/** Payload de `POST /items` — NÃO CONFIRMADO contra uma chamada real ainda (ver
+ * docs/integrations/mercado-livre.md, "Próximos passos"); campos baseados no formato mais
+ * comumente citado da API pública. `listing_type_id` foi deixado OPCIONAL de propósito: não há
+ * fonte confirmando quais valores são válidos pra uma conta nova sem revisão prévia — melhor
+ * deixar a API recusar com uma mensagem clara do que adivinhar um valor errado. */
+export interface MercadoLivreCreateItemInput {
+  title: string;
+  category_id: string;
+  price: number;
+  currency_id: string;
+  available_quantity: number;
+  buying_mode: 'buy_it_now';
+  condition: 'new' | 'used';
+  listing_type_id?: string;
+  pictures: Array<{ source: string }>;
+  attributes: MercadoLivreItemAttributeInput[];
+}
+
+export interface MercadoLivreCreatedItem {
+  id: string;
+  permalink?: string;
+  status?: string;
+}

@@ -33,6 +33,7 @@
     "check-stock-catchup-backlog": "node dist/cli/check-stock-catchup-backlog.js",
     "backfill-mirror-product-images": "node dist/cli/backfill-mirror-product-images.js",
     "check-mercadolivre-category": "node dist/cli/check-mercadolivre-category.js",
+    "publish-mercadolivre-item": "node dist/cli/publish-mercadolivre-item.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
