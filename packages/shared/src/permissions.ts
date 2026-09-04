@@ -31,6 +31,13 @@ export const PERMISSIONS = {
   INTEGRATION_TIKTOK_CONNECT: 'integration.tiktok.connect',
   INTEGRATION_TIKTOK_SYNC: 'integration.tiktok.sync',
 
+  // Granulares da integração Shopee (esqueleto — ver docs/integrations/shopee.md). SYNC ainda
+  // não é usada por nenhum endpoint (nenhum job de sincronização existe ainda), mas já reservada
+  // pra manter a mesma granularidade da TikTok assim que a sincronização for implementada.
+  INTEGRATION_SHOPEE_READ: 'integration.shopee.read',
+  INTEGRATION_SHOPEE_CONNECT: 'integration.shopee.connect',
+  INTEGRATION_SHOPEE_SYNC: 'integration.shopee.sync',
+
   INTEGRATION_INVENTORY_COMPARE: 'integration.inventory.compare',
   INTEGRATION_INVENTORY_PUSH: 'integration.inventory.push',
 
@@ -74,6 +81,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleName, PermissionKey[]> = {
     PERMISSIONS.INTEGRATION_TIKTOK_READ,
     PERMISSIONS.INTEGRATION_TIKTOK_CONNECT,
     PERMISSIONS.INTEGRATION_TIKTOK_SYNC,
+    PERMISSIONS.INTEGRATION_SHOPEE_READ,
+    PERMISSIONS.INTEGRATION_SHOPEE_CONNECT,
+    PERMISSIONS.INTEGRATION_SHOPEE_SYNC,
     PERMISSIONS.INTEGRATION_INVENTORY_COMPARE,
     PERMISSIONS.INTEGRATION_INVENTORY_PUSH,
     PERMISSIONS.INTEGRATION_JOBS_READ,
@@ -93,6 +103,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleName, PermissionKey[]> = {
     PERMISSIONS.FISCAL_READ,
     PERMISSIONS.REPORT_READ,
     PERMISSIONS.INTEGRATION_TIKTOK_READ,
+    PERMISSIONS.INTEGRATION_SHOPEE_READ,
     PERMISSIONS.INTEGRATION_INVENTORY_COMPARE,
     PERMISSIONS.INTEGRATION_JOBS_READ,
   ],
@@ -104,6 +115,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleName, PermissionKey[]> = {
     PERMISSIONS.FISCAL_READ,
     PERMISSIONS.INTEGRATION_READ,
     PERMISSIONS.INTEGRATION_TIKTOK_READ,
+    PERMISSIONS.INTEGRATION_SHOPEE_READ,
     PERMISSIONS.REPORT_READ,
   ],
 };

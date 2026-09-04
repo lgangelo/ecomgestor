@@ -25,6 +25,15 @@ export interface AppConfig {
     reconcileIntervalMinutes: number;
     financeSyncIntervalMinutes: number;
   };
+  shopee: {
+    enabled: boolean;
+    partnerId: string;
+    partnerKey: string;
+    redirectUri: string;
+    /** Sandbox (`partner.test-stable.shopeemobile.com`) é o próximo passo recomendado antes de
+     * testar contra uma loja de produção — ver docs/integrations/shopee.md. */
+    sandbox: boolean;
+  };
 }
 
 export default (): AppConfig => ({
@@ -62,5 +71,14 @@ export default (): AppConfig => ({
     // reconciliação de pedidos — 60 min por padrão é suficiente pra "taxas da plataforma"
     // aparecer no mesmo dia em que o pedido é liquidado, sem gerar chamada excessiva à API.
     financeSyncIntervalMinutes: parseInt(process.env.TIKTOK_FINANCE_SYNC_INTERVAL_MINUTES ?? '60', 10),
+  },
+  shopee: {
+    enabled: Boolean(process.env.SHOPEE_PARTNER_ID && process.env.SHOPEE_PARTNER_KEY),
+    partnerId: process.env.SHOPEE_PARTNER_ID ?? '',
+    partnerKey: process.env.SHOPEE_PARTNER_KEY ?? '',
+    redirectUri: process.env.SHOPEE_REDIRECT_URI ?? '',
+    // Default true (sandbox) de propósito — nunca aponta para produção sem decisão explícita,
+    // já que nenhum endpoint de negócio foi confirmado ainda (ver docs/integrations/shopee.md).
+    sandbox: process.env.SHOPEE_SANDBOX !== 'false',
   },
 });

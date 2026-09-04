@@ -181,3 +181,4 @@ export interface MarketplaceConnector {
 export const AVAILABLE_CONNECTORS: MarketplaceConnector[] = [];
 
 export * from './tiktok';
+export * from './shopee';
