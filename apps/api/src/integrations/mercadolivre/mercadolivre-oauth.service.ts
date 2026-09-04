@@ -2,7 +2,11 @@ import { randomBytes } from 'node:crypto';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType, IntegrationProvider, IntegrationStatus } from '@ecommerce-manager/database';
-import { buildMercadoLivreAuthorizeUrl, exchangeMercadoLivreAuthorizationCode } from '@ecommerce-manager/integrations';
+import {
+  buildMercadoLivreAuthorizeUrl,
+  exchangeMercadoLivreAuthorizationCode,
+  generateMercadoLivrePkcePair,
+} from '@ecommerce-manager/integrations';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { AuditService } from '../../audit/audit.service';
@@ -14,6 +18,11 @@ const STATE_TTL_SECONDS = 600;
 interface OAuthStatePayload {
   companyId: string;
   userId: string;
+  /** PKCE (RFC 7636) — CONFIRMADO exigido pela aplicação real do usuário no painel do Mercado
+   * Livre ("PKCE necessário" marcado). O verifier nunca aparece na URL de autorização (só o
+   * challenge derivado dele) — precisa ficar guardado aqui, ao lado do `state`, pra ser
+   * recuperado no callback e enviado na troca do code por token. */
+  codeVerifier: string;
 }
 
 /**
@@ -55,10 +64,11 @@ export class MercadoLivreOAuthService {
     const redirectUri = this.configService.get<string>('mercadoLivre.redirectUri', { infer: true }) as string;
 
     const state = randomBytes(32).toString('hex');
-    const payload: OAuthStatePayload = { companyId, userId };
+    const { codeVerifier, codeChallenge } = generateMercadoLivrePkcePair();
+    const payload: OAuthStatePayload = { companyId, userId, codeVerifier };
     await this.redis.client.set(`mercadolivre:oauth-state:${state}`, JSON.stringify(payload), 'EX', STATE_TTL_SECONDS);
 
-    return buildMercadoLivreAuthorizeUrl({ clientId, redirectUri, state });
+    return buildMercadoLivreAuthorizeUrl({ clientId, redirectUri, state, codeChallenge });
   }
 
   async handleCallback(state: string | undefined, code: string | undefined, ip?: string): Promise<{ webAppUrl: string }> {
@@ -71,6 +81,7 @@ export class MercadoLivreOAuthService {
 
     let companyId: string;
     let userId: string | null;
+    let codeVerifier: string;
 
     if (state) {
       const stateKey = `mercadolivre:oauth-state:${state}`;
@@ -80,29 +91,23 @@ export class MercadoLivreOAuthService {
       if (!raw) {
         throw new BadRequestException('State OAuth inválido, expirado ou já utilizado.');
       }
-      ({ companyId, userId } = JSON.parse(raw) as OAuthStatePayload);
+      ({ companyId, userId, codeVerifier } = JSON.parse(raw) as OAuthStatePayload);
     } else {
-      // Último recurso — mesma saída provisória de Shopee/TikTok, válida só enquanto houver uma
-      // única empresa usando esta integração. Diferente da Shopee, o Mercado Livre DEVERIA
-      // sempre devolver o `state` (padrão OAuth2) — chegar aqui indica algo fora do esperado.
-      const existing = await this.prisma.client.integration.findFirst({
-        where: { provider: IntegrationProvider.MERCADO_LIVRE },
-        orderBy: { updatedAt: 'desc' },
-      });
-      if (!existing) {
-        throw new BadRequestException(
-          'Callback OAuth do Mercado Livre sem state e sem conexão prévia para reidentificar a empresa.',
-        );
-      }
-      companyId = existing.companyId;
-      userId = null;
+      // Sem state não tem como recuperar o code_verifier do PKCE (nunca exposto na URL) —
+      // diferente de Shopee/TikTok, aqui não existe saída provisória possível: a aplicação do
+      // Mercado Livre exige PKCE, e sem o verifier a troca do code por token sempre falha. O
+      // Mercado Livre DEVERIA sempre devolver o `state` (padrão OAuth2) — chegar aqui indica
+      // algo fora do esperado, nunca um caminho válido a contornar.
+      throw new BadRequestException(
+        'Callback OAuth do Mercado Livre sem state — não é possível recuperar o code_verifier do PKCE para concluir a conexão.',
+      );
     }
 
     const clientId = this.configService.get<string>('mercadoLivre.clientId', { infer: true }) as string;
     const clientSecret = this.configService.get<string>('mercadoLivre.clientSecret', { infer: true }) as string;
     const redirectUri = this.configService.get<string>('mercadoLivre.redirectUri', { infer: true }) as string;
 
-    const token = await exchangeMercadoLivreAuthorizationCode({ clientId, clientSecret, code, redirectUri });
+    const token = await exchangeMercadoLivreAuthorizationCode({ clientId, clientSecret, code, redirectUri, codeVerifier });
 
     const integration = await this.credentialsService.getOrCreateIntegration(companyId);
     await this.credentialsService.saveCredentials(integration.id, {

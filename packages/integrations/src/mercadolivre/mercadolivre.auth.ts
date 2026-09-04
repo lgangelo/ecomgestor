@@ -1,5 +1,23 @@
+import { createHash, randomBytes } from 'node:crypto';
 import { MERCADO_LIVRE_HOSTS, MERCADO_LIVRE_PATHS, MercadoLivreTokenResponse } from './mercadolivre.types';
 import { MercadoLivreApiError } from './mercadolivre.errors';
+
+/**
+ * PKCE (RFC 7636) — CONFIRMADO como exigido pela aplicação real criada pelo usuário no painel do
+ * Mercado Livre (opção "PKCE necessário" marcada na tela de criação, seção "Fluxos OAuth"), não
+ * uma suposição da pesquisa original. `code_verifier`: string aleatória (43-128 chars depois de
+ * base64url); `code_challenge`: SHA-256 do verifier, também em base64url, method `S256` (nunca
+ * `plain` — S256 é o método padrão e mais seguro, sem motivo pra usar o outro).
+ */
+export function generateMercadoLivrePkcePair(): { codeVerifier: string; codeChallenge: string } {
+  const codeVerifier = base64UrlEncode(randomBytes(64));
+  const codeChallenge = base64UrlEncode(createHash('sha256').update(codeVerifier).digest());
+  return { codeVerifier, codeChallenge };
+}
+
+function base64UrlEncode(buffer: Buffer): string {
+  return buffer.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
 
 /**
  * OAuth do Mercado Livre — só as funções puras de montar a URL de autorização e trocar/renovar
@@ -12,8 +30,13 @@ import { MercadoLivreApiError } from './mercadolivre.errors';
  * chamada de API subsequente (essas usam só `Authorization: Bearer <access_token>`, ver
  * `mercadolivre.client.ts`).
  */
-export function buildMercadoLivreAuthorizeUrl(params: { clientId: string; redirectUri: string; state: string }): string {
-  const { clientId, redirectUri, state } = params;
+export function buildMercadoLivreAuthorizeUrl(params: {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+  codeChallenge: string;
+}): string {
+  const { clientId, redirectUri, state, codeChallenge } = params;
   const url = new URL(`${MERCADO_LIVRE_HOSTS.authorize}${MERCADO_LIVRE_PATHS.authorize}`);
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', clientId);
@@ -23,6 +46,8 @@ export function buildMercadoLivreAuthorizeUrl(params: { clientId: string; redire
   // confirmado se ela repassa), aqui é comportamento OAuth2 padrão, não uma peculiaridade do
   // Mercado Livre — usamos com mais confiança, mas ainda vale confirmar contra um teste real.
   url.searchParams.set('state', state);
+  url.searchParams.set('code_challenge', codeChallenge);
+  url.searchParams.set('code_challenge_method', 'S256');
   return url.toString();
 }
 
@@ -31,14 +56,19 @@ export async function exchangeMercadoLivreAuthorizationCode(params: {
   clientSecret: string;
   code: string;
   redirectUri: string;
+  /** O MESMO `code_verifier` (nunca o challenge) gerado por `generateMercadoLivrePkcePair` na
+   * hora de montar a URL de autorização — precisa ser guardado (Redis, junto do `state`) entre
+   * as duas pontas do fluxo, já que o code_verifier original nunca é exposto na URL. */
+  codeVerifier: string;
 }): Promise<MercadoLivreTokenResponse> {
-  const { clientId, clientSecret, code, redirectUri } = params;
+  const { clientId, clientSecret, code, redirectUri, codeVerifier } = params;
   return fetchAndParseToken({
     grant_type: 'authorization_code',
     client_id: clientId,
     client_secret: clientSecret,
     code,
     redirect_uri: redirectUri,
+    code_verifier: codeVerifier,
   });
 }
 
