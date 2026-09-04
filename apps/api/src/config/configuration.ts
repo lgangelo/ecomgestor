@@ -103,7 +103,10 @@ export default (): AppConfig => ({
     openaiApiKey: process.env.OPENAI_API_KEY ?? '',
     openaiModel: process.env.AI_OPENAI_MODEL ?? 'gpt-4o',
     // Gemini (Google AI Studio) — opção com camada gratuita real, sem cartão de crédito.
+    // CONFIRMADO em produção: "gemini-2.5-flash" não está mais disponível pra contas novas (a
+    // própria API devolve 404 recomendando o substituto) — nunca hard-codar um nome de modelo
+    // sem reconfirmar, a Gemini troca a geração "current" com alguma frequência.
     geminiApiKey: process.env.GEMINI_API_KEY ?? '',
-    geminiModel: process.env.AI_GEMINI_MODEL ?? 'gemini-2.5-flash',
+    geminiModel: process.env.AI_GEMINI_MODEL ?? 'gemini-3.6-flash',
   },
 });
