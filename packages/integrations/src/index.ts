@@ -182,3 +182,4 @@ export const AVAILABLE_CONNECTORS: MarketplaceConnector[] = [];
 
 export * from './tiktok';
 export * from './shopee';
+export * from './mercadolivre';

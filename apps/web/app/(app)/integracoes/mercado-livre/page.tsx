@@ -1,5 +1,5 @@
-import { ComingSoonIntegrationView } from '@/components/integrations/coming-soon-view';
+import { MercadoLivreIntegrationView } from '@/components/integrations/mercado-livre-view';
 
 export default function MercadoLivrePage() {
-  return <ComingSoonIntegrationView name="Mercado Livre" />;
+  return <MercadoLivreIntegrationView />;
 }

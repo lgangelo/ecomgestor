@@ -34,6 +34,15 @@ export interface AppConfig {
      * testar contra uma loja de produção — ver docs/integrations/shopee.md. */
     sandbox: boolean;
   };
+  /** Mercado Livre (esqueleto — ver docs/integrations/mercado-livre.md). Sem sandbox: o
+   * Mercado Livre não tem host de sandbox separado, testes acontecem em produção via
+   * "usuários de teste" (seção 9 do doc de pesquisa). */
+  mercadoLivre: {
+    enabled: boolean;
+    clientId: string;
+    clientSecret: string;
+    redirectUri: string;
+  };
   /** Geração de título/descrição de produto por IA — provedor neutro, escolhido por env var
    * (nunca mais de um ativo ao mesmo tempo). Desligado por padrão (provider indefinido). */
   ai: {
@@ -107,6 +116,12 @@ export default (): AppConfig => ({
     // Default true (sandbox) de propósito — nunca aponta para produção sem decisão explícita,
     // já que nenhum endpoint de negócio foi confirmado ainda (ver docs/integrations/shopee.md).
     sandbox: process.env.SHOPEE_SANDBOX !== 'false',
+  },
+  mercadoLivre: {
+    enabled: Boolean(process.env.MERCADOLIVRE_CLIENT_ID && process.env.MERCADOLIVRE_CLIENT_SECRET),
+    clientId: process.env.MERCADOLIVRE_CLIENT_ID ?? '',
+    clientSecret: process.env.MERCADOLIVRE_CLIENT_SECRET ?? '',
+    redirectUri: process.env.MERCADOLIVRE_REDIRECT_URI ?? '',
   },
   ai: {
     provider:

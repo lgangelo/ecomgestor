@@ -30,6 +30,7 @@ import { ReportsModule } from './reports/reports.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { TikTokModule } from './integrations/tiktok/tiktok.module';
 import { ShopeeModule } from './integrations/shopee/shopee.module';
+import { MercadoLivreModule } from './integrations/mercadolivre/mercadolivre.module';
 import { TikTokStockOutboxSchedulerModule } from './integrations/tiktok/tiktok-stock-outbox-scheduler.module';
 import { CompanyModule } from './company/company.module';
 import { UsersModule } from './users/users.module';
@@ -72,6 +73,7 @@ import { AiModule } from './ai/ai.module';
     // Mesmo motivo do comentário acima sobre o TikTokModule — precisa vir antes do
     // IntegrationsModule genérico.
     ShopeeModule,
+    MercadoLivreModule,
     IntegrationsModule,
     TikTokStockOutboxSchedulerModule,
     CompanyModule,

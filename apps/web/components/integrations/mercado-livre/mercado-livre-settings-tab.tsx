@@ -1,0 +1,43 @@
+'use client';
+
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { connectMercadoLivre, useMercadoLivreDisconnect } from '@/hooks/use-mercado-livre';
+import type { MercadoLivreStatus } from '@/hooks/use-mercado-livre';
+
+/**
+ * Esqueleto — só conectar/desconectar por enquanto. Nenhuma tela de sincronização (produtos,
+ * pedidos, estoque) ainda, porque nenhum desses endpoints do Mercado Livre foi confirmado
+ * contra uma conta real (ver docs/integrations/mercado-livre.md).
+ */
+export function MercadoLivreSettingsTab({ status }: { status: MercadoLivreStatus }) {
+  const disconnect = useMercadoLivreDisconnect();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Conexão</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 pt-0">
+        {!status.configured ? (
+          <p className="text-sm text-muted-foreground">
+            Mercado Livre não configurado. Configure <code>MERCADOLIVRE_CLIENT_ID</code> e{' '}
+            <code>MERCADOLIVRE_CLIENT_SECRET</code> para conectar sua conta.
+          </p>
+        ) : status.connected ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm text-muted-foreground">
+              Conectado{status.storeName ? ` — usuário ${status.storeName}` : ''}. Sincronização de produtos/pedidos/
+              estoque ainda não implementada (esqueleto).
+            </p>
+            <Button variant="destructive" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
+              Desconectar
+            </Button>
+          </div>
+        ) : (
+          <Button onClick={connectMercadoLivre}>Conectar</Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
