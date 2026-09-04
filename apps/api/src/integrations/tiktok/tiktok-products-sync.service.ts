@@ -5,6 +5,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AppLoggerService } from '../../common/logger/app-logger.service';
 import { AuditService } from '../../audit/audit.service';
 import { InventoryLedgerService } from '../../inventory/ledger.service';
+import { ProductsService } from '../../products/products.service';
 import { TikTokConnectorFactory } from './tiktok-connector.factory';
 import { TikTokCredentialsService } from './tiktok-credentials.service';
 
@@ -39,6 +40,7 @@ export class TikTokProductsSyncService {
     private readonly connectorFactory: TikTokConnectorFactory,
     private readonly audit: AuditService,
     private readonly ledger: InventoryLedgerService,
+    private readonly productsService: ProductsService,
     private readonly logger: AppLoggerService,
   ) {
     this.logger.setContext('TikTokProductsSync');
@@ -273,6 +275,20 @@ export class TikTokProductsSyncService {
       }
     }
 
+    // Espelha a foto (hospedada no CDN da TikTok) pro nosso próprio armazenamento antes de
+    // gravar — CONFIRMADO em produção: uma rede móvel bloqueando o domínio da TikTok fazia a
+    // foto sumir só naquele aparelho, mesmo com a URL correta. Só quando o produto é NOVO (a
+    // variação-em-produto-existente nunca grava imageUrl, então mirrorar aqui seria trabalho
+    // perdido). Best-effort: se falhar (rede instável no momento da sincronização), mantém a
+    // URL externa original — nunca bloqueia a criação do produto por causa disso.
+    if (imageUrl && !existingProductId) {
+      try {
+        imageUrl = await this.productsService.mirrorExternalImage(companyId, imageUrl);
+      } catch {
+        // best-effort — mantém a URL externa original.
+      }
+    }
+
     let productId: string;
     let variantId: string;
 
@@ -499,10 +515,20 @@ export class TikTokProductsSyncService {
           try {
             const detail = await connector.getProductDetail(companyId, mapping.externalProductId);
             if ((missingImage && detail.imageUrl) || (missingDescription && detail.description)) {
+              // Mesmo espelhamento de `createInternalProduct` — nunca grava a URL externa da
+              // TikTok direto, best-effort (mantém a URL externa original se falhar).
+              let resolvedImageUrl = detail.imageUrl;
+              if (missingImage && resolvedImageUrl) {
+                try {
+                  resolvedImageUrl = await this.productsService.mirrorExternalImage(companyId, resolvedImageUrl);
+                } catch {
+                  // best-effort — mantém a URL externa original.
+                }
+              }
               await this.prisma.client.product.update({
                 where: { id: variant.product.id },
                 data: {
-                  ...(missingImage && detail.imageUrl ? { imageUrl: detail.imageUrl } : {}),
+                  ...(missingImage && resolvedImageUrl ? { imageUrl: resolvedImageUrl } : {}),
                   ...(missingDescription && detail.description ? { description: detail.description } : {}),
                 },
               });

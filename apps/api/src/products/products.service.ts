@@ -19,6 +19,9 @@ const MIME_TO_EXT: Record<string, string> = {
   'image/png': '.png',
   'image/webp': '.webp',
 };
+// Espelhamento de foto externa (ex.: CDN da TikTok) — nunca deixa pendurado esperando um host de
+// terceiro que pode estar lento/inacessível pra sempre.
+const MIRROR_EXTERNAL_IMAGE_TIMEOUT_MS = 10_000;
 
 export interface UploadedImageFile {
   originalname: string;
@@ -652,5 +655,40 @@ export class ProductsService {
    * `companyId` bate com a empresa do usuário autenticado. */
   resolveImageFilePath(companyId: string, filename: string): string {
     return join(this.config.get<string>('productImageStorageDir')!, companyId, filename);
+  }
+
+  /**
+   * Baixa uma foto hospedada num domínio externo (ex.: CDN da TikTok) e grava no nosso próprio
+   * armazenamento, devolvendo o mesmo formato de path servido por `GET /products/images/...` que
+   * `saveImageFile` já devolve para upload manual — usado pela sincronização de canais (TikTok
+   * Shop) pra nunca depender de um domínio de terceiro estar acessível a partir de QUALQUER rede
+   * do operador. CONFIRMADO em produção: uma rede móvel bloqueando o CDN da TikTok fazia a foto
+   * sumir só naquele aparelho/rede, mesmo com a URL correta — servir sempre pelo nosso próprio
+   * domínio elimina essa dependência de vez.
+   *
+   * Lança em qualquer falha (rede, timeout, formato não suportado, tamanho excedido) — quem chama
+   * decide o fallback (manter a URL externa original), nunca bloqueia o fluxo de sincronização por
+   * causa disso.
+   */
+  async mirrorExternalImage(companyId: string, externalUrl: string): Promise<string> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), MIRROR_EXTERNAL_IMAGE_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(externalUrl, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!response.ok) {
+      throw new Error(`Falha ao baixar imagem externa (HTTP ${response.status})`);
+    }
+    const contentType = (response.headers.get('content-type') ?? '').split(';')[0].trim();
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return this.saveImageFile(companyId, {
+      originalname: 'external',
+      mimetype: contentType,
+      size: buffer.length,
+      buffer,
+    });
   }
 }

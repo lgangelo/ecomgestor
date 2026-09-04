@@ -3,6 +3,7 @@ import { AuditModule } from '../../audit/audit.module';
 import { OrdersModule } from '../../orders/orders.module';
 import { ReturnsModule } from '../../returns/returns.module';
 import { InventoryModule } from '../../inventory/inventory.module';
+import { ProductsModule } from '../../products/products.module';
 import { TikTokCredentialsService } from './tiktok-credentials.service';
 import { TikTokTokenRefreshService } from './tiktok-token-refresh.service';
 import { TikTokConnectorFactory } from './tiktok-connector.factory';
@@ -35,7 +36,7 @@ import { TikTokQueueService } from '../../queue/tiktok-queue.service';
  * pelo `AppModule`).
  */
 @Module({
-  imports: [AuditModule, OrdersModule, ReturnsModule, InventoryModule],
+  imports: [AuditModule, OrdersModule, ReturnsModule, InventoryModule, ProductsModule],
   controllers: [TikTokOAuthController, TikTokWebhookController, TikTokController],
   providers: [
     TikTokCredentialsService,

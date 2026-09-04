@@ -4,6 +4,7 @@ import type { TikTokCredentialsService } from './tiktok-credentials.service';
 import type { TikTokConnectorFactory } from './tiktok-connector.factory';
 import type { AuditService } from '../../audit/audit.service';
 import type { InventoryLedgerService } from '../../inventory/ledger.service';
+import type { ProductsService } from '../../products/products.service';
 import type { AppLoggerService } from '../../common/logger/app-logger.service';
 
 const COMPANY_ID = 'company-1';
@@ -56,6 +57,7 @@ function makeService(opts: {
   const connectorFactory = { forCompany: jest.fn().mockResolvedValue({ connector: { getProducts } }) };
   const audit = { log: jest.fn() };
   const ledger = { adjust };
+  const productsService = { mirrorExternalImage: jest.fn() };
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
   const service = new TikTokProductsSyncService(
@@ -64,6 +66,7 @@ function makeService(opts: {
     connectorFactory as unknown as TikTokConnectorFactory,
     audit as unknown as AuditService,
     ledger as unknown as InventoryLedgerService,
+    productsService as unknown as ProductsService,
     logger as unknown as AppLoggerService,
   );
 
