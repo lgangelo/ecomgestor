@@ -1,17 +1,23 @@
 'use client';
 
+import * as React from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/shared/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { toast } from '@/components/ui/use-toast';
 import { PRODUCT_STATUS_PRESENTATION, VARIANT_STATUS_PRESENTATION, INVENTORY_MOVEMENT_PRESENTATION } from '@ecommerce-manager/ui';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { formatDate, stripHtmlForPreview } from '@/lib/format';
+import { apiFetch, ApiError } from '@/lib/api-client';
 import {
   resolveProductImageUrl,
   useProduct,
@@ -19,6 +25,7 @@ import {
   useProductCostHistory,
   useProductMovements,
   useProductSummary,
+  type ProductVariantDetail,
 } from '@/hooks/use-products';
 import { useOrders } from '@/hooks/use-orders';
 import { useAuditLogs } from '@/hooks/use-audit';
@@ -110,6 +117,7 @@ export function ProductDetailView({ productId }: { productId: string }) {
           <TabsTrigger value="resumo">Resumo</TabsTrigger>
           <TabsTrigger value="estoque">Estoque</TabsTrigger>
           <TabsTrigger value="custos">Custos</TabsTrigger>
+          <TabsTrigger value="medidas">Medidas</TabsTrigger>
           <TabsTrigger value="vendas">Vendas</TabsTrigger>
           <TabsTrigger value="canais">Canais</TabsTrigger>
           <TabsTrigger value="historico">Histórico</TabsTrigger>
@@ -123,6 +131,9 @@ export function ProductDetailView({ productId }: { productId: string }) {
         </TabsContent>
         <TabsContent value="custos">
           <CustosTab productId={productId} />
+        </TabsContent>
+        <TabsContent value="medidas">
+          <MedidasTab productId={productId} product={product} />
         </TabsContent>
         <TabsContent value="vendas">
           <VendasTab productId={productId} />
@@ -316,6 +327,152 @@ function CustosTab({ productId }: { productId: string }) {
           <span className="font-medium">{formatBRL(h.cost)}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+interface MeasurementDraft {
+  weight: string;
+  length: string;
+  width: string;
+  height: string;
+}
+
+/** Sem tamanho definido: nenhuma variação compartilha medida com outra automaticamente — cada
+ * uma vira seu próprio grupo (chave prefixada pelo id pra nunca colidir entre si). */
+const NO_SIZE_GROUP_PREFIX = '__sem-tamanho__';
+
+function measurementDraftFrom(variant: ProductVariantDetail): MeasurementDraft {
+  return {
+    weight: variant.weight ?? '',
+    length: variant.length ?? '',
+    width: variant.width ?? '',
+    height: variant.height ?? '',
+  };
+}
+
+/**
+ * Medidas físicas (peso/dimensões) já existem por variação no banco (nunca precisou de campo
+ * novo) — esta aba só organiza o preenchimento por TAMANHO: variações que só diferem pela cor
+ * têm a mesma medida física de verdade, então preencher uma vez já salva pra todas as cores
+ * daquele tamanho; tamanhos diferentes continuam precisando de medida própria (pedido do usuário).
+ */
+function MedidasTab({ productId, product }: { productId: string; product: { variants: ProductVariantDetail[] } }) {
+  const queryClient = useQueryClient();
+  const [drafts, setDrafts] = React.useState<Record<string, MeasurementDraft>>({});
+  const [savingKey, setSavingKey] = React.useState<string | null>(null);
+
+  const groups = React.useMemo(() => {
+    const map = new Map<string, ProductVariantDetail[]>();
+    for (const variant of product.variants) {
+      const key = variant.size ?? `${NO_SIZE_GROUP_PREFIX}${variant.id}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(variant);
+    }
+    return [...map.entries()];
+  }, [product.variants]);
+
+  function draftFor(key: string, variants: ProductVariantDetail[]): MeasurementDraft {
+    return drafts[key] ?? measurementDraftFrom(variants[0]);
+  }
+
+  function setField(key: string, variants: ProductVariantDetail[], field: keyof MeasurementDraft, value: string) {
+    setDrafts((d) => ({ ...d, [key]: { ...draftFor(key, variants), [field]: value } }));
+  }
+
+  async function handleSave(key: string, variants: ProductVariantDetail[]) {
+    const draft = draftFor(key, variants);
+    const data = {
+      weight: draft.weight === '' ? undefined : Number(draft.weight),
+      length: draft.length === '' ? undefined : Number(draft.length),
+      width: draft.width === '' ? undefined : Number(draft.width),
+      height: draft.height === '' ? undefined : Number(draft.height),
+    };
+
+    setSavingKey(key);
+    try {
+      // Uma variação de cada vez, todas com o MESMO valor — nunca existe um endpoint de
+      // atualização em lote, mas todas pertencem ao mesmo grupo (mesmo tamanho) de propósito.
+      await Promise.all(
+        variants.map((v) => apiFetch(`/products/variants/${v.id}`, { method: 'PATCH', body: data })),
+      );
+      queryClient.invalidateQueries({ queryKey: ['products', productId] });
+      toast({
+        title: variants.length > 1 ? `Medidas salvas para ${variants.length} variações.` : 'Medidas salvas.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Não foi possível salvar as medidas',
+        description: error instanceof ApiError ? error.message : undefined,
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map(([key, variants]) => {
+        const draft = draftFor(key, variants);
+        const sizeLabel = variants[0].size ?? 'Sem tamanho definido';
+        const colorLabels = variants.map((v) => v.color ?? v.sku).join(', ');
+        return (
+          <Card key={key}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-semibold">
+                {sizeLabel}
+                {variants.length > 1 && <span className="ml-2 text-xs font-normal text-muted-foreground">{colorLabels}</span>}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-4 pt-0 sm:grid-cols-5 sm:items-end">
+              <div className="space-y-1.5">
+                <Label>Peso (kg)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.001"
+                  value={draft.weight}
+                  onChange={(e) => setField(key, variants, 'weight', e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Comprimento (cm)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={draft.length}
+                  onChange={(e) => setField(key, variants, 'length', e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Largura (cm)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={draft.width}
+                  onChange={(e) => setField(key, variants, 'width', e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Altura (cm)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={draft.height}
+                  onChange={(e) => setField(key, variants, 'height', e.target.value)}
+                />
+              </div>
+              <Button size="sm" disabled={savingKey === key} onClick={() => handleSave(key, variants)}>
+                {savingKey === key ? 'Salvando...' : variants.length > 1 ? `Salvar (${variants.length} cores)` : 'Salvar'}
+              </Button>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }
