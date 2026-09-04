@@ -1,6 +1,13 @@
 import { BadGatewayException } from '@nestjs/common';
 import { ApiError, GoogleGenAI, Type } from '@google/genai';
-import { AiCopyProvider, buildProductCopyPrompt, GenerateProductCopyInput, GenerateProductCopyOutput, PRODUCT_COPY_SCHEMA } from './ai-copy.types';
+import {
+  AiCopyProvider,
+  buildProductCopyPrompt,
+  enforceTitleLimit,
+  GenerateProductCopyInput,
+  GenerateProductCopyOutput,
+  PRODUCT_COPY_SCHEMA,
+} from './ai-copy.types';
 
 /** Confirmado em produção: a camada gratuita do Gemini devolve 503 ("high demand") com alguma
  * frequência — transitório, quase sempre some numa segunda tentativa alguns segundos depois.
@@ -58,7 +65,7 @@ export class GeminiCopyProvider implements AiCopyProvider {
     if (!result.success) {
       throw new BadGatewayException('O Gemini devolveu um formato inesperado (sem title/description).');
     }
-    return result.data;
+    return { title: enforceTitleLimit(result.data.title), description: result.data.description };
   }
 
   private async callWithRetry(

@@ -5,6 +5,7 @@ import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages';
 import {
   AiCopyProvider,
   buildProductCopyPrompt,
+  enforceTitleLimit,
   GenerateProductCopyInput,
   GenerateProductCopyOutput,
   PRODUCT_COPY_SCHEMA,
@@ -45,7 +46,7 @@ export class AnthropicCopyProvider implements AiCopyProvider {
       if (!response.parsed_output) {
         throw new BadGatewayException('A Claude não devolveu um título/descrição em formato válido.');
       }
-      return response.parsed_output;
+      return { title: enforceTitleLimit(response.parsed_output.title), description: response.parsed_output.description };
     } catch (error) {
       if (error instanceof BadGatewayException) throw error;
       throw new BadGatewayException(`Falha ao gerar título/descrição via Claude: ${(error as Error).message}`);

@@ -86,10 +86,14 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
         // Best-effort — segue sem foto se a busca falhar (ex.: URL externa sem CORS liberado).
       }
     }
-    // Tamanho é um atributo por variação, não do produto — junta os valores distintos já
-    // cadastrados (ex.: "P, M, G") pra dar contexto à IA sem fingir que o produto tem um só.
+    // Tamanho e cor são atributos por variação, não do produto — juntam os valores distintos já
+    // cadastrados (ex.: "P, M, G") pra dar contexto à IA sem fingir que o produto tem um só. A cor
+    // vai só como contexto: o prompt já instrui a IA a nunca comprometer o título/descrição com
+    // uma cor específica, já que o texto é compartilhado por todas as variações de cor.
     const distinctSizes = Array.from(new Set(product.variants.map((v) => v.size).filter((s): s is string => Boolean(s))));
     const sizeHint = distinctSizes.length > 0 ? distinctSizes.join(', ') : undefined;
+    const distinctColors = Array.from(new Set(product.variants.map((v) => v.color).filter((c): c is string => Boolean(c))));
+    const colorHint = distinctColors.length > 0 ? distinctColors.join(', ') : undefined;
 
     const result = await generateCopy.mutateAsync({
       titleHint: form.name || undefined,
@@ -97,6 +101,7 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
       category: categoryName,
       brand: form.brand || undefined,
       size: sizeHint,
+      color: colorHint,
       image,
     });
     setForm((f) => ({ ...f, name: result.title, description: result.description }));

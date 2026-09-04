@@ -1,6 +1,13 @@
 import { BadGatewayException } from '@nestjs/common';
 import OpenAI from 'openai';
-import { AiCopyProvider, buildProductCopyPrompt, GenerateProductCopyInput, GenerateProductCopyOutput, PRODUCT_COPY_SCHEMA } from './ai-copy.types';
+import {
+  AiCopyProvider,
+  buildProductCopyPrompt,
+  enforceTitleLimit,
+  GenerateProductCopyInput,
+  GenerateProductCopyOutput,
+  PRODUCT_COPY_SCHEMA,
+} from './ai-copy.types';
 
 /**
  * Provedor OpenAI (alternativa neutra à Anthropic) — usa a Chat Completions API com visão
@@ -63,6 +70,6 @@ export class OpenAiCopyProvider implements AiCopyProvider {
     if (!result.success) {
       throw new BadGatewayException('A OpenAI devolveu um formato inesperado (sem title/description).');
     }
-    return result.data;
+    return { title: enforceTitleLimit(result.data.title), description: result.data.description };
   }
 }
