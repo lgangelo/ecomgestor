@@ -65,6 +65,7 @@ export interface ProductFilters {
   categoryId?: string;
   status?: string;
   brand?: string;
+  hasStock?: boolean;
 }
 
 export function useProducts(filters: ProductFilters) {

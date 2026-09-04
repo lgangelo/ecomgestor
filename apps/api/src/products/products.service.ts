@@ -55,26 +55,17 @@ export class ProductsService {
       ...(query.brand ? { brand: { equals: query.brand, mode: 'insensitive' as const } } : {}),
     };
 
-    const [products, total] = await Promise.all([
-      this.prisma.client.product.findMany({
-        where,
-        include: {
-          category: { select: { name: true } },
-          variants: {
-            select: {
-              suggestedPrice: true,
-              inventory: { select: { onHand: true, reserved: true } },
-            },
-          },
+    const include = {
+      category: { select: { name: true } },
+      variants: {
+        select: {
+          suggestedPrice: true,
+          inventory: { select: { onHand: true, reserved: true } },
         },
-        orderBy: { createdAt: 'desc' },
-        skip: (query.page - 1) * query.pageSize,
-        take: query.pageSize,
-      }),
-      this.prisma.client.product.count({ where }),
-    ]);
+      },
+    } as const;
 
-    const items = products.map((product) => {
+    function toItem(product: Prisma.ProductGetPayload<{ include: typeof include }>) {
       const prices = product.variants.map((v) => Number(v.suggestedPrice));
       const totalAvailable = product.variants.reduce(
         (sum, v) => sum + (v.inventory ? v.inventory.onHand - v.inventory.reserved : 0),
@@ -93,9 +84,33 @@ export class ProductsService {
         maxPrice: prices.length ? Math.max(...prices) : null,
         totalAvailable,
       };
-    });
+    }
 
-    return paginate(items, total, query.page, query.pageSize);
+    // `totalAvailable` é `onHand - reserved` somado entre variações — não dá pra filtrar isso
+    // direto no Prisma (mesma limitação já documentada em `computeAttention`, reports.service.ts:
+    // não existe filtro nativo para uma expressão entre colunas). Com o filtro "só com estoque"
+    // ativo, busca TODOS os produtos que batem com os demais filtros (sem paginar no banco),
+    // filtra por saldo em memória, e só então pagina o resultado já filtrado — senão a página
+    // (e o total) ficariam errados, contando produtos sem estoque que nunca deveriam aparecer.
+    if (query.hasStock) {
+      const all = await this.prisma.client.product.findMany({ where, include, orderBy: { createdAt: 'desc' } });
+      const items = all.map(toItem).filter((item) => item.totalAvailable > 0);
+      const start = (query.page - 1) * query.pageSize;
+      return paginate(items.slice(start, start + query.pageSize), items.length, query.page, query.pageSize);
+    }
+
+    const [products, total] = await Promise.all([
+      this.prisma.client.product.findMany({
+        where,
+        include,
+        orderBy: { createdAt: 'desc' },
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.client.product.count({ where }),
+    ]);
+
+    return paginate(products.map(toItem), total, query.page, query.pageSize);
   }
 
   async findOne(id: string, companyId: string) {

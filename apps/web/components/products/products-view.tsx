@@ -26,7 +26,7 @@ import { ProductFormDialog } from './product-form-dialog';
 import { ProductBulkDeleteDialog } from './product-bulk-delete-dialog';
 
 // Filtros e paginação persistem na URL (seção 57 da Fase 4).
-const DEFAULT_FILTERS = { page: 1, search: '', categoryId: '', status: '' };
+const DEFAULT_FILTERS = { page: 1, search: '', categoryId: '', status: '', hasStock: false };
 
 export function ProductsView() {
   const [filters, setFilters] = useUrlFilters(DEFAULT_FILTERS);
@@ -51,12 +51,13 @@ export function ProductsView() {
     search: filters.search || undefined,
     categoryId: filters.categoryId || undefined,
     status: filters.status || undefined,
+    hasStock: filters.hasStock || undefined,
   });
 
   React.useEffect(() => {
     // Muda de página/filtro — a seleção desta página específica não faz mais sentido.
     setSelected(new Set());
-  }, [filters.page, filters.search, filters.categoryId, filters.status]);
+  }, [filters.page, filters.search, filters.categoryId, filters.status, filters.hasStock]);
 
   function toggleOne(id: string) {
     setSelected((prev) => {
@@ -163,6 +164,13 @@ export function ProductsView() {
             <SelectItem value="DRAFT">Rascunho</SelectItem>
           </SelectContent>
         </Select>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Checkbox
+            checked={filters.hasStock}
+            onCheckedChange={(checked) => setFilters({ hasStock: checked === true || undefined, page: 1 })}
+          />
+          Só com estoque
+        </label>
       </div>
 
       {isLoading || !data ? (
