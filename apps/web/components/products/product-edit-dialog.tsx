@@ -86,12 +86,17 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
         // Best-effort — segue sem foto se a busca falhar (ex.: URL externa sem CORS liberado).
       }
     }
+    // Tamanho é um atributo por variação, não do produto — junta os valores distintos já
+    // cadastrados (ex.: "P, M, G") pra dar contexto à IA sem fingir que o produto tem um só.
+    const distinctSizes = Array.from(new Set(product.variants.map((v) => v.size).filter((s): s is string => Boolean(s))));
+    const sizeHint = distinctSizes.length > 0 ? distinctSizes.join(', ') : undefined;
 
     const result = await generateCopy.mutateAsync({
       titleHint: form.name || undefined,
       descriptionHint: form.description || undefined,
       category: categoryName,
       brand: form.brand || undefined,
+      size: sizeHint,
       image,
     });
     setForm((f) => ({ ...f, name: result.title, description: result.description }));

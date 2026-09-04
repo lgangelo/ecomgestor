@@ -44,10 +44,15 @@ export function buildProductCopyPrompt(input: GenerateProductCopyInput): string 
   if (input.size) facts.push(`Tamanho: ${input.size}`);
 
   return [
-    'Você é um redator especializado em anúncios de e-commerce brasileiro (marketplace: TikTok Shop/Shopee/loja própria).',
-    'Gere um TÍTULO (até 100 caracteres, rico em palavras-chave de busca, sem emojis) e uma DESCRIÇÃO',
-    '(2 a 4 frases corridas, destacando material, uso e diferenciais) para o produto abaixo.',
-    facts.length > 0 ? `\nInformações fornecidas:\n${facts.map((f) => `- ${f}`).join('\n')}` : '',
+    'Você é uma IA especialista em copywriting para marketplaces brasileiros (TikTok Shop, Shopee, loja própria) —',
+    'pensa em título e descrição como quem otimiza para BUSCA: o comprador encontra o produto digitando palavras-chave',
+    'reais (tipo de item, material, cor, uso, ocasião), então o título e a descrição precisam conter essas palavras',
+    'de forma natural, nunca genérica.',
+    '\nGere:',
+    '- TÍTULO: até 100 caracteres, altamente buscável (palavras-chave relevantes primeiro), sem emojis, sem exagero.',
+    '- DESCRIÇÃO: 2 a 4 frases corridas, destacando material, uso, ocasião e diferenciais visíveis — também rica em',
+    '  termos que um comprador buscaria, não só bonita de ler.',
+    facts.length > 0 ? `\nInformações fornecidas sobre o produto:\n${facts.map((f) => `- ${f}`).join('\n')}` : '',
     input.image
       ? '\nUma foto real do produto foi anexada — baseie cor, material e detalhes visuais NELA, nunca invente características que não aparecem na imagem.'
       : '\nNenhuma foto foi anexada — baseie-se só no texto fornecido, sem inventar detalhes visuais.',
