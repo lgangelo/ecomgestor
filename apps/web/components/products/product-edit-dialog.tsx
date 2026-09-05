@@ -199,20 +199,11 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
                 </SelectContent>
               </Select>
             </div>
-            <div className="col-span-2 space-y-1.5">
-              <Label htmlFor="edit-imageUrl">URL da imagem de capa</Label>
-              <Input
-                id="edit-imageUrl"
-                placeholder="https://..."
-                value={form.imageUrl}
-                onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
-              />
-            </div>
             <div className="col-span-2">
               <ImageUploadField
                 id="edit-coverImageFile"
-                label="Ou envie uma foto de capa (se enviar, tem prioridade sobre a URL acima)"
-                existingUrl={resolveProductImageUrl(product.imageUrl)}
+                label="Foto de capa"
+                existingUrl={resolveProductImageUrl(form.imageUrl)}
                 onFileSelect={setImageFile}
               />
             </div>
