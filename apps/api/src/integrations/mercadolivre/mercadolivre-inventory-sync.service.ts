@@ -13,6 +13,13 @@ export interface MercadoLivreInventoryComparisonRow {
   central: number;
   mercadoLivre: number | null;
   divergent: boolean;
+  /** `true` quando a consulta ao Mercado Livre falhou (rate limit, erro transitório, item
+   * pausado/excluído) — nesse caso `mercadoLivre` fica `null` e `divergent` fica `false`, mas
+   * isso NÃO significa "confirmado igual". Sem esta distinção, `MercadoLivreStockOutboxService`
+   * marcaria uma divergência real pendente como resolvida só porque a última consulta falhou
+   * (achado real de bug — nunca excluir uma linha `checkFailed` de `divergent` OU de
+   * `resolved`). */
+  checkFailed: boolean;
 }
 
 /**
@@ -63,15 +70,21 @@ export class MercadoLivreInventorySyncService {
       const central = (inventory?.onHand ?? 0) - (inventory?.reserved ?? 0);
 
       let mercadoLivreAvailable: number | null = null;
+      let checkFailed = false;
       try {
         const item = await client.getItem(mapping.externalProductId!);
         const raw = (item as { available_quantity?: unknown }).available_quantity;
         mercadoLivreAvailable = typeof raw === 'number' ? raw : Number(raw ?? NaN);
-        if (!Number.isFinite(mercadoLivreAvailable)) mercadoLivreAvailable = null;
+        if (!Number.isFinite(mercadoLivreAvailable)) {
+          mercadoLivreAvailable = null;
+          checkFailed = true;
+        }
       } catch {
         // Item não encontrado/erro transitório — nunca trata como divergência real sem saber o
-        // valor de verdade; a linha fica sem comparação até a próxima tentativa.
+        // valor de verdade, mas TAMBÉM nunca deixa `MercadoLivreStockOutboxService.reconcile`
+        // confundir isto com "valores batendo" (ver `checkFailed` na interface acima).
         mercadoLivreAvailable = null;
+        checkFailed = true;
       }
 
       rows.push({
@@ -81,6 +94,7 @@ export class MercadoLivreInventorySyncService {
         central,
         mercadoLivre: mercadoLivreAvailable,
         divergent: mercadoLivreAvailable !== null && mercadoLivreAvailable !== central,
+        checkFailed,
       });
     }
 

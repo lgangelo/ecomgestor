@@ -55,8 +55,14 @@ function normalizeMercadoLivreOrderItem(item: MercadoLivreOrderItem): ExternalOr
     // CONFIRMADO presente, mas ver a ressalva em `mercadolivre.types.ts` sobre `seller_sku` não
     // bater necessariamente com o SKU interno enviado na criação do item (pedidos antigos, de
     // antes do atributo `SELLER_SKU` ser enviado, trazem um valor sintetizado pelo próprio
-    // Mercado Livre). `item.id` (o ID do anúncio) é o fallback quando `seller_sku` não vem.
-    externalSku: item.item.seller_sku || item.item.id,
+    // Mercado Livre). Quando `seller_sku` não vem, o fallback PRECISA incluir `variation_id`
+    // quando existir — usar só `item.id` faria duas variações (cores) do MESMO anúncio colidirem
+    // no mesmo `externalSku` (a constraint `@@unique([channelId, externalSku])` deixaria uma das
+    // duas variações resolvendo pra variante interna ERRADA, incluindo baixa de estoque no lugar
+    // físico errado). O próprio Mercado Livre sintetiza o `seller_sku` real nesse formato
+    // (`{item_id}_{variation_id}`, visto no único pedido real confirmado) — replicamos o mesmo
+    // formato aqui só quando ele mesmo não preenche.
+    externalSku: item.item.seller_sku || (item.item.variation_id ? `${item.item.id}_${item.item.variation_id}` : item.item.id),
     quantity: item.quantity,
     unitPrice: item.unit_price.toFixed(2),
     // Desconto de vendedor/plataforma não foram vistos no único pedido real disponível até

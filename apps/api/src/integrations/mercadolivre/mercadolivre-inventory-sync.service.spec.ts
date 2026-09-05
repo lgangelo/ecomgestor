@@ -90,6 +90,9 @@ describe('MercadoLivreInventorySyncService.compare', () => {
 
     expect(rows[0].mercadoLivre).toBeNull();
     expect(rows[0].divergent).toBe(false);
+    // ACHADO REAL corrigido: `checkFailed: true` é o que impede o outbox de confundir "erro de
+    // consulta" com "confirmado igual" (ver mercadolivre-stock-outbox.service.spec.ts).
+    expect(rows[0].checkFailed).toBe(true);
   });
 });
 

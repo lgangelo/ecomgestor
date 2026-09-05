@@ -115,12 +115,26 @@ describe('Mercado Livre — mapper (docs/integrations/mercado-livre.md, seção 
     expect(normalized.status).toBe('paid');
   });
 
-  it('usa item.id como fallback quando seller_sku não vem preenchido', () => {
+  it('usa item.id + variation_id como fallback quando seller_sku não vem preenchido (nunca só item.id, senão duas cores do mesmo anúncio colidiriam no mesmo externalSku)', () => {
     const withoutSku: MercadoLivreOrder = {
       ...realOrder,
       order_items: [{ ...realOrder.order_items[0], item: { ...realOrder.order_items[0].item, seller_sku: undefined } }],
     };
     const normalized = normalizeMercadoLivreOrder(withoutSku);
+    expect(normalized.items[0].externalSku).toBe('MLB6717678206_201389264747');
+  });
+
+  it('usa só item.id quando não há seller_sku nem variation_id (anúncio sem variação)', () => {
+    const withoutSkuOrVariation: MercadoLivreOrder = {
+      ...realOrder,
+      order_items: [
+        {
+          ...realOrder.order_items[0],
+          item: { ...realOrder.order_items[0].item, seller_sku: undefined, variation_id: null },
+        },
+      ],
+    };
+    const normalized = normalizeMercadoLivreOrder(withoutSkuOrVariation);
     expect(normalized.items[0].externalSku).toBe('MLB6717678206');
   });
 });

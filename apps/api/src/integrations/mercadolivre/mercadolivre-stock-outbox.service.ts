@@ -33,7 +33,13 @@ export class MercadoLivreStockOutboxService {
 
     const comparison = await this.inventorySync.compare(companyId);
     const divergent = comparison.filter((row) => row.divergent);
-    const resolved = comparison.filter((row) => !row.divergent);
+    // ACHADO REAL corrigido: `checkFailed` (consulta ao Mercado Livre falhou — rate limit, erro
+    // transitório, item pausado/excluído) também produz `divergent: false`, mas isso NÃO é o
+    // mesmo que "confirmado igual". Sem excluir `checkFailed` daqui, uma divergência real
+    // PENDING no outbox seria marcada como `SYNCED` só porque a última consulta falhou — o
+    // estoque real do Mercado Livre ficaria desatualizado para sempre, sem nenhum alerta visível
+    // (a tela de status mostraria "OK").
+    const resolved = comparison.filter((row) => !row.divergent && !row.checkFailed);
 
     for (const row of divergent) {
       const existing = await this.prisma.client.stockSyncOutboxEntry.findFirst({
@@ -127,6 +133,9 @@ export class MercadoLivreStockOutboxService {
       if (outboxEntry?.status === 'FAILED') status = 'ERRO';
       else if (outboxEntry?.status === 'PENDING') status = 'PENDENTE';
       else if (row.divergent) status = 'DIVERGENTE';
+      // Consulta ao Mercado Livre falhou na última comparação — nunca mostrar "OK" sem saber o
+      // valor de verdade (mesmo motivo do fix em `reconcile`, ver comentário lá).
+      else if (row.checkFailed) status = 'ERRO';
       else status = 'OK';
 
       return { ...row, status, lastSyncAt: outboxEntry?.processedAt ?? null };

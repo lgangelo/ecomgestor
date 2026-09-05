@@ -121,7 +121,7 @@ describe('MercadoLivreStockOutboxService.reconcile', () => {
   it('divergência nova sem entrada pendente existente: cria uma entrada no outbox', async () => {
     const { prisma, createCalls } = makeFakePrisma([]);
     const comparison: MercadoLivreInventoryComparisonRow[] = [
-      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 7, mercadoLivre: 10, divergent: true },
+      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 7, mercadoLivre: 10, divergent: true, checkFailed: false },
     ];
     const service = new MercadoLivreStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
 
@@ -146,7 +146,7 @@ describe('MercadoLivreStockOutboxService.reconcile', () => {
     };
     const { prisma, createCalls, updateCalls } = makeFakePrisma([existing]);
     const comparison: MercadoLivreInventoryComparisonRow[] = [
-      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 7, mercadoLivre: 10, divergent: true },
+      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 7, mercadoLivre: 10, divergent: true, checkFailed: false },
     ];
     const service = new MercadoLivreStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
 
@@ -171,7 +171,7 @@ describe('MercadoLivreStockOutboxService.reconcile', () => {
     };
     const { prisma } = makeFakePrisma([existing]);
     const comparison: MercadoLivreInventoryComparisonRow[] = [
-      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 10, mercadoLivre: 10, divergent: false },
+      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 10, mercadoLivre: 10, divergent: false, checkFailed: false },
     ];
     const service = new MercadoLivreStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
 
@@ -179,6 +179,33 @@ describe('MercadoLivreStockOutboxService.reconcile', () => {
 
     expect(existing.status).toBe('SYNCED');
     expect(existing.processedAt).not.toBeNull();
+  });
+
+  it('ACHADO REAL corrigido: uma linha checkFailed (erro de consulta) NUNCA resolve uma divergência pendente, mesmo vindo com divergent:false', async () => {
+    const existing: FakeOutboxEntry = {
+      id: 'entry-existing',
+      companyId: 'company-1',
+      variantId: 'v-1',
+      channelId: 'channel-1',
+      targetAvailable: 7,
+      status: 'PENDING',
+      attempts: 0,
+      lastError: null,
+      processedAt: null,
+    };
+    const { prisma } = makeFakePrisma([existing]);
+    // Consulta ao Mercado Livre falhou nesta rodada (rate limit/item pausado) — vem com
+    // `mercadoLivre: null`/`divergent: false`, mas `checkFailed: true` PRECISA impedir que isto
+    // seja tratado como "confirmado igual".
+    const comparison: MercadoLivreInventoryComparisonRow[] = [
+      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 10, mercadoLivre: null, divergent: false, checkFailed: true },
+    ];
+    const service = new MercadoLivreStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
+
+    await service.reconcile('company-1');
+
+    expect(existing.status).toBe('PENDING');
+    expect(existing.processedAt).toBeNull();
   });
 });
 
