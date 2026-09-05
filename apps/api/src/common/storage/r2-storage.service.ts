@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 /**
  * Cliente S3 genérico apontado pro Cloudflare R2 (API compatível com S3) — um único client
@@ -48,5 +48,24 @@ export class R2StorageService {
    * não existir, R2/S3 trata DELETE de uma chave inexistente como sucesso. */
   async deleteObject(bucket: string, key: string): Promise<void> {
     await this.requireClient().send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  }
+
+  /** Lista todas as chaves sob um prefixo (pagina sozinho — R2/S3 devolve no máximo 1000 por
+   * chamada). Usada só por diagnóstico (`cleanup-orphaned-product-images.ts`), nunca no fluxo de
+   * upload/serving normal. */
+  async listObjectKeys(bucket: string, prefix: string): Promise<string[]> {
+    const client = this.requireClient();
+    const keys: string[] = [];
+    let continuationToken: string | undefined;
+    do {
+      const result = await client.send(
+        new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: continuationToken }),
+      );
+      for (const obj of result.Contents ?? []) {
+        if (obj.Key) keys.push(obj.Key);
+      }
+      continuationToken = result.IsTruncated ? result.NextContinuationToken : undefined;
+    } while (continuationToken);
+    return keys;
   }
 }

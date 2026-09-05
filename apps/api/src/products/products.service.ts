@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import sharp from 'sharp';
 import { Prisma, ProductStatus } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { R2StorageService } from '../common/storage/r2-storage.service';
@@ -14,7 +15,18 @@ import { CreateVariantDto } from './dto/create-variant.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { CreateCostHistoryDto } from './dto/create-cost-history.dto';
 
+// Teto do que fica de fato salvo/servido — nunca sobe sem repensar o custo de storage/CDN.
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+// Teto do upload BRUTO aceito, antes de comprimir — celulares modernos (ex.: iPhone 16 Pro Max,
+// pedido explícito do usuário) tiram fotos de 8-15MB em alta qualidade; rejeitar de cara sem
+// tentar comprimir primeiro perderia fotos perfeitamente válidas.
+const MAX_UPLOAD_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
+// Lado maior, em pixels — bem acima do necessário pra exibição web/marketplace, mas suficiente
+// pra manter nitidez em zoom. Fotos já menores que isso não são redimensionadas.
+const MAX_IMAGE_DIMENSION_PX = 2048;
+// Tenta cada qualidade JPEG em ordem até caber em MAX_IMAGE_SIZE_BYTES — perde o mínimo de
+// qualidade necessário, nunca comprime mais do que precisa.
+const JPEG_COMPRESSION_QUALITIES = [85, 75, 65, 55, 45];
 const MIME_TO_EXT: Record<string, string> = {
   'image/jpeg': '.jpg',
   'image/png': '.png',
@@ -26,6 +38,19 @@ const MIRROR_EXTERNAL_IMAGE_TIMEOUT_MS = 10_000;
 // Limite de fotos na galeria adicional do produto (nunca conta a foto de capa, `Product.imageUrl`,
 // que é independente) — pedido explícito do usuário.
 const MAX_PRODUCT_IMAGES = 5;
+
+/** Nome de arquivo baseado no SKU (`K908-1.jpg`, nunca um UUID aleatório) — pedido explícito do
+ * usuário, pra dar pra identificar visualmente de qual produto/variante é cada foto no bucket e
+ * facilitar auditoria/limpeza manual depois (ver `cleanup-orphaned-product-images.ts`). Caracteres
+ * fora de [A-Za-z0-9_-] viram "-" (SKU pode ter espaço/acento em teoria, embora raro na prática). */
+function sanitizeSlug(slug: string): string {
+  return slug
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
 
 export interface UploadedImageFile {
   originalname: string;
@@ -610,12 +635,51 @@ export class ProductsService {
 
   private validateImageFile(file: UploadedImageFile) {
     if (!file) throw new BadRequestException('Nenhum arquivo enviado');
-    if (!MIME_TO_EXT[file.mimetype]) {
-      throw new BadRequestException('Formato de imagem não suportado — envie JPEG, PNG ou WEBP.');
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      throw new BadRequestException(`Imagem excede o tamanho máximo de ${MAX_UPLOAD_SIZE_BYTES / 1024 / 1024}MB`);
     }
-    if (file.size > MAX_IMAGE_SIZE_BYTES) {
-      throw new BadRequestException(`Imagem excede o tamanho máximo de ${MAX_IMAGE_SIZE_BYTES / 1024 / 1024}MB`);
+  }
+
+  /** Pedido do usuário: fotos "alta qualidade" de celular (iPhone 16 Pro Max e afins) passam
+   * fácil de 5MB — em vez de rejeitar de cara, converte pra JPEG e recomprime até caber no teto
+   * de armazenamento, reduzindo qualidade só o necessário (nunca mais que isso). Aceita qualquer
+   * formato que o `sharp`/libvips souber decodificar (JPEG/PNG/WEBP/HEIC/HEIF...) — um arquivo
+   * que não é imagem de verdade vira erro claro, nunca uma exceção crua de decodificação.
+   *
+   * Atalho: um JPEG/PNG/WEBP que já cabe no teto sai sem nenhum processamento — nunca perde
+   * qualidade à toa numa foto que já estava dentro do limite.
+   */
+  private async normalizeImage(file: UploadedImageFile): Promise<{ buffer: Buffer; mimetype: string }> {
+    if (file.size <= MAX_IMAGE_SIZE_BYTES && MIME_TO_EXT[file.mimetype]) {
+      return { buffer: file.buffer, mimetype: file.mimetype };
     }
+
+    const compress = async (quality: number) =>
+      sharp(file.buffer)
+        .rotate() // aplica a orientação EXIF antes de redimensionar — sem isso, foto tirada com o
+        // celular "de lado" fica deitada depois de salva.
+        .resize({ width: MAX_IMAGE_DIMENSION_PX, height: MAX_IMAGE_DIMENSION_PX, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality })
+        .toBuffer();
+
+    let buffer: Buffer;
+    try {
+      buffer = await compress(JPEG_COMPRESSION_QUALITIES[0]);
+    } catch {
+      throw new BadRequestException(
+        'Não foi possível processar esta imagem — tente exportar como JPEG antes de enviar.',
+      );
+    }
+    for (const quality of JPEG_COMPRESSION_QUALITIES.slice(1)) {
+      if (buffer.length <= MAX_IMAGE_SIZE_BYTES) break;
+      buffer = await compress(quality);
+    }
+    if (buffer.length > MAX_IMAGE_SIZE_BYTES) {
+      throw new BadRequestException(
+        `Não foi possível comprimir a imagem abaixo de ${MAX_IMAGE_SIZE_BYTES / 1024 / 1024}MB mesmo reduzindo a qualidade — tente uma foto com resolução menor.`,
+      );
+    }
+    return { buffer, mimetype: 'image/jpeg' };
   }
 
   /**
@@ -626,18 +690,19 @@ export class ProductsService {
    * vez, no momento do upload, e o tipo de URL devolvida (absoluta do R2 vs. relativa local) é o
    * que diferencia os dois casos depois (ver `deleteImageIfAny`).
    */
-  private async saveImageFile(companyId: string, file: UploadedImageFile): Promise<string> {
+  private async saveImageFile(companyId: string, file: UploadedImageFile, slug?: string): Promise<string> {
     this.validateImageFile(file);
-    const filename = `${randomUUID()}${MIME_TO_EXT[file.mimetype]}`;
+    const normalized = await this.normalizeImage(file);
+    const filename = `${(slug && sanitizeSlug(slug)) || randomUUID()}${MIME_TO_EXT[normalized.mimetype]}`;
     const r2Config = this.config.get<{ enabled: boolean; imagesBucket: string; imagesPublicBaseUrl: string }>('r2')!;
     if (r2Config.enabled) {
       const key = `imagens/${companyId}/${filename}`;
-      await this.r2.putObject(r2Config.imagesBucket, key, file.buffer, file.mimetype);
+      await this.r2.putObject(r2Config.imagesBucket, key, normalized.buffer, normalized.mimetype);
       return `${r2Config.imagesPublicBaseUrl}/${key}`;
     }
     const dir = join(this.config.get<string>('productImageStorageDir')!, companyId);
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, filename), file.buffer);
+    await writeFile(join(dir, filename), normalized.buffer);
     return `/products/images/${companyId}/${filename}`;
   }
 
@@ -668,28 +733,34 @@ export class ProductsService {
 
   async uploadProductImage(id: string, companyId: string, file: UploadedImageFile) {
     const existing = await this.findProductOrThrow(id, companyId);
-    const imageUrl = await this.saveImageFile(companyId, file);
+    const imageUrl = await this.saveImageFile(companyId, file, existing.baseSku);
     await this.deleteImageIfAny(companyId, existing.imageUrl);
     return this.prisma.client.product.update({ where: { id }, data: { imageUrl } });
   }
 
   async uploadVariantImage(variantId: string, companyId: string, file: UploadedImageFile) {
     const existing = await this.getVariantOrThrow(variantId, companyId);
-    const imageUrl = await this.saveImageFile(companyId, file);
+    const imageUrl = await this.saveImageFile(companyId, file, existing.sku);
     await this.deleteImageIfAny(companyId, existing.imageUrl);
     return this.prisma.client.productVariant.update({ where: { id: variantId }, data: { imageUrl } });
   }
 
   /** Galeria de fotos adicionais do produto (nunca a foto de capa, que continua sendo só
-   * `Product.imageUrl` — ver comentário no schema). Adiciona ao final (maior `position` + 1). */
+   * `Product.imageUrl` — ver comentário no schema). Adiciona ao final (maior `position` + 1) —
+   * usa o maior `position` já existente, nunca a contagem de linhas: depois de remover uma foto do
+   * meio da galeria, contar linhas geraria a mesma posição (e o mesmo nome de arquivo por SKU) de
+   * uma foto irmã ainda existente, sobrescrevendo o arquivo dela no bucket. */
   async addProductImage(productId: string, companyId: string, file: UploadedImageFile) {
-    await this.findProductOrThrow(productId, companyId);
+    const product = await this.findProductOrThrow(productId, companyId);
     const count = await this.prisma.client.productImage.count({ where: { productId } });
     if (count >= MAX_PRODUCT_IMAGES) {
       throw new BadRequestException(`Cada produto pode ter no máximo ${MAX_PRODUCT_IMAGES} fotos na galeria.`);
     }
-    const url = await this.saveImageFile(companyId, file);
-    return this.prisma.client.productImage.create({ data: { productId, url, position: count } });
+    const maxPosition = await this.prisma.client.productImage.aggregate({ where: { productId }, _max: { position: true } });
+    const position = (maxPosition._max.position ?? -1) + 1;
+    const seq = String(position + 1).padStart(3, '0');
+    const url = await this.saveImageFile(companyId, file, `${product.baseSku}-${seq}`);
+    return this.prisma.client.productImage.create({ data: { productId, url, position } });
   }
 
   private async getProductImageOrThrow(productId: string, imageId: string, companyId: string) {

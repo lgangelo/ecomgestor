@@ -45,6 +45,7 @@
     "check-mercadolivre-size-mismatch": "node dist/cli/check-mercadolivre-size-mismatch.js",
     "check-mercadolivre-duplicate-publish": "node dist/cli/check-mercadolivre-duplicate-publish.js",
     "check-mercadolivre-real-variations": "node dist/cli/check-mercadolivre-real-variations.js",
+    "cleanup-orphaned-product-images": "node dist/cli/cleanup-orphaned-product-images.js",
     "reset-mercadolivre-mappings": "node dist/cli/reset-mercadolivre-mappings.js",
     "check-tiktok-product-detail-raw": "node dist/cli/check-tiktok-product-detail-raw.js",
     "check-tiktok-missing-variant-photos": "node dist/cli/check-tiktok-missing-variant-photos.js",
@@ -72,6 +73,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
     "@aws-sdk/client-s3": "^3.1127.0",
+    "sharp": "^0.35.4",
     "@ecommerce-manager/database": "*",
     "@ecommerce-manager/integrations": "*",
     "@ecommerce-manager/shared": "*",
