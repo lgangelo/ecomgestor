@@ -293,6 +293,16 @@ export class TikTokConnector implements MarketplaceConnector {
       query: { page_size: '20', sort_field: 'create_time', sort_order: 'DESC' },
     });
   }
+
+  /** Payload bruto de "Get Product", sem passar pelo mapper — usado só pelo CLI de diagnóstico
+   * `check-tiktok-product-detail-raw` pra confirmar o formato EXATO de `sku_img` dentro de
+   * `sales_attributes` (visto e citado em comentário, mas nunca inspecionado byte a byte —
+   * `extractSkuAttributes`/`extractSkuImageUrl` foram escritos de forma defensiva justamente
+   * por essa incerteza). Nunca chamado pelo fluxo de sincronização normal. */
+  async getProductDetailRaw(companyId: string, externalProductId: string): Promise<unknown> {
+    void companyId;
+    return this.client.request('GET', TIKTOK_PATHS.productDetail(externalProductId));
+  }
 }
 
 function buildPageQuery(params: PageParams): Record<string, string> {
