@@ -234,13 +234,20 @@ function extractSkuImageUrl(rawImg: unknown): string | undefined {
  * Cor/tamanho/foto da SKU. CONFIRMADO em produção que "Search Products" não traz
  * `sales_attributes` em nenhuma SKU — só existe em "Get Product" (detalhe por id, ver
  * `getProductDetail` no connector), por isso esta função só é chamada a partir de lá. Estrutura
- * real confirmada por payload de produção: `sales_attributes: [{ name, value_name, value_id,
- * sku_img, id }]` — o nome do atributo é `name` (ex.: "Cor"), não `attribute_name` (chute
- * anterior, nunca existiu). `sku_img` vem junto do atributo de COR especificamente (a foto
- * representa a variação de cor, nunca a de tamanho) — por isso só é lida do atributo já
- * reconhecido como cor. Nunca inventa — atributo não reconhecido (nem "cor" nem "tamanho") fica
- * de fora, e `sku_img` ausente/em formato não reconhecido vira `undefined` (fallback pra foto de
- * capa do produto fica a cargo de quem consome isso).
+ * do atributo de cor: `sales_attributes: [{ name, value_name, value_id, id }]` — o nome do
+ * atributo é `name` (ex.: "Cor"), não `attribute_name` (chute anterior, nunca existiu).
+ *
+ * `sku_img` — CORRIGIDO 2026-09-05: **NÃO é um campo confiável/sempre presente**, ao contrário do
+ * que um comentário anterior desta função afirmava ("CONFIRMADO em produção"). Inspecionando o
+ * payload bruto real de um produto com 5 variações de cor (`check-tiktok-product-detail-raw`),
+ * NENHUMA das 5 SKUs tinha `sku_img` — só `id`/`name`/`value_id`/`value_name`. Ou seja: a maioria
+ * dos produtos do catálogo real desta empresa **não tem foto por cor cadastrada do lado da
+ * TikTok** (só existe quando o próprio vendedor cadastrou uma foto específica por variação lá,
+ * caso raro confirmado numa única ocorrência). Pra essas variações sem `sku_img`, não existe
+ * nada a importar — a foto por variação só pode vir de upload manual no nosso sistema. Nunca
+ * inventa — atributo não reconhecido (nem "cor" nem "tamanho") fica de fora, e `sku_img`
+ * ausente/em formato não reconhecido vira `undefined` (fallback pra foto de capa do produto fica
+ * a cargo de quem consome isso).
  */
 export function extractSkuAttributes(sku: Record<string, unknown>): { color?: string; size?: string; imageUrl?: string } {
   const attributes = Array.isArray(sku.sales_attributes) ? (sku.sales_attributes as unknown[]) : [];
