@@ -109,4 +109,15 @@ export class TikTokCredentialsService {
     if (!integration) throw new NotFoundException('Integração TikTok Shop não encontrada');
     return integration;
   }
+
+  /** Toggle por integração (Bloco 2) — nunca liga o envio automático de estoque sozinho; quem
+   * também precisa estar ligado é a flag global `TIKTOK_INVENTORY_PUSH_ENABLED` (ver
+   * `TikTokStockOutboxService.processPending`). */
+  async setAutoInventorySyncEnabled(companyId: string, enabled: boolean): Promise<void> {
+    const integration = await this.requireIntegration(companyId);
+    await this.prisma.client.integration.update({
+      where: { id: integration.id },
+      data: { autoInventorySyncEnabled: enabled },
+    });
+  }
 }

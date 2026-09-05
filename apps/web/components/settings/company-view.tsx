@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCompany, useUpdateCompany } from '@/hooks/use-company';
@@ -27,7 +26,6 @@ export function CompanyView() {
     currency: 'BRL',
     slowMovingDays: 60,
     restockCoverageDays: 14,
-    inventoryAutoSyncEnabled: false,
   });
 
   React.useEffect(() => {
@@ -40,7 +38,6 @@ export function CompanyView() {
         currency: company.currency,
         slowMovingDays: company.slowMovingDays,
         restockCoverageDays: company.restockCoverageDays,
-        inventoryAutoSyncEnabled: company.inventoryAutoSyncEnabled,
       });
     }
   }, [company]);
@@ -56,11 +53,6 @@ export function CompanyView() {
       slowMovingDays: form.slowMovingDays,
       restockCoverageDays: form.restockCoverageDays,
     });
-  }
-
-  function handleToggleAutoSync(checked: boolean) {
-    setForm((f) => ({ ...f, inventoryAutoSyncEnabled: checked }));
-    updateCompany.mutate({ inventoryAutoSyncEnabled: checked });
   }
 
   if (isLoading || !company) return <Skeleton className="h-96" />;
@@ -143,23 +135,6 @@ export function CompanyView() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Sincronização automática de estoque</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-0">
-          <div className="flex items-center gap-3">
-            <Switch checked={form.inventoryAutoSyncEnabled} onCheckedChange={handleToggleAutoSync} />
-            <span className="text-sm font-medium">{form.inventoryAutoSyncEnabled ? 'Ativada' : 'Desativada'}</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Quando ativado, alterações no estoque central serão enviadas automaticamente para a TikTok Shop. Depende
-            também da configuração do servidor (<code>TIKTOK_INVENTORY_PUSH_ENABLED</code>) — com qualquer um dos
-            dois desligado, a sincronização continua manual.
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card className="mt-6">
         <CardHeader>
           <CardTitle>Recalcular custo dos pedidos</CardTitle>
         </CardHeader>

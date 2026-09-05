@@ -60,7 +60,7 @@ export function TikTokIntegrationView() {
             <TikTokOrdersTab channelId={status.channelId} />
           </TabsContent>
           <TabsContent value="estoque">
-            <TikTokInventoryTab />
+            <TikTokInventoryTab status={status} />
           </TabsContent>
           <TabsContent value="financeiro">
             <TikTokFinanceTab status={status} />

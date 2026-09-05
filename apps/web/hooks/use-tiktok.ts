@@ -15,6 +15,7 @@ export interface TikTokStatus {
   checkpoints?: { ordersSyncAt?: string; productsSyncAt?: string; financeSyncAt?: string };
   last24h?: { ordersImported: number; webhooksReceived: number; failures: number };
   pendingMappingCount?: number;
+  autoInventorySyncEnabled?: boolean;
   areas?: {
     oauth: string;
     orders: string;
@@ -239,6 +240,14 @@ export function useTikTokInventoryPushEnabled() {
 export function usePushTikTokInventory() {
   return useTikTokMutation<{ variantId: string }>('/integrations/tiktok/inventory/push', [
     ['tiktok', 'inventory', 'compare'],
+  ]);
+}
+
+/** Toggle por integração (Bloco 2) — substitui o antigo interruptor único em Configurações →
+ * Empresa, que afetava TikTok e Mercado Livre juntos. */
+export function useSetTikTokAutoSync() {
+  return useTikTokMutation<{ enabled: boolean }>('/integrations/tiktok/inventory/auto-sync', [
+    ['tiktok', 'status'],
   ]);
 }
 

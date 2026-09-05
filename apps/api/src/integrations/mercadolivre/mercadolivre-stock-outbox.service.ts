@@ -1,37 +1,31 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { TikTokCredentialsService } from './tiktok-credentials.service';
-import { TikTokInventorySyncService, type InventoryComparisonRow } from './tiktok-inventory-sync.service';
+import { MercadoLivreCredentialsService } from './mercadolivre-credentials.service';
+import {
+  MercadoLivreInventorySyncService,
+  type MercadoLivreInventoryComparisonRow,
+} from './mercadolivre-inventory-sync.service';
 
-export type StockSyncStatus = 'OK' | 'PENDENTE' | 'DIVERGENTE' | 'ERRO';
+export type MercadoLivreStockSyncStatus = 'OK' | 'PENDENTE' | 'DIVERGENTE' | 'ERRO';
 
-export interface StockSyncStatusRow extends InventoryComparisonRow {
-  status: StockSyncStatus;
+export interface MercadoLivreStockSyncStatusRow extends MercadoLivreInventoryComparisonRow {
+  status: MercadoLivreStockSyncStatus;
   lastSyncAt: Date | null;
 }
 
 /**
- * Outbox de sincronização de estoque (seção 51 da Fase 4). Em vez de instrumentar
- * `InventoryLedgerService`/`OrdersService`/`ReturnsService` diretamente — o que acoplaria a
- * integração TikTok ao núcleo de estoque, o oposto do que a Fase 3 e esta fase querem preservar
- * — um job periódico reaproveita `TikTokInventorySyncService.compare()` (já usado pela tela de
- * comparação manual) para detectar divergência e alimentar o outbox. A venda nunca espera isso:
- * o commit interno já aconteceu antes; isto só roda depois, de forma assíncrona (seção 52).
- * Decisão de design completa em docs/phase4-review.md.
+ * Outbox de sincronização de estoque com o Mercado Livre — mesmo papel de
+ * `TikTokStockOutboxService`, mesma tabela genérica `StockSyncOutboxEntry` (já reusável por
+ * `channelId`, nenhuma mudança de schema).
  */
 @Injectable()
-export class TikTokStockOutboxService {
+export class MercadoLivreStockOutboxService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly credentialsService: TikTokCredentialsService,
-    private readonly inventorySync: TikTokInventorySyncService,
+    private readonly credentialsService: MercadoLivreCredentialsService,
+    private readonly inventorySync: MercadoLivreInventorySyncService,
   ) {}
 
-  /**
-   * Só detecta e enfileira — nunca envia nada para a TikTok aqui. Uma nova divergência para o
-   * mesmo (variantId, channelId) atualiza a entrada `PENDING` existente em vez de criar uma
-   * segunda linha (seção 53 — coalescing: evita reenviar 10→9→8→7, só o valor final importa).
-   */
   async reconcile(companyId: string): Promise<number> {
     const integration = await this.credentialsService.requireIntegration(companyId).catch(() => null);
     if (!integration?.channelId) return 0;
@@ -59,8 +53,6 @@ export class TikTokStockOutboxService {
       }
     }
 
-    // A divergência sumiu (ex.: alguém já enviou manualmente) — nunca deixa uma entrada pendente
-    // enviar um valor que já não reflete mais a realidade.
     if (resolved.length > 0) {
       await this.prisma.client.stockSyncOutboxEntry.updateMany({
         where: { companyId, channelId, status: 'PENDING', variantId: { in: resolved.map((r) => r.variantId) } },
@@ -71,19 +63,9 @@ export class TikTokStockOutboxService {
     return divergent.length;
   }
 
-  /**
-   * Só envia de fato se a flag global (`TIKTOK_INVENTORY_PUSH_ENABLED`) E o toggle POR
-   * INTEGRAÇÃO (`Integration.autoInventorySyncEnabled`) estiverem ligados — os dois continuam
-   * desligados por padrão; sem nenhum dos dois, o outbox só acumula (visível na tela de
-   * divergência), nunca envia sozinho.
-   *
-   * Até 2026-09 este toggle era `Company.inventoryAutoSyncEnabled` (uma chave só, pra empresa
-   * inteira — ligar afetava TikTok e Mercado Livre juntos, sem como testar um sem o outro). O
-   * campo `Integration.autoInventorySyncEnabled` já existia no schema desde a Fase 4 mas nunca
-   * tinha sido ligado a nada; a migração de dado (`backfill-integration-auto-sync-flag.ts`) copiou
-   * o valor de cada empresa pra dentro da integração TikTok correspondente antes desta troca, pra
-   * ninguém perder o auto-sync já habilitado em produção.
-   */
+  /** Só envia de fato se a flag global (`MERCADOLIVRE_INVENTORY_PUSH_ENABLED`) E o toggle por
+   * integração (`Integration.autoInventorySyncEnabled`) estiverem ligados — mesma dupla trava da
+   * TikTok, nunca ligado por padrão. */
   async processPending(companyId: string): Promise<{ processed: number; failed: number }> {
     if (!this.inventorySync.isPushEnabled()) return { processed: 0, failed: 0 };
 
@@ -99,8 +81,6 @@ export class TikTokStockOutboxService {
     let failed = 0;
     for (const entry of pending) {
       try {
-        // `push()` relê o estoque central na hora de enviar — nunca confia cegamente no
-        // `targetAvailable` capturado no momento em que a divergência foi detectada.
         await this.inventorySync.push(companyId, null, entry.variantId);
         await this.prisma.client.stockSyncOutboxEntry.update({
           where: { id: entry.id },
@@ -124,14 +104,7 @@ export class TikTokStockOutboxService {
     return { processed, failed };
   }
 
-  /**
-   * Seção 54 — status separado do documento fiscal/estoque: `divergent` (verdade ao vivo, via
-   * `compare()`) vira `PENDENTE`/`ERRO` quando o outbox já sabe de uma tentativa em andamento ou
-   * que falhou; nunca inventa um estado que o outbox não registrou. Pega a entrada mais recente
-   * por variante (ordenado por criação desc) — uma entrada nova `PENDING` criada depois de uma
-   * `FAILED` antiga naturalmente "substitui" o status exibido, sem precisar limpar a antiga.
-   */
-  async getStatusReport(companyId: string): Promise<StockSyncStatusRow[]> {
+  async getStatusReport(companyId: string): Promise<MercadoLivreStockSyncStatusRow[]> {
     const integration = await this.credentialsService.requireIntegration(companyId).catch(() => null);
     if (!integration?.channelId) return [];
 
@@ -150,7 +123,7 @@ export class TikTokStockOutboxService {
 
     return comparison.map((row) => {
       const outboxEntry = latestByVariant.get(row.variantId);
-      let status: StockSyncStatus;
+      let status: MercadoLivreStockSyncStatus;
       if (outboxEntry?.status === 'FAILED') status = 'ERRO';
       else if (outboxEntry?.status === 'PENDING') status = 'PENDENTE';
       else if (row.divergent) status = 'DIVERGENTE';

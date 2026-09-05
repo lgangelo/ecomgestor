@@ -37,6 +37,7 @@
     "add-mercadolivre-variations": "node dist/cli/add-mercadolivre-variations.js",
     "check-mercadolivre-orders": "node dist/cli/check-mercadolivre-orders.js",
     "backfill-mercadolivre-orders": "node dist/cli/backfill-mercadolivre-orders.js",
+    "backfill-integration-auto-sync-flag": "node dist/cli/backfill-integration-auto-sync-flag.js",
     "check-tiktok-product-detail-raw": "node dist/cli/check-tiktok-product-detail-raw.js",
     "check-tiktok-missing-variant-photos": "node dist/cli/check-tiktok-missing-variant-photos.js",
     "lint": "eslint \"src/**/*.ts\"",

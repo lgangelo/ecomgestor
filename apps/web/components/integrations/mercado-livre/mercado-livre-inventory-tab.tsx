@@ -19,28 +19,28 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import {
-  useTikTokInventoryCompare,
-  useTikTokInventoryPushEnabled,
-  usePushTikTokInventory,
-  useSetTikTokAutoSync,
-  type InventoryComparisonRow,
-  type TikTokStatus,
-} from '@/hooks/use-tiktok';
+  useMercadoLivreInventoryCompare,
+  useMercadoLivreInventoryPushEnabled,
+  usePushMercadoLivreInventory,
+  useSetMercadoLivreAutoSync,
+  type MercadoLivreInventoryComparisonRow,
+  type MercadoLivreStatus,
+} from '@/hooks/use-mercado-livre';
 
-export function TikTokInventoryTab({ status }: { status: TikTokStatus }) {
-  const { data, isLoading } = useTikTokInventoryCompare();
-  const { data: pushEnabled } = useTikTokInventoryPushEnabled();
-  const [confirming, setConfirming] = React.useState<InventoryComparisonRow | null>(null);
-  const push = usePushTikTokInventory();
-  const setAutoSync = useSetTikTokAutoSync();
+export function MercadoLivreInventoryTab({ status }: { status: MercadoLivreStatus }) {
+  const { data, isLoading } = useMercadoLivreInventoryCompare();
+  const { data: pushEnabled } = useMercadoLivreInventoryPushEnabled();
+  const [confirming, setConfirming] = React.useState<MercadoLivreInventoryComparisonRow | null>(null);
+  const push = usePushMercadoLivreInventory();
+  const setAutoSync = useSetMercadoLivreAutoSync();
 
   return (
     <div>
       <p className="mb-4 text-sm text-muted-foreground">
-        Modo de estoque TikTok: somente comparar
+        Modo de estoque Mercado Livre: somente comparar
         {pushEnabled?.enabled
-          ? ' — envio manual habilitado nesta instalação (TIKTOK_INVENTORY_PUSH_ENABLED=true).'
-          : '. Envio automático desabilitado por padrão — configure TIKTOK_INVENTORY_PUSH_ENABLED para habilitar o envio manual.'}
+          ? ' — envio manual habilitado nesta instalação (MERCADOLIVRE_INVENTORY_PUSH_ENABLED=true).'
+          : '. Envio automático desabilitado por padrão — configure MERCADOLIVRE_INVENTORY_PUSH_ENABLED para habilitar o envio manual.'}
       </p>
 
       {pushEnabled?.enabled && (
@@ -48,15 +48,15 @@ export function TikTokInventoryTab({ status }: { status: TikTokStatus }) {
           <Switch
             checked={Boolean(status.autoInventorySyncEnabled)}
             disabled={setAutoSync.isPending}
-            onCheckedChange={(checked) => setAutoSync.mutate({ enabled: checked })}
+            onCheckedChange={(checked) => setAutoSync.mutate(checked)}
           />
           <div>
             <p className="text-sm font-medium">
               Sincronização automática {status.autoInventorySyncEnabled ? 'ativada' : 'desativada'}
             </p>
             <p className="text-xs text-muted-foreground">
-              Quando ativado, alterações no estoque central são enviadas automaticamente para a TikTok Shop a cada
-              poucos minutos — só afeta esta integração, não a do Mercado Livre.
+              Quando ativado, alterações no estoque central são enviadas automaticamente para o Mercado Livre a cada
+              poucos minutos — só afeta esta integração, não a da TikTok.
             </p>
           </div>
         </div>
@@ -74,7 +74,7 @@ export function TikTokInventoryTab({ status }: { status: TikTokStatus }) {
             <TableRow>
               <TableHead>SKU</TableHead>
               <TableHead>Central</TableHead>
-              <TableHead>TikTok</TableHead>
+              <TableHead>Mercado Livre</TableHead>
               <TableHead>Diferença</TableHead>
               <TableHead>Último sync</TableHead>
               <TableHead>Situação</TableHead>
@@ -86,8 +86,8 @@ export function TikTokInventoryTab({ status }: { status: TikTokStatus }) {
               <TableRow key={row.variantId}>
                 <TableCell>{row.sku}</TableCell>
                 <TableCell>{row.central}</TableCell>
-                <TableCell>{row.tiktok ?? '—'}</TableCell>
-                <TableCell>{row.tiktok !== null ? row.central - row.tiktok : '—'}</TableCell>
+                <TableCell>{row.mercadoLivre ?? '—'}</TableCell>
+                <TableCell>{row.mercadoLivre !== null ? row.central - row.mercadoLivre : '—'}</TableCell>
                 <TableCell>{row.lastSyncAt ? formatDate(row.lastSyncAt, true) : '—'}</TableCell>
                 <TableCell>
                   <StatusBadge status={row.status} map={STOCK_SYNC_STATUS_PRESENTATION} />
@@ -110,10 +110,10 @@ export function TikTokInventoryTab({ status }: { status: TikTokStatus }) {
       <Dialog open={Boolean(confirming)} onOpenChange={(open) => !open && setConfirming(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Enviar estoque central ao TikTok</DialogTitle>
+            <DialogTitle>Enviar estoque central ao Mercado Livre</DialogTitle>
             <DialogDescription>
-              Estoque central: {confirming?.central} · TikTok atual: {confirming?.tiktok}
-              <br />O TikTok será atualizado para {confirming?.central}.
+              Estoque central: {confirming?.central} · Mercado Livre atual: {confirming?.mercadoLivre}
+              <br />O Mercado Livre será atualizado para {confirming?.central}.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -123,8 +123,7 @@ export function TikTokInventoryTab({ status }: { status: TikTokStatus }) {
             <Button
               disabled={push.isPending}
               onClick={() =>
-                confirming &&
-                push.mutate({ variantId: confirming.variantId }, { onSuccess: () => setConfirming(null) })
+                confirming && push.mutate(confirming.variantId, { onSuccess: () => setConfirming(null) })
               }
             >
               Confirmar envio

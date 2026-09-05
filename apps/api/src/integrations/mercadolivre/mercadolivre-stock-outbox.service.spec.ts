@@ -1,7 +1,7 @@
 import type { PrismaService } from '../../common/prisma/prisma.service';
-import type { TikTokCredentialsService } from './tiktok-credentials.service';
-import type { InventoryComparisonRow, TikTokInventorySyncService } from './tiktok-inventory-sync.service';
-import { TikTokStockOutboxService } from './tiktok-stock-outbox.service';
+import type { MercadoLivreCredentialsService } from './mercadolivre-credentials.service';
+import type { MercadoLivreInventoryComparisonRow, MercadoLivreInventorySyncService } from './mercadolivre-inventory-sync.service';
+import { MercadoLivreStockOutboxService } from './mercadolivre-stock-outbox.service';
 
 interface FakeOutboxEntry {
   id: string;
@@ -87,30 +87,30 @@ function makeFakePrisma(entries: FakeOutboxEntry[]) {
   return { prisma, createCalls, updateCalls, updateManyCalls, entries };
 }
 
-function makeFakeCredentials(channelId: string | null, autoInventorySyncEnabled = false): TikTokCredentialsService {
+function makeFakeCredentials(channelId: string | null, autoInventorySyncEnabled = false): MercadoLivreCredentialsService {
   return {
     requireIntegration: async () => {
       if (!channelId) throw new Error('not connected');
       return { channelId, autoInventorySyncEnabled };
     },
-  } as unknown as TikTokCredentialsService;
+  } as unknown as MercadoLivreCredentialsService;
 }
 
 function makeFakeInventorySync(
-  comparison: InventoryComparisonRow[],
+  comparison: MercadoLivreInventoryComparisonRow[],
   options: { pushEnabled?: boolean; push?: jest.Mock } = {},
-): TikTokInventorySyncService {
+): MercadoLivreInventorySyncService {
   return {
     compare: async () => comparison,
     isPushEnabled: () => options.pushEnabled ?? true,
     push: options.push ?? jest.fn().mockResolvedValue({ pushed: 0 }),
-  } as unknown as TikTokInventorySyncService;
+  } as unknown as MercadoLivreInventorySyncService;
 }
 
-describe('TikTokStockOutboxService.reconcile (Fase 4, seções 51-53)', () => {
-  it('sem integração TikTok conectada, não faz nada e retorna 0', async () => {
+describe('MercadoLivreStockOutboxService.reconcile', () => {
+  it('sem integração Mercado Livre conectada, não faz nada e retorna 0', async () => {
     const { prisma, createCalls } = makeFakePrisma([]);
-    const service = new TikTokStockOutboxService(prisma, makeFakeCredentials(null), makeFakeInventorySync([]));
+    const service = new MercadoLivreStockOutboxService(prisma, makeFakeCredentials(null), makeFakeInventorySync([]));
 
     const queued = await service.reconcile('company-1');
 
@@ -120,10 +120,10 @@ describe('TikTokStockOutboxService.reconcile (Fase 4, seções 51-53)', () => {
 
   it('divergência nova sem entrada pendente existente: cria uma entrada no outbox', async () => {
     const { prisma, createCalls } = makeFakePrisma([]);
-    const comparison: InventoryComparisonRow[] = [
-      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 7, tiktok: 10, divergent: true },
+    const comparison: MercadoLivreInventoryComparisonRow[] = [
+      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 7, mercadoLivre: 10, divergent: true },
     ];
-    const service = new TikTokStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
+    const service = new MercadoLivreStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
 
     const queued = await service.reconcile('company-1');
 
@@ -145,20 +145,19 @@ describe('TikTokStockOutboxService.reconcile (Fase 4, seções 51-53)', () => {
       processedAt: null,
     };
     const { prisma, createCalls, updateCalls } = makeFakePrisma([existing]);
-    // Estoque continuou caindo: 9 -> 7. Só o valor final (7) deve ficar registrado.
-    const comparison: InventoryComparisonRow[] = [
-      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 7, tiktok: 10, divergent: true },
+    const comparison: MercadoLivreInventoryComparisonRow[] = [
+      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 7, mercadoLivre: 10, divergent: true },
     ];
-    const service = new TikTokStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
+    const service = new MercadoLivreStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
 
     await service.reconcile('company-1');
 
-    expect(createCalls).toHaveLength(0); // nunca uma segunda linha
+    expect(createCalls).toHaveLength(0);
     expect(updateCalls).toHaveLength(1);
     expect(existing.targetAvailable).toBe(7);
   });
 
-  it('divergência que sumiu resolve a entrada pendente (nunca envia um valor que já não é mais real)', async () => {
+  it('divergência que sumiu resolve a entrada pendente', async () => {
     const existing: FakeOutboxEntry = {
       id: 'entry-existing',
       companyId: 'company-1',
@@ -171,10 +170,10 @@ describe('TikTokStockOutboxService.reconcile (Fase 4, seções 51-53)', () => {
       processedAt: null,
     };
     const { prisma } = makeFakePrisma([existing]);
-    const comparison: InventoryComparisonRow[] = [
-      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 10, tiktok: 10, divergent: false },
+    const comparison: MercadoLivreInventoryComparisonRow[] = [
+      { variantId: 'v-1', sku: 'SKU-1', externalSku: 'ext-1', central: 10, mercadoLivre: 10, divergent: false },
     ];
-    const service = new TikTokStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
+    const service = new MercadoLivreStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
 
     await service.reconcile('company-1');
 
@@ -183,11 +182,11 @@ describe('TikTokStockOutboxService.reconcile (Fase 4, seções 51-53)', () => {
   });
 });
 
-describe('TikTokStockOutboxService.processPending (Fase 4, seção 52/56)', () => {
+describe('MercadoLivreStockOutboxService.processPending', () => {
   it('nunca envia quando a flag global está desligada, mesmo com o toggle da integração ligado', async () => {
     const { prisma } = makeFakePrisma([]);
     const push = jest.fn();
-    const service = new TikTokStockOutboxService(
+    const service = new MercadoLivreStockOutboxService(
       prisma,
       makeFakeCredentials('channel-1', true),
       makeFakeInventorySync([], { pushEnabled: false, push }),
@@ -202,7 +201,7 @@ describe('TikTokStockOutboxService.processPending (Fase 4, seção 52/56)', () =
   it('nunca envia quando o toggle da integração está desligado, mesmo com a flag global ligada', async () => {
     const { prisma } = makeFakePrisma([]);
     const push = jest.fn();
-    const service = new TikTokStockOutboxService(
+    const service = new MercadoLivreStockOutboxService(
       prisma,
       makeFakeCredentials('channel-1', false),
       makeFakeInventorySync([], { pushEnabled: true, push }),
@@ -244,7 +243,7 @@ describe('TikTokStockOutboxService.processPending (Fase 4, seção 52/56)', () =
       if (variantId === 'v-fail') throw new Error('conector indisponível');
       return { pushed: 5 };
     });
-    const service = new TikTokStockOutboxService(
+    const service = new MercadoLivreStockOutboxService(
       prisma,
       makeFakeCredentials('channel-1', true),
       makeFakeInventorySync([], { pushEnabled: true, push }),

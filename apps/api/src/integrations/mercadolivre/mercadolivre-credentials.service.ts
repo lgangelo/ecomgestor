@@ -94,4 +94,15 @@ export class MercadoLivreCredentialsService {
     if (!integration) throw new NotFoundException('Integração Mercado Livre não encontrada');
     return integration;
   }
+
+  /** Toggle por integração (Bloco 2) — nunca liga o envio automático de estoque sozinho; quem
+   * também precisa estar ligado é a flag global `MERCADOLIVRE_INVENTORY_PUSH_ENABLED` (ver
+   * `MercadoLivreStockOutboxService.processPending`). */
+  async setAutoInventorySyncEnabled(companyId: string, enabled: boolean): Promise<void> {
+    const integration = await this.requireIntegration(companyId);
+    await this.prisma.client.integration.update({
+      where: { id: integration.id },
+      data: { autoInventorySyncEnabled: enabled },
+    });
+  }
 }

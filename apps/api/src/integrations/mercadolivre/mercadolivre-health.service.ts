@@ -4,10 +4,10 @@ import { IntegrationProvider } from '@ecommerce-manager/database';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 /**
- * Status da integração Mercado Livre — mesmo espírito simples de `shopee-health.service.ts`:
- * ainda não existe nenhum job de sincronização (produtos/pedidos/estoque) rodando, então não há
- * checkpoint nem histórico de falhas pra reportar ainda. Só confirma se está configurada
- * (variáveis de ambiente) e conectada (OAuth concluído).
+ * Status da integração Mercado Livre — confirma se está configurada (variáveis de ambiente) e
+ * conectada (OAuth concluído), mais o checkpoint da sincronização de pedidos (Bloco 1) e o toggle
+ * de auto-sync de estoque (Bloco 2). Ainda mais simples que `tiktok-health.service.ts` (sem o
+ * cálculo de áreas OK/DEGRADED/STALE) — se isso passar a fazer falta, replicar o mesmo padrão.
  */
 @Injectable()
 export class MercadoLivreHealthService {
@@ -37,6 +37,9 @@ export class MercadoLivreHealthService {
       channelId: integration.channelId,
       storeName: integration.storeName,
       lastError: integration.lastError,
+      lastSyncAt: integration.lastSyncAt,
+      checkpoints: integration.syncCheckpoints,
+      autoInventorySyncEnabled: integration.autoInventorySyncEnabled,
     };
   }
 }

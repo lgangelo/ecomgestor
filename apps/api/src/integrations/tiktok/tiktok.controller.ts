@@ -18,6 +18,8 @@ import { CreateTikTokProductDto } from './dto/create-tiktok-product.dto';
 import { BulkCreateTikTokProductsDto } from './dto/bulk-create-tiktok-products.dto';
 import { StartTikTokImportDto } from './dto/start-tiktok-import.dto';
 import { PushTikTokInventoryDto } from './dto/push-tiktok-inventory.dto';
+import { SetTikTokAutoSyncDto } from './dto/set-tiktok-auto-sync.dto';
+import { TikTokCredentialsService } from './tiktok-credentials.service';
 
 @Controller('integrations/tiktok')
 export class TikTokController {
@@ -31,6 +33,7 @@ export class TikTokController {
     private readonly ordersService: OrdersService,
     private readonly ordersSync: TikTokOrdersSyncService,
     private readonly queue: TikTokQueueService,
+    private readonly credentialsService: TikTokCredentialsService,
   ) {}
 
   @Get('status')
@@ -147,6 +150,15 @@ export class TikTokController {
   @RequirePermissions(PERMISSIONS.INTEGRATION_INVENTORY_PUSH)
   pushInventory(@CurrentUser() user: AuthenticatedUser, @Body() dto: PushTikTokInventoryDto) {
     return this.inventorySync.push(user.companyId, user.userId, dto.variantId);
+  }
+
+  /** Toggle por integração (Bloco 2) — substitui o antigo interruptor único
+   * `Company.inventoryAutoSyncEnabled`, que afetava TikTok e Mercado Livre juntos. */
+  @Post('inventory/auto-sync')
+  @RequirePermissions(PERMISSIONS.INTEGRATION_INVENTORY_PUSH)
+  async setAutoSync(@CurrentUser() user: AuthenticatedUser, @Body() dto: SetTikTokAutoSyncDto) {
+    await this.credentialsService.setAutoInventorySyncEnabled(user.companyId, dto.enabled);
+    return { enabled: dto.enabled };
   }
 
   @Get('jobs')

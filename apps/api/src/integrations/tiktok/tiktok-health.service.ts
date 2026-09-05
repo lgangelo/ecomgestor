@@ -76,6 +76,7 @@ export class TikTokHealthService {
       lastSyncAt: integration.lastSyncAt,
       lastError: integration.lastError,
       checkpoints,
+      autoInventorySyncEnabled: integration.autoInventorySyncEnabled,
       last24h: {
         ordersImported: ordersImported24h,
         webhooksReceived: webhooksReceived24h,

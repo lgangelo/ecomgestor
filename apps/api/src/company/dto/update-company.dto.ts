@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class UpdateCompanyDto {
   @IsOptional()
@@ -43,8 +43,4 @@ export class UpdateCompanyDto {
   @Min(1)
   @Max(365)
   restockCoverageDays?: number;
-
-  @IsOptional()
-  @IsBoolean()
-  inventoryAutoSyncEnabled?: boolean;
 }

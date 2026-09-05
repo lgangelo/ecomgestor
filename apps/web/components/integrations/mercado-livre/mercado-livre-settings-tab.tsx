@@ -6,9 +6,8 @@ import { connectMercadoLivre, useMercadoLivreDisconnect } from '@/hooks/use-merc
 import type { MercadoLivreStatus } from '@/hooks/use-mercado-livre';
 
 /**
- * Esqueleto — só conectar/desconectar por enquanto. Nenhuma tela de sincronização (produtos,
- * pedidos, estoque) ainda, porque nenhum desses endpoints do Mercado Livre foi confirmado
- * contra uma conta real (ver docs/integrations/mercado-livre.md).
+ * Sincronização de pedidos (Bloco 1) já roda automaticamente para quem está conectado — a
+ * publicação de produtos ainda é manual (scripts de CLI, ver docs/integrations/mercado-livre.md).
  */
 export function MercadoLivreSettingsTab({ status }: { status: MercadoLivreStatus }) {
   const disconnect = useMercadoLivreDisconnect();
@@ -27,8 +26,8 @@ export function MercadoLivreSettingsTab({ status }: { status: MercadoLivreStatus
         ) : status.connected ? (
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm text-muted-foreground">
-              Conectado{status.storeName ? ` — usuário ${status.storeName}` : ''}. Sincronização de produtos/pedidos/
-              estoque ainda não implementada (esqueleto).
+              Conectado{status.storeName ? ` — usuário ${status.storeName}` : ''}. Pedidos são sincronizados
+              automaticamente a cada poucos minutos; publicação de produtos ainda é manual.
             </p>
             <Button variant="destructive" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
               Desconectar

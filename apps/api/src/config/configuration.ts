@@ -50,6 +50,9 @@ export interface AppConfig {
     /** Intervalo (minutos) da reconciliação automática de pedidos — mesmo papel de
      * `tiktok.reconcileIntervalMinutes`. */
     reconcileIntervalMinutes: number;
+    /** Mesma trava dupla da TikTok (`tiktok.inventoryPushEnabled`) — desabilitado por padrão,
+     * nunca envia estoque pro Mercado Livre sem isso E o toggle por integração ligados. */
+    inventoryPushEnabled: boolean;
   };
   /** Geração de título/descrição de produto por IA — provedor neutro, escolhido por env var
    * (nunca mais de um ativo ao mesmo tempo). Desligado por padrão (provider indefinido). */
@@ -132,6 +135,7 @@ export default (): AppConfig => ({
     redirectUri: process.env.MERCADOLIVRE_REDIRECT_URI ?? '',
     priceMarkupPercent: Number(process.env.MERCADOLIVRE_PRICE_MARKUP_PERCENT ?? '0'),
     reconcileIntervalMinutes: Number(process.env.MERCADOLIVRE_RECONCILE_INTERVAL_MINUTES ?? '15'),
+    inventoryPushEnabled: process.env.MERCADOLIVRE_INVENTORY_PUSH_ENABLED === 'true',
   },
   ai: {
     provider:

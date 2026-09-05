@@ -13,9 +13,6 @@ export interface Company {
   currency: string;
   slowMovingDays: number;
   restockCoverageDays: number;
-  /** Seção 56 da Fase 4 — desligado por padrão; só some ADMIN pode ligar. Some ao gate global
-   * `TIKTOK_INVENTORY_PUSH_ENABLED` (o outbox só envia de fato com os dois ligados). */
-  inventoryAutoSyncEnabled: boolean;
 }
 
 export function useCompany() {
@@ -36,7 +33,6 @@ export function useUpdateCompany() {
           | 'currency'
           | 'slowMovingDays'
           | 'restockCoverageDays'
-          | 'inventoryAutoSyncEnabled'
         >
       >,
     ) => apiFetch<Company>('/company', { method: 'PATCH', body: data }),

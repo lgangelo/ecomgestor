@@ -27,7 +27,6 @@ export class CompanyService {
         ...(dto.currency !== undefined ? { currency: dto.currency } : {}),
         ...(dto.slowMovingDays !== undefined ? { slowMovingDays: dto.slowMovingDays } : {}),
         ...(dto.restockCoverageDays !== undefined ? { restockCoverageDays: dto.restockCoverageDays } : {}),
-        ...(dto.inventoryAutoSyncEnabled !== undefined ? { inventoryAutoSyncEnabled: dto.inventoryAutoSyncEnabled } : {}),
       },
     });
 
