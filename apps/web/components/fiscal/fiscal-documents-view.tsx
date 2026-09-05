@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { StatusBadge } from '@/components/ui/status-badge';
 import { FISCAL_DOCUMENT_STATUS_PRESENTATION } from '@ecommerce-manager/ui';
 import { formatDate } from '@/lib/format';
+import { formatBRL } from '@ecommerce-manager/shared';
 import {
   useDownloadFiscalXml,
   useExportFiscalDocuments,
@@ -72,56 +73,84 @@ export function FiscalDocumentsView() {
             <AlertTriangle className="h-4 w-4 text-warning" />
             <CardTitle>Pendências fiscais</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4 pt-0 text-sm">
+          <CardContent className="space-y-5 pt-0">
             {pending.salesWithoutInvoiceCount > 0 && (
               <div className="space-y-1.5">
-                <p>
+                <p className="text-sm">
                   <Badge tone="warning" className="mr-2">
                     {pending.salesWithoutInvoiceCount}
                   </Badge>
                   venda(s) sem NF-e
                 </p>
-                <ul className="space-y-1 pl-1">
-                  {pending.salesWithoutInvoice.slice(0, 3).map((o) => (
-                    <li key={o.orderId}>
-                      <Link href={`/vendas/pedidos/${o.orderId}`} className="underline">
-                        {o.customerName ?? o.orderId.slice(0, 8)}
-                      </Link>
-                    </li>
-                  ))}
-                  {/* "e mais N" precisa contar a partir de quantos itens aparecem na tela (no máximo
-                      3), nunca do tamanho da lista de exemplo vinda da API (até 50) — senão, com
-                      mais de 3 pendências, o número mostrado nunca bate com o que o usuário vê. */}
-                  {pending.salesWithoutInvoiceCount > Math.min(3, pending.salesWithoutInvoice.length) && (
-                    <li className="text-muted-foreground">
-                      e mais {pending.salesWithoutInvoiceCount - Math.min(3, pending.salesWithoutInvoice.length)}...
-                    </li>
-                  )}
-                </ul>
+                <div className="overflow-hidden rounded-md border border-border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Pedido</TableHead>
+                        <TableHead>Canal</TableHead>
+                        <TableHead>Data</TableHead>
+                        <TableHead>Valor</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pending.salesWithoutInvoice.slice(0, 5).map((o) => (
+                        <TableRow key={o.orderId}>
+                          <TableCell>
+                            <Link href={`/vendas/pedidos/${o.orderId}`} className="underline">
+                              {o.customerName ?? o.orderId.slice(0, 8)}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{o.channelName}</TableCell>
+                          <TableCell>{formatDate(o.orderDate)}</TableCell>
+                          <TableCell>{formatBRL(o.total)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                {/* "e mais N" precisa contar a partir de quantos itens aparecem na tela (no máximo
+                    5), nunca do tamanho da lista de exemplo vinda da API (até 50) — senão, com
+                    mais de 5 pendências, o número mostrado nunca bate com o que o usuário vê. */}
+                {pending.salesWithoutInvoiceCount > Math.min(5, pending.salesWithoutInvoice.length) && (
+                  <p className="text-xs text-muted-foreground">
+                    e mais {pending.salesWithoutInvoiceCount - Math.min(5, pending.salesWithoutInvoice.length)}...
+                  </p>
+                )}
               </div>
             )}
             {pending.returnsWithoutDocumentCount > 0 && (
               <div className="space-y-1.5">
-                <p>
+                <p className="text-sm">
                   <Badge tone="warning" className="mr-2">
                     {pending.returnsWithoutDocumentCount}
                   </Badge>
                   devolução(ões) sem documento
                 </p>
-                <ul className="space-y-1 pl-1">
-                  {pending.returnsWithoutDocument.slice(0, 3).map((r) => (
-                    <li key={r.id}>
-                      <Link href={`/vendas/pedidos/${r.orderId}`} className="underline">
-                        {r.customerName ?? r.orderId.slice(0, 8)}
-                      </Link>
-                    </li>
-                  ))}
-                  {pending.returnsWithoutDocumentCount > Math.min(3, pending.returnsWithoutDocument.length) && (
-                    <li className="text-muted-foreground">
-                      e mais {pending.returnsWithoutDocumentCount - Math.min(3, pending.returnsWithoutDocument.length)}...
-                    </li>
-                  )}
-                </ul>
+                <div className="overflow-hidden rounded-md border border-border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Pedido</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pending.returnsWithoutDocument.slice(0, 5).map((r) => (
+                        <TableRow key={r.id}>
+                          <TableCell>
+                            <Link href={`/vendas/pedidos/${r.orderId}`} className="underline">
+                              {r.customerName ?? r.orderId.slice(0, 8)}
+                            </Link>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                {pending.returnsWithoutDocumentCount > Math.min(5, pending.returnsWithoutDocument.length) && (
+                  <p className="text-xs text-muted-foreground">
+                    e mais {pending.returnsWithoutDocumentCount - Math.min(5, pending.returnsWithoutDocument.length)}...
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
