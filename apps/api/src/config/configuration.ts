@@ -102,8 +102,9 @@ export default (): AppConfig => ({
   xmlStorageMode: process.env.XML_STORAGE_MODE === 'PERSIST' ? 'PERSIST' : 'REFERENCE_ONLY',
   // Chave de derivação para criptografar credenciais de integração em repouso (seção 5 da
   // Fase 3). Nunca reutiliza os segredos de JWT — comprometer um não deve comprometer o outro.
-  integrationSecretsKey:
-    process.env.INTEGRATION_SECRETS_KEY ?? 'CHANGE_ME_INTEGRATION_SECRETS_KEY_DEV_ONLY',
+  // Obrigatória — `env.validation.ts` já recusa o boot sem ela, nunca um fallback aqui (o
+  // fallback hardcoded que existia antes era o próprio achado de segurança corrigido).
+  integrationSecretsKey: process.env.INTEGRATION_SECRETS_KEY!,
   tiktok: {
     enabled: Boolean(process.env.TIKTOK_APP_KEY && process.env.TIKTOK_APP_SECRET),
     appKey: process.env.TIKTOK_APP_KEY ?? '',

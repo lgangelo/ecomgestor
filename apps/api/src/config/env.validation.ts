@@ -36,10 +36,15 @@ class EnvironmentVariables {
   @IsIn(['true', 'false'])
   COOKIE_SECURE?: string;
 
-  @IsOptional()
+  // Obrigatória (mesmo padrão de JWT_ACCESS_SECRET/JWT_REFRESH_SECRET) — cifra os tokens OAuth
+  // de todas as integrações em repouso. Era opcional com um fallback hardcoded no código-fonte
+  // (achado real de uma auditoria de segurança: qualquer instalação que esquecesse de configurar
+  // isso cifraria os segredos de integração com uma chave pública, visível a qualquer um com
+  // acesso ao repositório) — a aplicação agora recusa subir sem uma chave real, do mesmo jeito
+  // que já recusava sem os segredos de JWT.
   @IsString()
-  @MinLength(16, { message: 'INTEGRATION_SECRETS_KEY deve ter ao menos 16 caracteres' })
-  INTEGRATION_SECRETS_KEY?: string;
+  @MinLength(32, { message: 'INTEGRATION_SECRETS_KEY deve ter ao menos 32 caracteres' })
+  INTEGRATION_SECRETS_KEY!: string;
 
   // TikTok Shop é opcional (seção 56 da Fase 3): a aplicação deve inicializar normalmente
   // sem essas variáveis, apenas exibindo a integração como "não configurada".

@@ -95,15 +95,34 @@ export class ShopeeOAuthService {
       }
       ({ companyId, userId } = JSON.parse(raw) as OAuthStatePayload);
     } else {
-      // Mesma saída provisória de `tiktok-oauth.service.ts` — só segura enquanto houver uma
-      // única empresa usando esta integração nesta instância.
+      // ACHADO REAL DE SEGURANÇA corrigido (mesmo problema já corrigido em
+      // `tiktok-oauth.service.ts` — ver o comentário lá para o cenário de ataque completo): a
+      // versão anterior confiava cegamente em "a integração Shopee mais recente" pra
+      // reidentificar a empresa, sem provar que quem chamou o callback é quem iniciou o fluxo.
+      // A Shopee, diferente da TikTok, já manda `shop_id`/`main_account_id` direto no redirect —
+      // por isso dá pra verificar ANTES de trocar o code: só aceita reautorização sem `state`
+      // quando (a) já existe uma integração CONNECTED e (b) o shop_id/merchant_id retornado bate
+      // com o já salvo.
       const existing = await this.prisma.client.integration.findFirst({
-        where: { provider: IntegrationProvider.SHOPEE },
+        where: { provider: IntegrationProvider.SHOPEE, status: IntegrationStatus.CONNECTED },
         orderBy: { updatedAt: 'desc' },
       });
       if (!existing) {
         throw new BadRequestException(
-          'Callback OAuth da Shopee sem state e sem conexão prévia para reidentificar a empresa.',
+          'Callback OAuth da Shopee sem state e sem conexão já ativa para reidentificar a empresa.',
+        );
+      }
+      const existingCredentials = await this.credentialsService.getCredentials(existing.id);
+      const existingIdentity = existingCredentials?.shopId ?? existingCredentials?.merchantId;
+      const newIdentity = shopId ?? mainAccountId;
+      if (!existingIdentity || !newIdentity || newIdentity !== existingIdentity) {
+        this.logger.warn('shopee_stateless_reauth_shop_mismatch', {
+          operation: 'oauth_callback',
+          expectedIdentityPresent: Boolean(existingIdentity),
+          receivedIdentityPresent: Boolean(newIdentity),
+        });
+        throw new BadRequestException(
+          'Callback OAuth da Shopee sem state não corresponde à loja já conectada — conexão recusada.',
         );
       }
       companyId = existing.companyId;

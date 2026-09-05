@@ -109,6 +109,10 @@ export class TikTokOAuthService implements OnModuleInit {
 
     let companyId: string;
     let userId: string | null;
+    // Preenchido só no caminho sem `state` (reautorização) — usado depois de trocar o code pelo
+    // token, para verificar que a loja retornada é a MESMA já conectada antes de sobrescrever
+    // qualquer credencial (ver comentário no bloco `else` abaixo e a verificação após o token).
+    let reauthCandidate: { integrationId: string; existingShopId?: string } | null = null;
 
     if (state) {
       const stateKey = `tiktok:oauth-state:${state}`;
@@ -125,22 +129,31 @@ export class TikTokOAuthService implements OnModuleInit {
       // Sem `state`: TikTok manda o vendedor direto pro nosso callback quando ele clica em
       // "Autorizar" no Seller Center (ex.: depois de o operador adicionar um escopo novo no
       // Partner Center — a própria TikTok instrui reautorizar assim, não pelo nosso botão
-      // "Conectar"). Não passa por /connect, então não existe state pra validar. Só é seguro
-      // aceitar isso porque hoje há UMA única empresa usando a integração TikTok Shop nesta
-      // instância — reidentificamos pela integração já existente. Se um dia isto virar
-      // multi-tenant de verdade, essa suposição deixa de valer e precisa de outro mecanismo
-      // (ex.: um identificador da loja no próprio redirect) para saber a qual empresa pertence.
+      // "Conectar"). Não passa por /connect, então não existe state pra validar.
+      //
+      // ACHADO REAL DE SEGURANÇA corrigido aqui: a versão anterior confiava cegamente em "a
+      // integração TikTok mais recente" pra reidentificar a empresa — um atacante com sua
+      // própria conta de vendedor TikTok conseguia montar a URL de autorização manualmente
+      // (usando nosso client/app público) e, ao autorizar com a conta DELE, era redirecionado
+      // pro nosso callback público sem `state`, sequestrando a integração já conectada (as
+      // credenciais dele substituiriam as reais). A correção: tratar "a integração mais
+      // recente" só como CANDIDATA — só aceitar depois de trocar o code e confirmar que a loja
+      // retornada pela TikTok é a MESMA já conectada (comparando `shop_id`), nunca antes disso.
+      // Também exige que a candidata já esteja CONECTADA — reautorização sem `state` só faz
+      // sentido pra uma integração que já passou pelo fluxo normal com `state` alguma vez.
       const existing = await this.prisma.client.integration.findFirst({
-        where: { provider: IntegrationProvider.TIKTOK_SHOP },
+        where: { provider: IntegrationProvider.TIKTOK_SHOP, status: IntegrationStatus.CONNECTED },
         orderBy: { updatedAt: 'desc' },
       });
       if (!existing) {
         throw new BadRequestException(
-          'Callback OAuth da TikTok Shop sem state e sem conexão prévia para reidentificar a empresa.',
+          'Callback OAuth da TikTok Shop sem state e sem conexão já ativa para reidentificar a empresa.',
         );
       }
+      const existingCredentials = await this.credentialsService.getCredentials(existing.id);
       companyId = existing.companyId;
       userId = null;
+      reauthCandidate = { integrationId: existing.id, existingShopId: existingCredentials?.shopId };
     }
 
     const appKey = this.configService.get<string>('tiktok.appKey', { infer: true }) as string;
@@ -164,6 +177,24 @@ export class TikTokOAuthService implements OnModuleInit {
         operation: 'oauth_callback',
         errorMessage: (error as Error).message,
       });
+    }
+
+    if (reauthCandidate) {
+      const newShopId = shop?.shopId ?? token.shopId;
+      // Sem shop_id armazenado antes (nunca deveria acontecer pra uma integração já CONNECTED,
+      // mas nunca assumir) OU a loja retornada é diferente da já conectada — rejeita antes de
+      // gravar qualquer credencial nova. Isto é o que fecha o sequestro descrito acima: só uma
+      // reautorização de VERDADE (mesma loja) passa daqui pra frente.
+      if (!reauthCandidate.existingShopId || !newShopId || newShopId !== reauthCandidate.existingShopId) {
+        this.logger.warn('tiktok_stateless_reauth_shop_mismatch', {
+          operation: 'oauth_callback',
+          expectedShopIdPresent: Boolean(reauthCandidate.existingShopId),
+          receivedShopIdPresent: Boolean(newShopId),
+        });
+        throw new BadRequestException(
+          'Callback OAuth da TikTok Shop sem state não corresponde à loja já conectada — conexão recusada.',
+        );
+      }
     }
 
     const integration = await this.credentialsService.getOrCreateIntegration(companyId);
