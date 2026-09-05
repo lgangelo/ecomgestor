@@ -251,6 +251,7 @@ function ResumoTab({
                     <div className="flex justify-end gap-2">
                       <VariantEditDialog
                         productId={productId}
+                        product={product}
                         variant={variant}
                         syncBaseSku={product.variants.length === 1}
                         trigger={
