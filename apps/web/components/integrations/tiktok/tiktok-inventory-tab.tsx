@@ -90,7 +90,11 @@ export function TikTokInventoryTab({ status }: { status: TikTokStatus }) {
                 <TableCell>{row.tiktok !== null ? row.central - row.tiktok : '—'}</TableCell>
                 <TableCell>{row.lastSyncAt ? formatDate(row.lastSyncAt, true) : '—'}</TableCell>
                 <TableCell>
-                  <StatusBadge status={row.status} map={STOCK_SYNC_STATUS_PRESENTATION} />
+                  {/* Achado real: antes só o badge "Erro" aparecia, sem nenhum detalhe do motivo
+                      — o `title` mostra a mensagem real salva no outbox ao passar o mouse. */}
+                  <span title={row.status === 'ERRO' ? (row.lastError ?? undefined) : undefined}>
+                    <StatusBadge status={row.status} map={STOCK_SYNC_STATUS_PRESENTATION} />
+                  </span>
                 </TableCell>
                 {pushEnabled?.enabled && (
                   <TableCell className="text-right">

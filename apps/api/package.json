@@ -41,6 +41,7 @@
     "check-mercadolivre-item-update": "node dist/cli/check-mercadolivre-item-update.js",
     "backfill-mercadolivre-product-mapping": "node dist/cli/backfill-mercadolivre-product-mapping.js",
     "purge-demo-company": "node dist/cli/purge-demo-company.js",
+    "check-stock-outbox-errors": "node dist/cli/check-stock-outbox-errors.js",
     "check-tiktok-product-detail-raw": "node dist/cli/check-tiktok-product-detail-raw.js",
     "check-tiktok-missing-variant-photos": "node dist/cli/check-tiktok-missing-variant-photos.js",
     "lint": "eslint \"src/**/*.ts\"",

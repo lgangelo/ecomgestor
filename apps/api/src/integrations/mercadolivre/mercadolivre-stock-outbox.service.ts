@@ -11,6 +11,9 @@ export type MercadoLivreStockSyncStatus = 'OK' | 'PENDENTE' | 'DIVERGENTE' | 'ER
 export interface MercadoLivreStockSyncStatusRow extends MercadoLivreInventoryComparisonRow {
   status: MercadoLivreStockSyncStatus;
   lastSyncAt: Date | null;
+  /** Mensagem real do último erro — antes só o badge "Erro" chegava na tela (achado real, mesmo
+   * gap encontrado no lado da TikTok). */
+  lastError: string | null;
 }
 
 /**
@@ -138,7 +141,7 @@ export class MercadoLivreStockOutboxService {
       else if (row.checkFailed) status = 'ERRO';
       else status = 'OK';
 
-      return { ...row, status, lastSyncAt: outboxEntry?.processedAt ?? null };
+      return { ...row, status, lastSyncAt: outboxEntry?.processedAt ?? null, lastError: outboxEntry?.lastError ?? null };
     });
   }
 }

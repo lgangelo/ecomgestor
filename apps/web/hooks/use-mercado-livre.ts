@@ -25,6 +25,7 @@ export interface MercadoLivreInventoryComparisonRow {
   divergent: boolean;
   status: 'OK' | 'PENDENTE' | 'DIVERGENTE' | 'ERRO';
   lastSyncAt: string | null;
+  lastError: string | null;
 }
 
 export interface MercadoLivreFailedJob {

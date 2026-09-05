@@ -8,6 +8,9 @@ export type StockSyncStatus = 'OK' | 'PENDENTE' | 'DIVERGENTE' | 'ERRO';
 export interface StockSyncStatusRow extends InventoryComparisonRow {
   status: StockSyncStatus;
   lastSyncAt: Date | null;
+  /** Mensagem real do último erro (`StockSyncOutboxEntry.lastError`) — antes só o badge "Erro"
+   * chegava na tela, sem nenhum detalhe do motivo (achado real em produção). */
+  lastError: string | null;
 }
 
 /**
@@ -156,7 +159,7 @@ export class TikTokStockOutboxService {
       else if (row.divergent) status = 'DIVERGENTE';
       else status = 'OK';
 
-      return { ...row, status, lastSyncAt: outboxEntry?.processedAt ?? null };
+      return { ...row, status, lastSyncAt: outboxEntry?.processedAt ?? null, lastError: outboxEntry?.lastError ?? null };
     });
   }
 }

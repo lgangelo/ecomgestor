@@ -90,7 +90,9 @@ export function MercadoLivreInventoryTab({ status }: { status: MercadoLivreStatu
                 <TableCell>{row.mercadoLivre !== null ? row.central - row.mercadoLivre : '—'}</TableCell>
                 <TableCell>{row.lastSyncAt ? formatDate(row.lastSyncAt, true) : '—'}</TableCell>
                 <TableCell>
-                  <StatusBadge status={row.status} map={STOCK_SYNC_STATUS_PRESENTATION} />
+                  <span title={row.status === 'ERRO' ? (row.lastError ?? undefined) : undefined}>
+                    <StatusBadge status={row.status} map={STOCK_SYNC_STATUS_PRESENTATION} />
+                  </span>
                 </TableCell>
                 {pushEnabled?.enabled && (
                   <TableCell className="text-right">
