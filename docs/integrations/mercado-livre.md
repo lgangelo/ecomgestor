@@ -159,11 +159,25 @@ reais corrigidos um a um. Isso substitui as suposições da pesquisa original ab
     referenciando esses ids — ainda não testado contra uma chamada real, é o próximo passo.
   - Erro documentado se faltar atributo obrigatório em qualquer variação/item:
     `400 item.attributes.missing_required`.
-  - **Ainda não confirmado nesta conta**: se o mecanismo `variations[]` (sem `family_name`)
-    realmente funciona aqui — só temos evidência indireta (produtos antigos e inativos no catálogo
-    com várias cores compartilhando o mesmo item id, prováveis sobras de testes anteriores a esta
-    automação). Precisa de um teste real dedicado, contra 1 item novo e isolado, antes de qualquer
-    mudança no serviço automático.
+  - **CONCLUSÃO DEFINITIVA (teste real dedicado, 2026-09-05, item de teste isolado
+    `MLB5192551715`, nunca ligado a nenhum produto real)**: esta conta **não tem como ter
+    variações agrupadas de verdade via API**. Dois erros reais e conclusivos:
+    1. Criar um item SEM `family_name` (usando só `title`, o modelo clássico) falha com
+       `400 body.required_fields` ("does not contains [family_name]") — a conta está sempre no
+       modelo "User Products", nunca no clássico puro.
+    2. Criar o mesmo item COM `family_name` e depois enviar `PUT .../variations` falha com
+       `400 item.with_family_name.not_allowed_variations` ("Cannot add variations to an item with
+       family name") — confirma que os dois mecanismos são mutuamente exclusivos NESTA conta, sem
+       meio-termo possível.
+    Ou seja: `family_name` é obrigatório, e `variations[]` é proibido junto com `family_name` —
+    não existe combinação que produza um único anúncio com seletor de cor visível pro comprador
+    nesta conta. O modelo atual do serviço automático (um anúncio por cor, ligados só por
+    `family_name`, sem seletor visível — cada cor aparece como produto separado na busca/lista do
+    Mercado Livre) é o único caminho possível via API, não uma limitação do nosso código. Os
+    produtos antigos/inativos do catálogo com várias cores compartilhando um único item id
+    (K9281, K9256, Q9605, K9239, DR678, 0256, R057, SD907) são sobras de antes desta automação
+    existir — provavelmente criados manualmente pelo painel do vendedor antes da conta ser
+    migrada pro modelo "User Products", não reproduzíveis via API hoje.
 
 ### Dados fiscais (NCM/CSOSN/CEST) — mecanismo SEPARADO
 
