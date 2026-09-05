@@ -135,11 +135,36 @@ reais corrigidos um a um. Isso substitui as suposições da pesquisa original ab
   um mesmo anúncio (hoje cada variação viraria um anúncio "family" separado, sem ligação entre si
   visível pro comprador).
 
-### Dados fiscais (NCM/CSOSN/CEST) — mecanismo SEPARADO, ainda não testado
+### Dados fiscais (NCM/CSOSN/CEST) — mecanismo SEPARADO
 
-- Existe um endpoint dedicado, citado pela doc oficial como "Envio dos dados fiscais" — formato de
-  payload encontrado via fonte secundária (exemplo real citado, mas endpoint exato não confirmado
-  em primeira mão):
+**Atualização 2026-09-05 — endpoint CONFIRMADO** (doc oficial lida diretamente via browser,
+`developers.mercadolivre.com.br/pt_br/envio-dos-dados-fiscais`, não mais fonte secundária):
+
+- **Cadastrar**: `POST https://api.mercadolibre.com/items/fiscal_information` — cadastra os dados
+  fiscais sob um identificador `sku` PRÓPRIO (não necessariamente o mesmo `SELLER_SKU` do
+  atributo do item, embora na prática devêssemos usar o mesmo valor pra manter os dois
+  sincronizados). Corpo: `{sku, title, type: "single"|"bundle", measurement_unit?, cost,
+  tax_information: {...}}`.
+- **Vincular ao item**: um segundo `POST /items/fiscal_information/items` com `{sku, item_id,
+  variation_id?}` — só DEPOIS de cadastrado, o SKU fiscal precisa ser explicitamente vinculado ao
+  `item_id` real (`variation_id` em branco/omitido quando o item não tem variação clássica, o que
+  é sempre o nosso caso — usamos `family_name`, nunca `variations[]`). **Confirmado no texto
+  oficial**: uma vez vinculado, o vínculo sobrevive mesmo que o atributo `SELLER_SKU` do item seja
+  alterado depois via `PUT /items/{id}` — não são a mesma coisa.
+- **Replicação automática entre "itens irmãos" do mesmo User Product**: confirmado no texto
+  oficial — cadastrar dados fiscais em UM item do `family_name` replica automaticamente pros
+  demais itens do mesmo grupo. Ou seja, **não precisa repetir o cadastro fiscal por cor** — só
+  vincular uma vez por família (mas cada item ainda precisa do seu próprio `POST .../items` de
+  vínculo, o dado em si é que replica).
+- **Atualizar**: `PUT /items/fiscal_information/$SKU_ID` (todos os campos) ou `PATCH` (só
+  `cost`/`measurement_unit`/`fci`/`ex_tipi`/`tax_rule_id`/`med_anvisa_code`/`med_exemption_reason`
+  — NCM/CSOSN/CEST exigem `PUT` completo, não são parciais).
+- **Consultar**: `GET /items/fiscal_information/$SKU`, `GET /items/$ITEM_ID/fiscal_information/detail`,
+  e `GET /can_invoice/items/$ITEM_ID` (+ `/variations/$VARIATION_ID`) pra saber se o item JÁ TEM
+  tudo que precisa pra emitir NF-e (`status: true/false`) — útil como diagnóstico antes de tentar
+  vincular.
+- Payload completo de `tax_information` (todos os campos vistos na doc oficial, com a nota real
+  sobre quando cada um se aplica):
   ```json
   {
     "sku": "QW123",
@@ -165,10 +190,12 @@ reais corrigidos um a um. Isso substitui as suposições da pesquisa original ab
   tem uma tela pronta pra cadastrar isso por categoria (`/produtos/categorias` → "Dados fiscais",
   Mercado Livre já disponível como opção de canal) — só falta CONECTAR esse cadastro ao fluxo de
   publicação (ainda não lido/usado em nenhum lugar hoje, nem no nosso módulo fiscal nem no script
-  de publicação do Mercado Livre).
-- **Não confirmado**: o endpoint exato (path/método), se é por item ou por SKU, e se é obrigatório
-  pra todo anúncio ou só quando o vendedor quer emitir NF-e pelo "Emissor" do próprio Mercado
-  Livre — precisa de um teste real dedicado antes de implementar.
+  de publicação do Mercado Livre — endpoint agora confirmado, falta só implementar).
+- **Ainda não confirmado**: se o cadastro é obrigatório pra todo anúncio ou só quando o vendedor
+  quer emitir NF-e pelo "Faturador" do próprio Mercado Livre (a doc fala em "apto pra ser
+  faturado", sugerindo que é opcional — um anúncio sem isso provavelmente continua ativo/vendável,
+  só não habilita a emissão automática de nota pelo Mercado Livre) — nenhuma chamada real feita
+  ainda contra `POST /items/fiscal_information`, próximo passo antes de automatizar.
 
 ## 3. Estoque
 
