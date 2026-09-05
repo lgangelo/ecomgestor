@@ -22,6 +22,7 @@ interface FakeOrder {
     productNameAtSale: string;
   }>;
   fiscalDocuments: Array<{ id: string }>;
+  marketplaceFees: Array<{ id: string }>;
 }
 
 interface FakePrismaConfig {
@@ -37,16 +38,36 @@ function makeFakePrisma(config: FakePrismaConfig): PrismaService {
   // Duas formas de `where` batem aqui: a busca por PERÍODO (`fetchOrders`, com `orderDate`/
   // `channelId`) e a estimativa de "a receber" (`fetchReceivable`, com `externalOrderId`/`status.in`,
   // sem filtro de data — é um saldo de conta corrente, não uma métrica de período).
+  interface OrClause {
+    status?: { in: string[] } | string;
+    marketplaceFees?: { none: object };
+  }
+  const matchesOrClause = (o: FakeOrder, clause: OrClause): boolean => {
+    if (clause.status && typeof clause.status === 'object') return clause.status.in.includes(o.status);
+    if (typeof clause.status === 'string') {
+      if (o.status !== clause.status) return false;
+      if (clause.marketplaceFees?.none) return o.marketplaceFees.length === 0;
+      return true;
+    }
+    return false;
+  };
   const orderFindMany = async ({
     where,
   }: {
-    where: { orderDate?: { gte: Date; lt: Date }; channelId?: string; externalOrderId?: { not: null }; status?: { in: string[] } };
+    where: {
+      orderDate?: { gte: Date; lt: Date };
+      channelId?: string;
+      externalOrderId?: { not: null };
+      status?: { in: string[] };
+      OR?: OrClause[];
+    };
   }) => {
     return config.orders
       .filter((o) => !where.orderDate || (o.orderDate >= where.orderDate.gte && o.orderDate < where.orderDate.lt))
       .filter((o) => !where.channelId || o.channelId === where.channelId)
       .filter((o) => !where.externalOrderId || o.externalOrderId !== null)
-      .filter((o) => !where.status?.in || where.status.in.includes(o.status));
+      .filter((o) => !where.status?.in || where.status.in.includes(o.status))
+      .filter((o) => !where.OR || where.OR.some((clause) => matchesOrClause(o, clause)));
   };
 
   return {
@@ -88,6 +109,7 @@ function order(overrides: Partial<FakeOrder>): FakeOrder {
     externalOrderId: null,
     items: [],
     fiscalDocuments: [],
+    marketplaceFees: [],
     ...overrides,
   };
 }
@@ -255,7 +277,7 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     expect(revenueByPeriod.every((p) => /^\d{4}-W\d{2}$/.test(p.date))).toBe(true);
   });
 
-  it('"a receber": estimativa pelos pedidos TikTok ainda não entregues, descontada a taxa média de 16%, nunca o filtro de período', async () => {
+  it('"a receber": estimativa pelos pedidos TikTok em aberto + DELIVERED sem taxa registrada, descontada a taxa média de 16%, nunca o filtro de período', async () => {
     const orders = [
       // Fora da janela filtrada e ainda assim conta — é saldo de conta corrente, não métrica de período.
       order({
@@ -267,8 +289,18 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
         shipping: 10,
         items: [{ quantity: 2, unitPrice: 100, sellerDiscount: 10, platformDiscount: 0, unitCost: 40, productNameAtSale: 'Bolsa' }],
       }),
-      // DELIVERED já foi liquidado (extrato fecha logo após a entrega) — nunca entra na estimativa.
-      order({ id: 'delivered-1', status: 'DELIVERED', externalOrderId: 'tt-2', subtotal: 500, shipping: 0 }),
+      // ACHADO REAL corrigido: DELIVERED não significa liquidado — sem MarketplaceFee registrada
+      // ainda, o pedido continua pendente de receber.
+      order({ id: 'delivered-sem-taxa', status: 'DELIVERED', externalOrderId: 'tt-4', subtotal: 300, shipping: 0 }),
+      // DELIVERED com taxa já registrada (settlement fechado) — esse sim já foi liquidado, sai da conta.
+      order({
+        id: 'delivered-com-taxa',
+        status: 'DELIVERED',
+        externalOrderId: 'tt-2',
+        subtotal: 500,
+        shipping: 0,
+        marketplaceFees: [{ id: 'fee-1' }],
+      }),
       // Venda manual (sem externalOrderId) não passa pelo repasse da plataforma — nunca entra.
       order({ id: 'manual-1', status: 'SHIPPED', externalOrderId: null, subtotal: 500, shipping: 0 }),
       // CREATED nunca é venda de verdade.
@@ -288,8 +320,8 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     const result = await service.getDashboard('company-1', { dateFrom: '2026-08-01', dateTo: '2026-08-31' });
     const cards = (result as { cards: Record<string, number> }).cards;
 
-    // netRevenue do único pedido elegível = subtotal 200 + frete 10 - sellerDiscount 10 = 200;
-    // estimativa = 200 * (1 - 0.16) = 168.
-    expect(cards.receivable).toBeCloseTo(168, 2);
+    // netRevenue = shipped-1 (200 + 10 - 10 = 200) + delivered-sem-taxa (300 + 0 - 0 = 300) = 500;
+    // estimativa = 500 * (1 - 0.16) = 420.
+    expect(cards.receivable).toBeCloseTo(420, 2);
   });
 });

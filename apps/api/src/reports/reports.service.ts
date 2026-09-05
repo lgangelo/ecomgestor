@@ -127,11 +127,16 @@ export class ReportsService {
    * saldo ainda não repassado — ela só cria um registro financeiro depois que o dinheiro já se
    * moveu (extratos vêm quase sempre com payment_status PAID no mesmo dia). Em vez disso, estima
    * a partir dos próprios pedidos: soma a receita líquida dos pedidos de canal externo (TikTok)
-   * ainda não entregues (PAID/PROCESSING/READY_TO_SHIP/SHIPPED — DELIVERED em diante já foi
-   * liquidado, CREATED/CANCELLED nunca foram venda de verdade) e desconta a taxa média histórica
-   * da plataforma (16%, valor informado pelo usuário — a taxa real só é conhecida depois que o
+   * ainda em aberto (PAID/PROCESSING/READY_TO_SHIP/SHIPPED) e desconta a taxa média histórica da
+   * plataforma (16%, valor informado pelo usuário — a taxa real só é conhecida depois que o
    * extrato fecha). Saldo de conta corrente, não métrica de período — nunca filtrado pela janela
-   * de data do dashboard, ao contrário dos outros cards. */
+   * de data do dashboard, ao contrário dos outros cards.
+   *
+   * ACHADO REAL corrigido: `DELIVERED` NÃO significa "já liquidado" — existe atraso real entre a
+   * entrega e o registro da taxa da plataforma (`MarketplaceFee`), então um pedido `DELIVERED`
+   * sem nenhuma `MarketplaceFee` vinculada ainda está pendente de receber, na prática. Antes esses
+   * pedidos eram excluídos assim que ficavam `DELIVERED`, subestimando "a receber". Agora entram
+   * também — só saem da conta quando a taxa real é registrada (settlement fechado). */
   private static readonly RECEIVABLE_ESTIMATED_FEE_RATE = 0.16;
   private static readonly RECEIVABLE_PENDING_STATUSES: OrderStatus[] = [
     OrderStatus.PAID,
@@ -145,7 +150,10 @@ export class ReportsService {
       where: {
         companyId,
         externalOrderId: { not: null },
-        status: { in: ReportsService.RECEIVABLE_PENDING_STATUSES },
+        OR: [
+          { status: { in: ReportsService.RECEIVABLE_PENDING_STATUSES } },
+          { status: OrderStatus.DELIVERED, marketplaceFees: { none: {} } },
+        ],
       },
       select: { subtotal: true, shipping: true, items: { select: { sellerDiscount: true } } },
     });
