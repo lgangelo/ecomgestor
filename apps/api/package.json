@@ -43,6 +43,7 @@
     "purge-demo-company": "node dist/cli/purge-demo-company.js",
     "check-stock-outbox-errors": "node dist/cli/check-stock-outbox-errors.js",
     "check-mercadolivre-size-mismatch": "node dist/cli/check-mercadolivre-size-mismatch.js",
+    "check-mercadolivre-duplicate-publish": "node dist/cli/check-mercadolivre-duplicate-publish.js",
     "check-tiktok-product-detail-raw": "node dist/cli/check-tiktok-product-detail-raw.js",
     "check-tiktok-missing-variant-photos": "node dist/cli/check-tiktok-missing-variant-photos.js",
     "lint": "eslint \"src/**/*.ts\"",
