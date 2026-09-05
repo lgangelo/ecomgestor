@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType, IntegrationProvider, IntegrationStatus } from '@ecommerce-manager/database';
 import {
@@ -11,6 +11,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { AuditService } from '../../audit/audit.service';
 import { AppLoggerService } from '../../common/logger/app-logger.service';
+import { MercadoLivreQueueService } from '../../queue/mercadolivre-queue.service';
 import { MercadoLivreCredentialsService } from './mercadolivre-credentials.service';
 
 const STATE_TTL_SECONDS = 600;
@@ -34,16 +35,44 @@ interface OAuthStatePayload {
  * esperado.
  */
 @Injectable()
-export class MercadoLivreOAuthService {
+export class MercadoLivreOAuthService implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly credentialsService: MercadoLivreCredentialsService,
+    private readonly queue: MercadoLivreQueueService,
     private readonly audit: AuditService,
     private readonly logger: AppLoggerService,
   ) {
     this.logger.setContext('MercadoLivreOAuth');
+  }
+
+  /**
+   * Reaplica o agendamento de reconciliação (com o valor ATUAL da config) pra toda integração já
+   * conectada sempre que a API sobe — mesmo motivo de `TikTokOAuthService.onModuleInit`: mudar
+   * MERCADOLIVRE_RECONCILE_INTERVAL_MINUTES e reiniciar nunca reaplicaria o novo intervalo pra
+   * quem já estava conectado, sem exigir desconectar/reconectar.
+   */
+  async onModuleInit(): Promise<void> {
+    if (!this.isConfigured()) return;
+    const intervalMinutes = this.configService.get<number>('mercadoLivre.reconcileIntervalMinutes', {
+      infer: true,
+    }) as number;
+    const connected = await this.prisma.client.integration.findMany({
+      where: { provider: IntegrationProvider.MERCADO_LIVRE, status: IntegrationStatus.CONNECTED },
+      select: { companyId: true },
+    });
+    for (const integration of connected) {
+      await this.queue.ensureReconcileSchedule(integration.companyId, intervalMinutes);
+    }
+    if (connected.length > 0) {
+      this.logger.log('mercadolivre_reconcile_schedules_reapplied', {
+        operation: 'on_module_init',
+        companiesCount: connected.length,
+        intervalMinutes,
+      });
+    }
   }
 
   isConfigured(): boolean {
@@ -134,6 +163,11 @@ export class MercadoLivreOAuthService {
         lastError: null,
       },
     });
+
+    const intervalMinutes = this.configService.get<number>('mercadoLivre.reconcileIntervalMinutes', {
+      infer: true,
+    }) as number;
+    await this.queue.ensureReconcileSchedule(companyId, intervalMinutes);
 
     await this.audit.log({
       companyId,

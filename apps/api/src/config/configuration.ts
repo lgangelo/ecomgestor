@@ -47,6 +47,9 @@ export interface AppConfig {
      * preço de lá precisa de uma margem a mais pra manter o mesmo lucro líquido. 0 (default) não
      * aplica nenhum acréscimo. */
     priceMarkupPercent: number;
+    /** Intervalo (minutos) da reconciliação automática de pedidos — mesmo papel de
+     * `tiktok.reconcileIntervalMinutes`. */
+    reconcileIntervalMinutes: number;
   };
   /** Geração de título/descrição de produto por IA — provedor neutro, escolhido por env var
    * (nunca mais de um ativo ao mesmo tempo). Desligado por padrão (provider indefinido). */
@@ -128,6 +131,7 @@ export default (): AppConfig => ({
     clientSecret: process.env.MERCADOLIVRE_CLIENT_SECRET ?? '',
     redirectUri: process.env.MERCADOLIVRE_REDIRECT_URI ?? '',
     priceMarkupPercent: Number(process.env.MERCADOLIVRE_PRICE_MARKUP_PERCENT ?? '0'),
+    reconcileIntervalMinutes: Number(process.env.MERCADOLIVRE_RECONCILE_INTERVAL_MINUTES ?? '15'),
   },
   ai: {
     provider:

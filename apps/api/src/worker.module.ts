@@ -9,6 +9,8 @@ import { AppLoggerModule } from './common/logger/app-logger.module';
 import { HousekeepingWorkerService } from './queue/housekeeping.worker.service';
 import { TikTokWorkerService } from './queue/tiktok.worker.service';
 import { TikTokModule } from './integrations/tiktok/tiktok.module';
+import { MercadoLivreWorkerService } from './queue/mercadolivre.worker.service';
+import { MercadoLivreModule } from './integrations/mercadolivre/mercadolivre.module';
 
 /**
  * Módulo mínimo executado pelo processo/container `ecommerce-worker`.
@@ -23,7 +25,8 @@ import { TikTokModule } from './integrations/tiktok/tiktok.module';
     RedisModule,
     StorageModule,
     TikTokModule,
+    MercadoLivreModule,
   ],
-  providers: [HousekeepingWorkerService, TikTokWorkerService],
+  providers: [HousekeepingWorkerService, TikTokWorkerService, MercadoLivreWorkerService],
 })
 export class WorkerModule {}
