@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { Search } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCreateMovement } from '@/hooks/use-inventory';
+import { VariantPickerDialog, type PickedVariant } from '@/components/shared/variant-picker-dialog';
 
 const MOVEMENT_TYPES = [
   { value: 'ADJUSTMENT', label: 'Ajuste (pode ser positivo ou negativo)' },
@@ -35,50 +37,76 @@ export function MovementFormDialog({
 }) {
   const [open, setOpen] = React.useState(false);
   const createMovement = useCreateMovement();
+  // Preenchido só quando o diálogo é aberto sem `variantId`/`sku` já definidos (botão global
+  // "Novo ajuste") — o usuário busca por nome ou SKU e escolhe a variação, nunca digita o ID
+  // interno (UUID) na mão. Achado real: o campo antigo aceitava texto livre rotulado "SKU", mas
+  // enviava esse texto direto como `variantId` pro backend — sempre falhava com erro de UUID
+  // inválido pra qualquer SKU real digitado.
+  const [picked, setPicked] = React.useState<PickedVariant | null>(null);
 
   const [form, setForm] = React.useState({
-    variantId: variantId ?? '',
     type: 'ADJUSTMENT',
     quantity: '',
     reason: '',
     note: '',
   });
 
-  React.useEffect(() => {
-    if (variantId) setForm((f) => ({ ...f, variantId }));
-  }, [variantId]);
+  const effectiveVariantId = variantId ?? picked?.variantId;
+  const effectiveLabel = sku ?? (picked ? `${picked.sku} — ${picked.productName}` : undefined);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!effectiveVariantId) return;
     await createMovement.mutateAsync({
-      variantId: form.variantId,
+      variantId: effectiveVariantId,
       type: form.type,
       quantity: Number(form.quantity),
       reason: form.reason,
       note: form.note || undefined,
     });
     setOpen(false);
-    setForm({ variantId: variantId ?? '', type: 'ADJUSTMENT', quantity: '', reason: '', note: '' });
+    setPicked(null);
+    setForm({ type: 'ADJUSTMENT', quantity: '', reason: '', note: '' });
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setPicked(null);
+      }}
+    >
       <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Nova movimentação {sku ? `— ${sku}` : ''}</DialogTitle>
+          <DialogTitle>Nova movimentação {effectiveLabel ? `— ${effectiveLabel}` : ''}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           {!variantId && (
             <div className="space-y-1.5">
-              <Label htmlFor="variantId">ID da variante (SKU)</Label>
-              <Input
-                id="variantId"
-                required
-                placeholder="Cole o ID da variante"
-                value={form.variantId}
-                onChange={(e) => setForm((f) => ({ ...f, variantId: e.target.value }))}
-              />
+              <Label>Produto</Label>
+              {picked ? (
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
+                  <span>
+                    <span className="font-medium">{picked.sku}</span>{' '}
+                    <span className="text-muted-foreground">— {picked.productName}</span>
+                  </span>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setPicked(null)}>
+                    Trocar
+                  </Button>
+                </div>
+              ) : (
+                <VariantPickerDialog
+                  onPick={setPicked}
+                  trigger={
+                    <Button type="button" variant="outline" className="w-full justify-start">
+                      <Search className="h-4 w-4" />
+                      Buscar produto por nome ou SKU...
+                    </Button>
+                  }
+                />
+              )}
             </div>
           )}
           <div className="space-y-1.5">
@@ -124,7 +152,10 @@ export function MovementFormDialog({
             <Textarea id="note" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={createMovement.isPending || form.reason.trim().length < 3}>
+            <Button
+              type="submit"
+              disabled={createMovement.isPending || form.reason.trim().length < 3 || !effectiveVariantId}
+            >
               {createMovement.isPending ? 'Salvando...' : 'Registrar movimentação'}
             </Button>
           </DialogFooter>
