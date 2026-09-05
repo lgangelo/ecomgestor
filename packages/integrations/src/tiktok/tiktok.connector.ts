@@ -220,11 +220,23 @@ export class TikTokConnector implements MarketplaceConnector {
     return results.filter((r) => wanted.has(r.externalSku));
   }
 
+  /** "Update Inventory" exige um `product_id` só por chamada (é parte do path, não do corpo) —
+   * agrupa as atualizações por produto e faz uma chamada por grupo, mesmo que hoje o chamador
+   * real (`TikTokInventorySyncService.push`) sempre mande uma única atualização por vez. */
   async updateInventory(companyId: string, updates: InventoryUpdate[]): Promise<void> {
     void companyId;
-    await this.client.request('POST', TIKTOK_PATHS.inventoryUpdate, {
-      body: { skus: updates.map((u) => ({ id: u.externalSku, inventory: [{ quantity: u.available }] })) },
-    });
+    const byProduct = new Map<string, InventoryUpdate[]>();
+    for (const update of updates) {
+      const group = byProduct.get(update.externalProductId);
+      if (group) group.push(update);
+      else byProduct.set(update.externalProductId, [update]);
+    }
+
+    for (const [productId, group] of byProduct) {
+      await this.client.request('POST', TIKTOK_PATHS.inventoryUpdate(productId), {
+        body: { skus: group.map((u) => ({ id: u.externalSku, inventory: [{ quantity: u.available }] })) },
+      });
+    }
   }
 
   async getReturns(companyId: string, params: ReturnSyncParams): Promise<ExternalReturnPage> {

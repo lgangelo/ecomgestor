@@ -320,6 +320,19 @@ Implementado em `apps/api/src/integrations/tiktok/tiktok-stock-outbox.service.ts
   Divergente/Erro) e "Último sync", vindos do outbox — sem endpoint novo, o
   `GET /integrations/tiktok/inventory/compare` já existente passou a retornar esse relatório
   combinado.
+- A tela também ganhou um tooltip no badge "Erro" com a mensagem real salva em
+  `StockSyncOutboxEntry.lastError` (antes só o badge aparecia, sem nenhum detalhe) — script
+  `check-stock-outbox-errors` lista as falhas atuais direto do banco, sem precisar de UI.
+- **ACHADO REAL corrigido**: "Update Inventory" sempre falhava em produção com `Invalid path`. O
+  path usado (`/product/{version}/products/inventory/update`) nunca tinha sido confirmado contra a
+  doc oficial — o `product_id` faz parte do PATH, não só do corpo
+  (`POST /product/202309/products/{product_id}/inventory/update`, confirmado em
+  partner.tiktokshop.com/docv2/page/update-inventory-202309). `TikTokConnector.updateInventory`
+  agora agrupa as atualizações por `externalProductId` e chama o endpoint certo por produto. O
+  exemplo oficial também mostra `warehouse_id` dentro de cada item de `inventory` no corpo — ainda
+  **não confirmado** se é obrigatório para uma conta com um único armazém; a correção envia sem
+  isso primeiro, e um eventual erro de armazém ausente (códigos 12019022/12052037/12052097)
+  aparecerá claro no `check-stock-outbox-errors` se for o caso.
 
 ## Conscientemente não implementado nesta fase
 

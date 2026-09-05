@@ -100,6 +100,7 @@ export interface ExternalInventory {
 }
 
 export interface InventoryUpdate {
+  externalProductId: string;
   externalSku: string;
   available: number;
 }

@@ -93,7 +93,7 @@ export class TikTokInventorySyncService {
       where: { channelId: integration.channelId, variantId },
       include: { variant: { include: { inventory: true } } },
     });
-    if (!mapping || !mapping.externalSku || !mapping.variant) {
+    if (!mapping || !mapping.externalSku || !mapping.externalProductId || !mapping.variant) {
       throw new NotFoundException('Vínculo de produto com a TikTok Shop não encontrado');
     }
 
@@ -101,7 +101,9 @@ export class TikTokInventorySyncService {
     const central = (inventory?.onHand ?? 0) - (inventory?.reserved ?? 0);
 
     const { connector } = await this.connectorFactory.forCompany(companyId);
-    await connector.updateInventory(companyId, [{ externalSku: mapping.externalSku, available: central }]);
+    await connector.updateInventory(companyId, [
+      { externalProductId: mapping.externalProductId, externalSku: mapping.externalSku, available: central },
+    ]);
 
     await this.audit.log({
       companyId,

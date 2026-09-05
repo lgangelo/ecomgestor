@@ -36,8 +36,15 @@ export const TIKTOK_PATHS = {
    * nem qualquer outro campo de imagem) — este é o único jeito de obter a foto do produto,
    * uma chamada por produto. Path a confirmar no Partner Center (segue o padrão público). */
   productDetail: (productId: string) => `/product/${API_VERSION}/products/${productId}`,
-  /** A confirmar no Partner Center. */
-  inventoryUpdate: `/product/${API_VERSION}/products/inventory/update`,
+  /** "Update Inventory" — CONFIRMADO contra a documentação oficial real (partner.tiktokshop.com/
+   * docv2/page/update-inventory-202309): o `product_id` é parte do PATH, não só do corpo — o path
+   * antigo (`/product/{version}/products/inventory/update`, sem o id) sempre dava "Invalid path"
+   * em produção. Corpo: `{ skus: [{ id, inventory: [{ warehouse_id, quantity, ... }] }] }` — o
+   * `warehouse_id` por SKU aparece no exemplo oficial; ainda NÃO confirmado se é obrigatório para
+   * uma conta com um único armazém (tentamos sem primeiro; os códigos de erro documentados
+   * 12019022/12052037/12052097 tornam um eventual requisito de warehouse_id fácil de identificar
+   * no próximo erro real, via check-stock-outbox-errors). */
+  inventoryUpdate: (productId: string) => `/product/${API_VERSION}/products/${productId}/inventory/update`,
   /** A confirmar no Partner Center. */
   ordersSearch: `/order/${API_VERSION}/orders/search`,
   /** "Get Order Detail" — confirmado em produção que NÃO segue o padrão de path parameter usado
