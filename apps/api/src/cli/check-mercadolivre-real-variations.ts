@@ -78,7 +78,14 @@ async function main() {
     console.log(`Cor A: ${colorAValue.name} (${colorAValue.id}) | Cor B: ${colorBValue.name} (${colorBValue.id})`);
 
     const basePayload = {
-      title,
+      // ACHADO REAL: esta conta rejeita a criação de QUALQUER item sem `family_name`
+      // (400 body.required_fields, "does not contains [family_name]") mesmo tentando o modelo
+      // clássico com `title` — a conta está sempre no modelo "User Products". A pergunta que
+      // resta é se `family_name` funciona JUNTO com `variations[]` (nunca confirmado de verdade
+      // até agora — só sabíamos que title+variations funciona em OUTRAS contas, e que
+      // family_name+variations juntos supostamente conflitam, mas isso nunca foi testado contra
+      // esta conta especificamente).
+      family_name: title,
       category_id: CATEGORY_ID,
       price: 99.9,
       currency_id: 'BRL',
