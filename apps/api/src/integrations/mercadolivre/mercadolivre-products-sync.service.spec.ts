@@ -125,6 +125,28 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
     );
   });
 
+  it(
+    'ACHADO REAL corrigido: quando setItemDescription falha, o vínculo já foi salvo (item já existe no ' +
+      'Mercado Livre) — antes, essa falha abortava antes de gravar o vínculo, e o próximo ciclo criava ' +
+      'um anúncio DUPLICADO do mesmo produto pra sempre (confirmado em produção: 157 anúncios duplicados)',
+    async () => {
+      const variant = makeVariant();
+      const client = makeClient();
+      client.setItemDescription = jest.fn().mockRejectedValue(new Error('descrição rejeitada'));
+      const { service, mappingUpsert, logger } = makeService({ products: [makeProductRow([variant])], client });
+
+      const result = await service.publishEligible(COMPANY_ID);
+
+      expect(result).toEqual({ published: 1, failed: 0, skipped: 0 });
+      expect(mappingUpsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ channelId: CHANNEL_ID, variantId: variant.id, externalProductId: 'MLB-NEW-1' }),
+        }),
+      );
+      expect(logger.warn).toHaveBeenCalledWith('mercadolivre_set_description_failed', expect.anything());
+    },
+  );
+
   it('pula produto sem cor já publicado (mapeamento CONFIRMED existente)', async () => {
     const variant = makeVariant();
     const { service, client } = makeService({

@@ -337,12 +337,34 @@ export class MercadoLivreProductsSyncService {
     };
 
     const created: MercadoLivreCreatedItem = await client.createItem(payload);
-    if (product.description) {
-      await client.setItemDescription(created.id, product.description);
-    }
+    // ACHADO REAL corrigido: o vínculo precisa ser salvo assim que o item existe de fato no
+    // Mercado Livre — ANTES de qualquer chamada de acompanhamento (descrição, cor). A ordem
+    // antiga salvava o vínculo só depois de `setItemDescription`; uma descrição que o Mercado
+    // Livre rejeitasse (conteúdo específico deste produto, nunca confirmado qual) fazia a exceção
+    // abortar antes do vínculo ser gravado — o item ficava criado e "invisível" pro sistema, que
+    // recriava um NOVO item idêntico no próximo ciclo do agendador, pra sempre (confirmado em
+    // produção: 157 anúncios duplicados do mesmo produto).
     await this.saveMapping(channelId, variant.id, created.id, variant.sku, companyId);
+    await this.trySetDescription(client, created.id, product.description);
 
     return { itemId: created.id, categoryId, familyName: title, listingTypeId };
+  }
+
+  /** Nunca aborta a publicação por causa da descrição — o item já existe e o vínculo já foi
+   * salvo nesse ponto; uma falha aqui só significa que o anúncio fica sem descrição até o
+   * próximo ciclo de `syncPublished` tentar de novo (também não-fatal, ver lá). */
+  private async trySetDescription(
+    client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
+    itemId: string,
+    description: string | null,
+  ): Promise<void> {
+    if (!description) return;
+    try {
+      await client.setItemDescription(itemId, description);
+    } catch (error) {
+      const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
+      this.logger.warn('mercadolivre_set_description_failed', { operation: 'try_set_description', itemId, errorMessage: message });
+    }
   }
 
   /** Marca a cor do próprio item base (nasce sem atributo COLOR — só `add-mercadolivre-
@@ -444,10 +466,10 @@ export class MercadoLivreProductsSyncService {
     };
 
     const created: MercadoLivreCreatedItem = await client.createItem(payload);
-    if (product.description) {
-      await client.setItemDescription(created.id, product.description);
-    }
+    // Mesmo achado/correção de `publishBaseItem`: salva o vínculo assim que o item existe, antes
+    // de qualquer chamada de acompanhamento que possa falhar.
     await this.saveMapping(channelId, variant.id, created.id, variant.sku, companyId);
+    await this.trySetDescription(client, created.id, product.description);
   }
 
   private async saveMapping(channelId: string, variantId: string, externalProductId: string, externalSku: string, companyId: string) {
@@ -555,9 +577,7 @@ export class MercadoLivreProductsSyncService {
           // ver docs/integrations/mercado-livre.md antes de confiar cegamente neste campo.
           status: product.status === 'ACTIVE' && variant.status === 'ACTIVE' ? 'active' : 'paused',
         });
-        if (product.description) {
-          await client.setItemDescription(mapping.externalProductId!, product.description);
-        }
+        await this.trySetDescription(client, mapping.externalProductId!, product.description);
         await this.prisma.client.channelProductMapping.update({
           where: { channelId_variantId: { channelId, variantId: mapping.variantId! } },
           data: { lastPushedSnapshotHash: hash, lastPushedAt: new Date() },

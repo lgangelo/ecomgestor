@@ -425,6 +425,31 @@ connector.factory, oauth.service, oauth.controller, health.service, controller, 
 registrando o módulo **antes** do `IntegrationsModule` genérico em `app.module.ts` (mesmo cuidado
 de ordem de rotas já documentado pra Shopee/TikTok).
 
+## Achado real corrigido: anúncios duplicados na publicação automática (Bloco 3)
+
+Em produção, o mesmo produto acumulou **157 anúncios duplicados** ao longo de vários ciclos do
+agendador (a cada 30 min). Causa raiz confirmada em `mercadolivre-products-sync.service.ts`: o
+vínculo (`ChannelProductMapping`) só era salvo **depois** de `client.setItemDescription` —
+qualquer falha nessa chamada (conteúdo específico da descrição rejeitado pelo Mercado Livre, nunca
+confirmado qual regra exatamente) abortava a função antes do vínculo ser gravado. O item já tinha
+sido criado de verdade no Mercado Livre nesse ponto, mas o sistema não tinha como saber disso — no
+ciclo seguinte, `publishEligible` via aquele produto como "nunca publicado" e criava outro item
+idêntico. Repetido a cada ciclo, indefinidamente.
+
+Corrigido: o vínculo agora é salvo **imediatamente** depois de `createItem` ter sucesso, antes de
+qualquer chamada de acompanhamento (`setItemDescription`, tag de cor). Uma falha ao definir a
+descrição vira só um aviso no log (`mercadolivre_set_description_failed`), nunca aborta a
+publicação — o mesmo padrão já usado pra `tagBaseItemColor`/`publishRemainingColors` (achados
+anteriores da mesma função). Teste de regressão cobrindo isso em
+`mercadolivre-products-sync.service.spec.ts`.
+
+**Limpeza necessária em produção**: os itens duplicados criados antes desta correção precisam ser
+encerrados manualmente no Mercado Livre (não existe endpoint de exclusão confirmado — só
+`status: closed` via `updateItem`, ou exclusão manual pelo painel do vendedor para itens sem
+venda). O `ChannelProductMapping` de cada variante afetada deve ser conferido/limpo depois —
+`check-mercadolivre-duplicate-publish` (script de diagnóstico) ajuda a confirmar quais variantes
+tiveram mais de um item criado ao longo do tempo, usando o histórico do audit log.
+
 ## Próximos passos
 
 Itens que exigem uma aplicação real no Mercado Livre Developers antes de escrever qualquer linha
