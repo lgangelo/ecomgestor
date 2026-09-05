@@ -277,7 +277,7 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     expect(revenueByPeriod.every((p) => /^\d{4}-W\d{2}$/.test(p.date))).toBe(true);
   });
 
-  it('"a receber": estimativa pelos pedidos TikTok em aberto + DELIVERED sem taxa registrada, descontada a taxa média de 16%, nunca o filtro de período', async () => {
+  it('"a receber": estimativa pelos pedidos TikTok em aberto + DELIVERED sem taxa registrada, descontada a taxa média de 16,045%, nunca o filtro de período', async () => {
     const orders = [
       // Fora da janela filtrada e ainda assim conta — é saldo de conta corrente, não métrica de período.
       order({
@@ -321,7 +321,7 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     const cards = (result as { cards: Record<string, number> }).cards;
 
     // netRevenue = shipped-1 (200 + 10 - 10 = 200) + delivered-sem-taxa (300 + 0 - 0 = 300) = 500;
-    // estimativa = 500 * (1 - 0.16) = 420.
-    expect(cards.receivable).toBeCloseTo(420, 2);
+    // estimativa = 500 * (1 - 0.16045) = 419,775.
+    expect(cards.receivable).toBeCloseTo(419.775, 2);
   });
 });

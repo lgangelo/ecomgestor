@@ -128,16 +128,22 @@ export class ReportsService {
    * moveu (extratos vêm quase sempre com payment_status PAID no mesmo dia). Em vez disso, estima
    * a partir dos próprios pedidos: soma a receita líquida dos pedidos de canal externo (TikTok)
    * ainda em aberto (PAID/PROCESSING/READY_TO_SHIP/SHIPPED) e desconta a taxa média histórica da
-   * plataforma (16%, valor informado pelo usuário — a taxa real só é conhecida depois que o
-   * extrato fecha). Saldo de conta corrente, não métrica de período — nunca filtrado pela janela
-   * de data do dashboard, ao contrário dos outros cards.
+   * plataforma (16,045%, taxa real média — a taxa exata só é conhecida depois que o extrato
+   * fecha). Saldo de conta corrente, não métrica de período — nunca filtrado pela janela de data
+   * do dashboard, ao contrário dos outros cards.
+   *
+   * ACHADO REAL: recalibrado em 2026-09-05 comparando o valor mostrado aqui (R$ 2152,50, com os
+   * 16% antigos) contra o saldo real informado pelo próprio TikTok (R$ 2151,34) — a diferença
+   * implica uma taxa efetiva de ~16,045%, não 16% cravado. Baseado em UMA única observação (ainda
+   * sujeito a ruído de arredondamento de um pedido só) — vale recalibrar de novo comparando mais
+   * pedidos já liquidados, se a diferença voltar a aparecer.
    *
    * ACHADO REAL corrigido: `DELIVERED` NÃO significa "já liquidado" — existe atraso real entre a
    * entrega e o registro da taxa da plataforma (`MarketplaceFee`), então um pedido `DELIVERED`
    * sem nenhuma `MarketplaceFee` vinculada ainda está pendente de receber, na prática. Antes esses
    * pedidos eram excluídos assim que ficavam `DELIVERED`, subestimando "a receber". Agora entram
    * também — só saem da conta quando a taxa real é registrada (settlement fechado). */
-  private static readonly RECEIVABLE_ESTIMATED_FEE_RATE = 0.16;
+  private static readonly RECEIVABLE_ESTIMATED_FEE_RATE = 0.16045;
   private static readonly RECEIVABLE_PENDING_STATUSES: OrderStatus[] = [
     OrderStatus.PAID,
     OrderStatus.PROCESSING,
