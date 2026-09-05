@@ -261,6 +261,10 @@ export class TikTokProductsSyncService {
     let color = input.color;
     let size = input.size;
     let description: string | undefined;
+    // Foto POR VARIAÇÃO (cor) — CONFIRMADO em produção que "Get Product" traz `sku_img` junto do
+    // atributo de cor de cada SKU (ver extractSkuAttributes), nunca usado até aqui: toda
+    // variação herdava só a foto de capa do produto, mesmo tendo cor própria com foto própria.
+    let variantImageUrl: string | undefined;
     if ((!imageUrl || (!color && !size)) && externalProductId) {
       try {
         const { connector } = await this.connectorFactory.forCompany(companyId);
@@ -270,20 +274,29 @@ export class TikTokProductsSyncService {
         const skuAttrs = detail.skus.find((s) => s.externalSku === externalSku);
         color = color ?? skuAttrs?.color;
         size = size ?? skuAttrs?.size;
+        variantImageUrl = skuAttrs?.imageUrl;
       } catch {
         // best-effort — segue sem imagem/descrição/atributos.
       }
     }
 
-    // Espelha a foto (hospedada no CDN da TikTok) pro nosso próprio armazenamento antes de
+    // Espelha as fotos (hospedadas no CDN da TikTok) pro nosso próprio armazenamento antes de
     // gravar — CONFIRMADO em produção: uma rede móvel bloqueando o domínio da TikTok fazia a
-    // foto sumir só naquele aparelho, mesmo com a URL correta. Só quando o produto é NOVO (a
-    // variação-em-produto-existente nunca grava imageUrl, então mirrorar aqui seria trabalho
-    // perdido). Best-effort: se falhar (rede instável no momento da sincronização), mantém a
-    // URL externa original — nunca bloqueia a criação do produto por causa disso.
+    // foto sumir só naquele aparelho, mesmo com a URL correta. A de capa do produto só quando o
+    // produto é NOVO (a variação-em-produto-existente nunca grava capa, então mirrorar aqui seria
+    // trabalho perdido) — a de variação sempre, já que toda variação nova grava sua própria foto,
+    // nos dois ramos abaixo. Best-effort: se falhar (rede instável no momento da sincronização),
+    // mantém a URL externa original — nunca bloqueia a criação do produto por causa disso.
     if (imageUrl && !existingProductId) {
       try {
         imageUrl = await this.productsService.mirrorExternalImage(companyId, imageUrl);
+      } catch {
+        // best-effort — mantém a URL externa original.
+      }
+    }
+    if (variantImageUrl) {
+      try {
+        variantImageUrl = await this.productsService.mirrorExternalImage(companyId, variantImageUrl);
       } catch {
         // best-effort — mantém a URL externa original.
       }
@@ -300,6 +313,7 @@ export class TikTokProductsSyncService {
           suggestedPrice: input.price,
           color: color ?? null,
           size: size ?? null,
+          imageUrl: variantImageUrl ?? null,
           status: VariantStatus.ACTIVE,
         },
       });
@@ -321,6 +335,7 @@ export class TikTokProductsSyncService {
                 suggestedPrice: input.price,
                 color: color ?? null,
                 size: size ?? null,
+                imageUrl: variantImageUrl ?? null,
                 status: VariantStatus.ACTIVE,
               },
             ],
@@ -506,8 +521,12 @@ export class TikTokProductsSyncService {
         const missingImage = !variant.product.imageUrl;
         const missingAttrs = !variant.color || !variant.size;
         const missingDescription = !variant.product.description;
+        // Foto POR VARIAÇÃO (cor) — mesmo campo `sku_img` que a criação já usa (ver
+        // createInternalProduct); produtos/variações sincronizados antes dessa mudança nunca
+        // ganhavam isso, só a foto de capa do produto.
+        const missingVariantImage = !variant.imageUrl;
         if (
-          (missingImage || missingAttrs || missingDescription) &&
+          (missingImage || missingAttrs || missingDescription || missingVariantImage) &&
           mapping.externalProductId &&
           detailFetchesThisRun < detailFetchLimit
         ) {
@@ -534,11 +553,19 @@ export class TikTokProductsSyncService {
               });
               changed = true;
             }
-            if (missingAttrs) {
+            if (missingAttrs || missingVariantImage) {
               const skuAttrs = detail.skus.find((s) => s.externalSku === externalSku);
-              const variantAttrUpdate: { color?: string; size?: string } = {};
+              const variantAttrUpdate: { color?: string; size?: string; imageUrl?: string } = {};
               if (!variant.color && skuAttrs?.color) variantAttrUpdate.color = skuAttrs.color;
               if (!variant.size && skuAttrs?.size) variantAttrUpdate.size = skuAttrs.size;
+              if (missingVariantImage && skuAttrs?.imageUrl) {
+                // Mesmo espelhamento de sempre — nunca grava a URL externa da TikTok direto.
+                try {
+                  variantAttrUpdate.imageUrl = await this.productsService.mirrorExternalImage(companyId, skuAttrs.imageUrl);
+                } catch {
+                  // best-effort — tenta de novo na próxima sincronização.
+                }
+              }
               if (Object.keys(variantAttrUpdate).length > 0) {
                 await this.prisma.client.productVariant.update({ where: { id: variant.id }, data: variantAttrUpdate });
                 changed = true;

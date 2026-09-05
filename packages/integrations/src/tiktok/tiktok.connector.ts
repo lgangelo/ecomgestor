@@ -156,7 +156,7 @@ export class TikTokConnector implements MarketplaceConnector {
   ): Promise<{
     imageUrl?: string;
     description?: string;
-    skus: Array<{ externalSku: string; color?: string; size?: string }>;
+    skus: Array<{ externalSku: string; color?: string; size?: string; imageUrl?: string }>;
   }> {
     void companyId;
     try {
@@ -167,8 +167,8 @@ export class TikTokConnector implements MarketplaceConnector {
       const rawSkus = Array.isArray(raw.skus) ? (raw.skus as unknown[]) : [];
       const skus = rawSkus.map((rawSku) => {
         const sku = (rawSku ?? {}) as Record<string, unknown>;
-        const { color, size } = extractSkuAttributes(sku);
-        return { externalSku: String(sku.id ?? ''), color, size };
+        const { color, size, imageUrl } = extractSkuAttributes(sku);
+        return { externalSku: String(sku.id ?? ''), color, size, imageUrl };
       });
       return { imageUrl: extractMainImageUrl(raw), description: extractDescription(raw), skus };
     } catch (error) {

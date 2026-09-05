@@ -198,14 +198,16 @@ export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
     const inventoryList = Array.isArray(sku.inventory) ? (sku.inventory as unknown[]) : [];
     const stock = inventoryList.reduce((sum: number, entry) => sum + Number(asRecord(entry).quantity ?? 0), 0);
     const skuPrice = asRecord(sku.price);
-    const { color, size } = extractSkuAttributes(sku);
+    const { color, size, imageUrl: skuImageUrl } = extractSkuAttributes(sku);
     return {
       externalProductId,
       externalSku: requiredStr(sku, 'id'),
       name,
       price: numericStr(skuPrice, 'tax_inclusive_price') ?? numericStr(skuPrice, 'tax_exclusive_price') ?? '0',
       stock,
-      imageUrl,
+      // Prefere a foto da própria SKU (por cor) — cai pra foto de capa do produto só quando a
+      // SKU não tem uma própria (ex.: produto com uma cor só).
+      imageUrl: skuImageUrl ?? imageUrl,
       color,
       size,
       raw: rawSku,
@@ -213,18 +215,38 @@ export function normalizeProductSkus(raw: unknown): ExternalProduct[] {
   });
 }
 
+/** Extrai a URL de uma foto de `sku_img` — formato interno exato NÃO confirmado (só a EXISTÊNCIA
+ * do campo foi confirmada em produção, ver comentário de `extractSkuAttributes`), então trata
+ * defensivamente as formas mais prováveis: string direta, ou objeto no mesmo formato de
+ * `main_images` (`urls[0]`/`thumb_urls[0]`), ou `{ url }`/`{ uri }` simples. Nunca inventa —
+ * formato não reconhecido vira `undefined`, nunca lança erro (best-effort, mesmo espírito do
+ * resto do mapper). */
+function extractSkuImageUrl(rawImg: unknown): string | undefined {
+  if (typeof rawImg === 'string') return rawImg || undefined;
+  const img = asRecord(rawImg);
+  const urls = Array.isArray(img.urls) ? (img.urls as unknown[]) : [];
+  const thumbUrls = Array.isArray(img.thumb_urls) ? (img.thumb_urls as unknown[]) : [];
+  const candidate = urls[0] ?? thumbUrls[0] ?? img.url ?? img.uri;
+  return typeof candidate === 'string' && candidate ? candidate : undefined;
+}
+
 /**
- * Cor/tamanho da SKU. CONFIRMADO em produção que "Search Products" não traz `sales_attributes`
- * em nenhuma SKU — só existe em "Get Product" (detalhe por id, ver `getProductDetail` no
- * connector), por isso esta função só é chamada a partir de lá. Estrutura real confirmada por
- * payload de produção: `sales_attributes: [{ name, value_name, value_id, sku_img, id }]` — o
- * nome do atributo é `name` (ex.: "Cor"), não `attribute_name` (chute anterior, nunca existiu).
- * Nunca inventa — atributo não reconhecido (nem "cor" nem "tamanho") fica de fora.
+ * Cor/tamanho/foto da SKU. CONFIRMADO em produção que "Search Products" não traz
+ * `sales_attributes` em nenhuma SKU — só existe em "Get Product" (detalhe por id, ver
+ * `getProductDetail` no connector), por isso esta função só é chamada a partir de lá. Estrutura
+ * real confirmada por payload de produção: `sales_attributes: [{ name, value_name, value_id,
+ * sku_img, id }]` — o nome do atributo é `name` (ex.: "Cor"), não `attribute_name` (chute
+ * anterior, nunca existiu). `sku_img` vem junto do atributo de COR especificamente (a foto
+ * representa a variação de cor, nunca a de tamanho) — por isso só é lida do atributo já
+ * reconhecido como cor. Nunca inventa — atributo não reconhecido (nem "cor" nem "tamanho") fica
+ * de fora, e `sku_img` ausente/em formato não reconhecido vira `undefined` (fallback pra foto de
+ * capa do produto fica a cargo de quem consome isso).
  */
-export function extractSkuAttributes(sku: Record<string, unknown>): { color?: string; size?: string } {
+export function extractSkuAttributes(sku: Record<string, unknown>): { color?: string; size?: string; imageUrl?: string } {
   const attributes = Array.isArray(sku.sales_attributes) ? (sku.sales_attributes as unknown[]) : [];
   let color: string | undefined;
   let size: string | undefined;
+  let imageUrl: string | undefined;
   for (const rawAttr of attributes) {
     const attr = asRecord(rawAttr);
     // Confirmado em produção (payload real de "Get Product"): o campo é `name` ("Cor"), não
@@ -232,10 +254,14 @@ export function extractSkuAttributes(sku: Record<string, unknown>): { color?: st
     const attributeName = str(attr, 'name')?.toLowerCase() ?? '';
     const valueName = str(attr, 'value_name');
     if (!valueName) continue;
-    if (attributeName.includes('cor') || attributeName.includes('color')) color = valueName;
-    else if (attributeName.includes('tamanho') || attributeName.includes('size')) size = valueName;
+    if (attributeName.includes('cor') || attributeName.includes('color')) {
+      color = valueName;
+      imageUrl = extractSkuImageUrl(attr.sku_img);
+    } else if (attributeName.includes('tamanho') || attributeName.includes('size')) {
+      size = valueName;
+    }
   }
-  return { color, size };
+  return { color, size, imageUrl };
 }
 
 /** SKU do vendedor (seller_sku) — usado só para o match automático (seção 11), não persistido.
