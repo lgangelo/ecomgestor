@@ -53,6 +53,13 @@ export interface AppConfig {
     /** Mesma trava dupla da TikTok (`tiktok.inventoryPushEnabled`) — desabilitado por padrão,
      * nunca envia estoque pro Mercado Livre sem isso E o toggle por integração ligados. */
     inventoryPushEnabled: boolean;
+    /** Bloco 3 — interruptor de EMERGÊNCIA da publicação/atualização automática de produto.
+     * Invertido em relação a `inventoryPushEnabled`: nasce LIGADO (decisão do usuário) — só serve
+     * pra desligar rápido via env var se algo der errado, nunca pra ligar manualmente depois.
+     * O intervalo do scan (30 min, maior que o de estoque de propósito — a primeira publicação de
+     * um item custa várias chamadas de API) é fixo no `@Cron` do scheduler, mesmo padrão já usado
+     * pelo scheduler de estoque (nunca configurável por env var nesta base). */
+    productsSyncEnabled: boolean;
   };
   /** Geração de título/descrição de produto por IA — provedor neutro, escolhido por env var
    * (nunca mais de um ativo ao mesmo tempo). Desligado por padrão (provider indefinido). */
@@ -137,6 +144,7 @@ export default (): AppConfig => ({
     priceMarkupPercent: Number(process.env.MERCADOLIVRE_PRICE_MARKUP_PERCENT ?? '0'),
     reconcileIntervalMinutes: Number(process.env.MERCADOLIVRE_RECONCILE_INTERVAL_MINUTES ?? '15'),
     inventoryPushEnabled: process.env.MERCADOLIVRE_INVENTORY_PUSH_ENABLED === 'true',
+    productsSyncEnabled: process.env.MERCADOLIVRE_PRODUCTS_SYNC_ENABLED !== 'false',
   },
   ai: {
     provider:

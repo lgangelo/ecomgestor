@@ -13,6 +13,7 @@ import { MercadoLivreJobsService } from './mercadolivre-jobs.service';
 import { MercadoLivreQueueService } from '../../queue/mercadolivre-queue.service';
 import { MercadoLivreInventorySyncService } from './mercadolivre-inventory-sync.service';
 import { MercadoLivreStockOutboxService } from './mercadolivre-stock-outbox.service';
+import { MercadoLivreProductsSyncService } from './mercadolivre-products-sync.service';
 
 @Module({
   imports: [AuditModule, OrdersModule],
@@ -28,6 +29,7 @@ import { MercadoLivreStockOutboxService } from './mercadolivre-stock-outbox.serv
     MercadoLivreQueueService,
     MercadoLivreInventorySyncService,
     MercadoLivreStockOutboxService,
+    MercadoLivreProductsSyncService,
   ],
   exports: [
     MercadoLivreCredentialsService,
@@ -38,6 +40,7 @@ import { MercadoLivreStockOutboxService } from './mercadolivre-stock-outbox.serv
     MercadoLivreQueueService,
     MercadoLivreInventorySyncService,
     MercadoLivreStockOutboxService,
+    MercadoLivreProductsSyncService,
   ],
 })
 export class MercadoLivreModule {}

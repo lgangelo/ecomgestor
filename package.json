@@ -46,6 +46,8 @@
     "check-mercadolivre-orders": "npm run check-mercadolivre-orders --workspace=@ecommerce-manager/api",
     "backfill-mercadolivre-orders": "npm run backfill-mercadolivre-orders --workspace=@ecommerce-manager/api",
     "backfill-integration-auto-sync-flag": "npm run backfill-integration-auto-sync-flag --workspace=@ecommerce-manager/api",
+    "check-mercadolivre-item-update": "npm run check-mercadolivre-item-update --workspace=@ecommerce-manager/api",
+    "backfill-mercadolivre-product-mapping": "npm run backfill-mercadolivre-product-mapping --workspace=@ecommerce-manager/api",
     "purge-demo-company": "npm run purge-demo-company --workspace=@ecommerce-manager/api",
     "check-tiktok-product-detail-raw": "npm run check-tiktok-product-detail-raw --workspace=@ecommerce-manager/api",
     "check-tiktok-missing-variant-photos": "npm run check-tiktok-missing-variant-photos --workspace=@ecommerce-manager/api"

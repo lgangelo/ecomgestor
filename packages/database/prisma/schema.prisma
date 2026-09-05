@@ -439,6 +439,13 @@ model ChannelProductMapping {
   externalSku       String?                  @map("external_sku")
   syncStatus        ChannelMappingSyncStatus @default(PENDING) @map("sync_status")
   createdAt         DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  // Publicação/atualização automática de produto (Bloco 3) — hash do snapshot (preço, descrição,
+  // fotos, status) já enviado ao canal na última sincronização. NULL = nunca sincronizado ainda
+  // (empurra no próximo ciclo). Nunca inclui estoque — isso já é responsabilidade separada de
+  // `StockSyncOutboxEntry`/`*InventorySyncService`, duplicar aqui criaria dois caminhos escrevendo
+  // a mesma coisa no mesmo item.
+  lastPushedSnapshotHash String?   @map("last_pushed_snapshot_hash")
+  lastPushedAt           DateTime? @map("last_pushed_at") @db.Timestamptz
 
   channel SalesChannel    @relation(fields: [channelId], references: [id])
   variant ProductVariant? @relation(fields: [variantId], references: [id])

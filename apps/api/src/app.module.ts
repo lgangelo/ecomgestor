@@ -33,6 +33,7 @@ import { ShopeeModule } from './integrations/shopee/shopee.module';
 import { MercadoLivreModule } from './integrations/mercadolivre/mercadolivre.module';
 import { TikTokStockOutboxSchedulerModule } from './integrations/tiktok/tiktok-stock-outbox-scheduler.module';
 import { MercadoLivreStockOutboxSchedulerModule } from './integrations/mercadolivre/mercadolivre-stock-outbox-scheduler.module';
+import { MercadoLivreProductsSyncSchedulerModule } from './integrations/mercadolivre/mercadolivre-products-sync-scheduler.module';
 import { CompanyModule } from './company/company.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
@@ -78,6 +79,7 @@ import { AiModule } from './ai/ai.module';
     IntegrationsModule,
     TikTokStockOutboxSchedulerModule,
     MercadoLivreStockOutboxSchedulerModule,
+    MercadoLivreProductsSyncSchedulerModule,
     CompanyModule,
     UsersModule,
     RolesModule,
