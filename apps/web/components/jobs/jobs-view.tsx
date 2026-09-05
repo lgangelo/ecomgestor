@@ -44,6 +44,9 @@ const JOB_TYPES = [
   'tiktok-sync-returns',
   'tiktok-push-inventory',
   'tiktok-process-webhook',
+  'mercadolivre-import-orders',
+  'mercadolivre-reconcile-orders',
+  'mercadolivre-publish-product-color',
 ];
 
 function formatDuration(ms: number | null): string {

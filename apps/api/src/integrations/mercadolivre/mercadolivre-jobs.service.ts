@@ -5,6 +5,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { MercadoLivreQueueService } from '../../queue/mercadolivre-queue.service';
 import type { AuthenticatedUser } from '../../auth/types/authenticated-user';
 import { MERCADO_LIVRE_JOBS } from '../../queue/mercadolivre-queue.constants';
+import { MercadoLivreProductsSyncService } from './mercadolivre-products-sync.service';
 
 interface AttemptParams {
   integrationId: string;
@@ -26,6 +27,7 @@ export class MercadoLivreJobsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queue: MercadoLivreQueueService,
+    private readonly productsSync: MercadoLivreProductsSyncService,
   ) {}
 
   async withTracking<T>(params: AttemptParams, fn: () => Promise<T>): Promise<T | null> {
@@ -133,14 +135,21 @@ export class MercadoLivreJobsService {
   /** Reprocessa um job manualmente — mesmo papel de `TikTokJobsService.retryAndRequeue`. */
   async retryAndRequeue(jobId: string, user: AuthenticatedUser): Promise<void> {
     const job = await this.prepareRetry(jobId, user.companyId);
-    await this.requeue(user, job.type);
+    await this.requeue(user, job.type, job.relatedExternalId);
   }
 
-  private async requeue(user: AuthenticatedUser, type: string) {
+  private async requeue(user: AuthenticatedUser, type: string, relatedExternalId: string | null) {
     switch (type) {
       case MERCADO_LIVRE_JOBS.IMPORT_ORDERS:
       case MERCADO_LIVRE_JOBS.RECONCILE_ORDERS:
         await this.queue.enqueueImportOrders({ companyId: user.companyId });
+        return;
+      // Nunca passa pela fila BullMQ — publicação de produto roda direto no ciclo síncrono do
+      // agendador, então "reenfileirar" aqui é chamar a publicação de novo pra esta variante,
+      // usando os dados ATUAIS do banco (se o usuário corrigiu a cor, é essa cor nova que tenta).
+      case MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_COLOR:
+        if (!relatedExternalId) return;
+        await this.productsSync.retryColorPublish(user.companyId, relatedExternalId);
         return;
       default:
         return;

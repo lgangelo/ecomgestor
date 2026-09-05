@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import type { PrismaService } from '../common/prisma/prisma.service';
 import type { TikTokJobsService } from '../integrations/tiktok/tiktok-jobs.service';
+import type { MercadoLivreJobsService } from '../integrations/mercadolivre/mercadolivre-jobs.service';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { JobsService } from './jobs.service';
 
@@ -18,6 +19,7 @@ interface FakeSyncJob {
   startedAt: Date | null;
   finishedAt: Date | null;
   payload: unknown;
+  provider: string;
 }
 
 interface FakeWhere {
@@ -51,7 +53,10 @@ function makeFakePrisma(jobs: FakeSyncJob[]): PrismaService {
           return result;
         },
         count: async ({ where }: { where: FakeWhere }) => jobs.filter((j) => matches(j, where)).length,
-        findFirst: async ({ where }: { where: FakeWhere }) => jobs.find((j) => matches(j, where)) ?? null,
+        findFirst: async ({ where }: { where: FakeWhere }) => {
+          const job = jobs.find((j) => matches(j, where)) ?? null;
+          return job ? { ...job, integration: { provider: job.provider } } : null;
+        },
       },
     },
   } as unknown as PrismaService;
@@ -72,8 +77,17 @@ function makeJob(overrides: Partial<FakeSyncJob>): FakeSyncJob {
     startedAt: new Date('2026-08-01T00:00:00Z'),
     finishedAt: new Date('2026-08-01T00:00:05Z'),
     payload: { secretToken: 'super-secret' },
+    provider: 'TIKTOK_SHOP',
     ...overrides,
   };
+}
+
+function makeService(
+  prisma: PrismaService,
+  tiktok: Partial<TikTokJobsService> = {},
+  mercadoLivre: Partial<MercadoLivreJobsService> = {},
+) {
+  return new JobsService(prisma, tiktok as unknown as TikTokJobsService, mercadoLivre as unknown as MercadoLivreJobsService);
 }
 
 const NO_QUERY = { page: 1, pageSize: 20 };
@@ -84,7 +98,7 @@ describe('JobsService (Fase 4, seções 45-48)', () => {
       makeJob({ id: 'job-a', companyId: 'company-a' }),
       makeJob({ id: 'job-b', companyId: 'company-b' }),
     ]);
-    const service = new JobsService(prisma, {} as unknown as TikTokJobsService);
+    const service = makeService(prisma);
 
     const result = await service.list('company-a', NO_QUERY);
 
@@ -97,7 +111,7 @@ describe('JobsService (Fase 4, seções 45-48)', () => {
       makeJob({ id: 'job-failed', status: 'FAILED' }),
       makeJob({ id: 'job-ok', status: 'COMPLETED' }),
     ]);
-    const service = new JobsService(prisma, {} as unknown as TikTokJobsService);
+    const service = makeService(prisma);
 
     const result = await service.list('company-1', { ...NO_QUERY, status: 'FAILED' });
 
@@ -107,7 +121,7 @@ describe('JobsService (Fase 4, seções 45-48)', () => {
 
   it('nunca expõe o payload bruto do job (seção 47 — pode conter token/segredo)', async () => {
     const prisma = makeFakePrisma([makeJob({ id: 'job-1' })]);
-    const service = new JobsService(prisma, {} as unknown as TikTokJobsService);
+    const service = makeService(prisma);
 
     const job = await service.findOne('company-1', 'job-1');
 
@@ -117,7 +131,7 @@ describe('JobsService (Fase 4, seções 45-48)', () => {
 
   it('retry: recusa quando o job não está FAILED', async () => {
     const prisma = makeFakePrisma([makeJob({ id: 'job-1', status: 'COMPLETED' })]);
-    const service = new JobsService(prisma, {} as unknown as TikTokJobsService);
+    const service = makeService(prisma);
 
     await expect(service.retry('company-1', {} as AuthenticatedUser, 'job-1')).rejects.toThrow(BadRequestException);
   });
@@ -125,10 +139,26 @@ describe('JobsService (Fase 4, seções 45-48)', () => {
   it('retry: aciona o reprocessamento quando o job está FAILED', async () => {
     const prisma = makeFakePrisma([makeJob({ id: 'job-1', status: 'FAILED' })]);
     const retryAndRequeue = jest.fn().mockResolvedValue(undefined);
-    const service = new JobsService(prisma, { retryAndRequeue } as unknown as TikTokJobsService);
+    const service = makeService(prisma, { retryAndRequeue });
 
     await service.retry('company-1', { companyId: 'company-1' } as AuthenticatedUser, 'job-1');
 
     expect(retryAndRequeue).toHaveBeenCalledWith('job-1', { companyId: 'company-1' });
   });
+
+  it(
+    'ACHADO REAL corrigido: retry despacha pro serviço certo conforme o provider — antes chamava ' +
+      'sempre o do TikTok, mesmo pra um job de outra integração (Mercado Livre)',
+    async () => {
+      const prisma = makeFakePrisma([makeJob({ id: 'job-ml', status: 'FAILED', provider: 'MERCADO_LIVRE' })]);
+      const tiktokRetry = jest.fn().mockResolvedValue(undefined);
+      const mercadoLivreRetry = jest.fn().mockResolvedValue(undefined);
+      const service = makeService(prisma, { retryAndRequeue: tiktokRetry }, { retryAndRequeue: mercadoLivreRetry });
+
+      await service.retry('company-1', { companyId: 'company-1' } as AuthenticatedUser, 'job-ml');
+
+      expect(mercadoLivreRetry).toHaveBeenCalledWith('job-ml', { companyId: 'company-1' });
+      expect(tiktokRetry).not.toHaveBeenCalled();
+    },
+  );
 });

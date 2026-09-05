@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@ecommerce-manager/database';
+import { IntegrationProvider, type Prisma } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { paginate } from '../common/dto/pagination.dto';
 import { endOfDayExclusive } from '../common/date/day-range.util';
 import { INTEGRATION_QUEUE } from '../queue/tiktok-queue.constants';
 import { TikTokJobsService } from '../integrations/tiktok/tiktok-jobs.service';
+import { MercadoLivreJobsService } from '../integrations/mercadolivre/mercadolivre-jobs.service';
 import type { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { ListJobsQueryDto } from './dto/list-jobs-query.dto';
 
@@ -51,15 +52,16 @@ function toJobItem(job: RawSyncJob) {
 
 /**
  * Painel de jobs (seções 45-48 da Fase 4) — reaproveita o modelo `SyncJob` já existente da Fase
- * 3 sem mudança de schema (seção 49): hoje toda fila que grava `SyncJob` é a fila `integration`
- * (TikTok), então "Fila" ainda não é um filtro real — só um rótulo fixo até existir uma segunda
- * fila que também rastreie jobs neste modelo.
+ * 3 sem mudança de schema (seção 49). "Fila" ainda é um rótulo fixo (INTEGRATION_QUEUE) mesmo
+ * pros jobs do Mercado Livre, que nem passam por fila de verdade — só rótulo de exibição, nunca
+ * usado pra decidir o retry (ver `retry` abaixo).
  */
 @Injectable()
 export class JobsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tiktokJobsService: TikTokJobsService,
+    private readonly mercadoLivreJobsService: MercadoLivreJobsService,
   ) {}
 
   async list(companyId: string, query: ListJobsQueryDto) {
@@ -97,14 +99,26 @@ export class JobsService {
   }
 
   /** Reprocessamento manual (seção 48) — só para jobs `FAILED`; permissão e auditoria ficam a
-   * cargo do controller (mesmo padrão do resto da API). */
+   * cargo do controller (mesmo padrão do resto da API).
+   *
+   * ACHADO REAL corrigido: sempre chamava `tiktokJobsService.retryAndRequeue`, mesmo pra jobs de
+   * outra integração (ex.: Mercado Livre) — despachava certo só por coincidência, enquanto todo
+   * `SyncJob` existente era mesmo do TikTok. Agora confere o `provider` da integração dona do job
+   * e despacha pro serviço certo. */
   async retry(companyId: string, user: AuthenticatedUser, id: string) {
-    const job = await this.prisma.client.syncJob.findFirst({ where: { id, integration: { companyId } } });
+    const job = await this.prisma.client.syncJob.findFirst({
+      where: { id, integration: { companyId } },
+      include: { integration: { select: { provider: true } } },
+    });
     if (!job) throw new NotFoundException('Job não encontrado');
     if (job.status !== 'FAILED') {
       throw new BadRequestException('Só é possível tentar novamente jobs com status FAILED.');
     }
-    await this.tiktokJobsService.retryAndRequeue(id, user);
+    if (job.integration.provider === IntegrationProvider.MERCADO_LIVRE) {
+      await this.mercadoLivreJobsService.retryAndRequeue(id, user);
+    } else {
+      await this.tiktokJobsService.retryAndRequeue(id, user);
+    }
     return this.findOne(companyId, id);
   }
 

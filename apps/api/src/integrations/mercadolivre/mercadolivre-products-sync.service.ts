@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelMappingSyncStatus } from '@ecommerce-manager/database';
 import { MercadoLivreApiError, MercadoLivreCreateItemInput, MercadoLivreCreatedItem } from '@ecommerce-manager/integrations';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { AppLoggerService } from '../../common/logger/app-logger.service';
+import { MERCADO_LIVRE_JOBS } from '../../queue/mercadolivre-queue.constants';
 import { MercadoLivreConnectorFactory } from './mercadolivre-connector.factory';
 import { MercadoLivreCredentialsService } from './mercadolivre-credentials.service';
 
@@ -147,6 +148,7 @@ export class MercadoLivreProductsSyncService {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) return { published: 0, failed: 0, skipped: 0 };
     const channelId = integration.channelId;
+    const integrationId = integration.id;
 
     const existingMappings = await this.prisma.client.channelProductMapping.findMany({
       where: { channelId, variantId: { not: null } },
@@ -222,7 +224,7 @@ export class MercadoLivreProductsSyncService {
             const familyName = baseItem.family_name as string;
             const listingTypeId = baseItem.listing_type_id as string;
             const remaining = colorVariants.filter((v) => !isPublished(v.id));
-            const counts = await this.publishRemainingColors(client, channelId, companyId, product, remaining, {
+            const counts = await this.publishRemainingColors(client, channelId, integrationId, companyId, product, remaining, {
               categoryId,
               familyName,
               listingTypeId,
@@ -243,9 +245,9 @@ export class MercadoLivreProductsSyncService {
           // ACHADO REAL corrigido: o item base nascia sem o próprio atributo COLOR (só os
           // scripts manuais faziam esse update de acompanhamento) — sem isso, a cor da base
           // nunca aparecia marcada no anúncio, mesmo o produto tendo variação de cor.
-          await this.tagBaseItemColor(client, created.itemId, created.categoryId, baseVariant.color);
+          await this.tagBaseItemColor(client, integrationId, created.itemId, created.categoryId, baseVariant);
           const others = colorVariants.filter((v) => v.id !== baseVariant.id);
-          const counts = await this.publishRemainingColors(client, channelId, companyId, product, others, {
+          const counts = await this.publishRemainingColors(client, channelId, integrationId, companyId, product, others, {
             categoryId: created.categoryId,
             familyName: created.familyName,
             listingTypeId: created.listingTypeId,
@@ -370,28 +372,36 @@ export class MercadoLivreProductsSyncService {
   /** Marca a cor do próprio item base (nasce sem atributo COLOR — só `add-mercadolivre-
    * variations.ts`, o script manual, fazia esse update de acompanhamento). Nunca aborta a
    * publicação inteira se falhar (ex.: cor sem correspondência no catálogo) — só loga, o item
-   * continua publicado e vendável, só sem a etiqueta de cor. */
+   * continua publicado e vendável, só sem a etiqueta de cor. ACHADO REAL: sem essa etiqueta, o
+   * Mercado Livre não reconhece o item como parte da família do irmão de outra cor, mesmo com o
+   * `family_name` idêntico (confirmado comparando um caso real: item sem COLOR não aparecia
+   * agrupado na tela de variações). Por isso agora também registra a falha como `SyncJob`
+   * (tela de Jobs/Falhas) — antes só virava um log, invisível pro usuário corrigir. */
   private async tagBaseItemColor(
     client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
+    integrationId: string,
     itemId: string,
     categoryId: string,
-    color: string | null,
+    variant: { id: string; sku: string; color: string | null },
   ): Promise<void> {
-    if (!color) return;
+    if (!variant.color) return;
     try {
       const attrs = await client.getCategoryAttributes(categoryId);
-      const colorValueId = attrs.find((a) => a.id === 'COLOR')?.values?.find((v) => v.name.toLowerCase() === color.toLowerCase())?.id;
+      const colorValueId = attrs
+        .find((a) => a.id === 'COLOR')
+        ?.values?.find((v) => v.name.toLowerCase() === variant.color!.toLowerCase())?.id;
       if (!colorValueId) {
-        this.logger.warn('mercadolivre_base_color_not_found', { operation: 'tag_base_item_color', itemId, categoryId, color });
+        const message = `Cor "${variant.color}" não encontrada na lista de valores de COLOR da categoria ${categoryId} — o item base ficou sem a etiqueta de cor, o que impede o Mercado Livre de agrupá-lo com as outras cores.`;
+        this.logger.warn('mercadolivre_base_color_not_found', { operation: 'tag_base_item_color', itemId, categoryId, color: variant.color });
+        await this.recordColorFailure(integrationId, variant, message);
         return;
       }
       await client.updateItem(itemId, { attributes: [{ id: 'COLOR', value_id: colorValueId }] });
+      await this.clearColorFailure(integrationId, variant.id);
     } catch (error) {
-      this.logger.warn('mercadolivre_base_color_tag_failed', {
-        operation: 'tag_base_item_color',
-        itemId,
-        errorMessage: error instanceof Error ? error.message : String(error),
-      });
+      const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
+      this.logger.warn('mercadolivre_base_color_tag_failed', { operation: 'tag_base_item_color', itemId, errorMessage: message });
+      await this.recordColorFailure(integrationId, variant, message);
     }
   }
 
@@ -403,6 +413,7 @@ export class MercadoLivreProductsSyncService {
   private async publishRemainingColors(
     client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
     channelId: string,
+    integrationId: string,
     companyId: string,
     product: ProductForSync,
     variants: ProductForSync['variants'],
@@ -413,6 +424,7 @@ export class MercadoLivreProductsSyncService {
     for (const variant of variants) {
       try {
         await this.publishAdditionalColorItem(client, channelId, companyId, product, variant, base);
+        await this.clearColorFailure(integrationId, variant.id);
         published++;
       } catch (error) {
         failed++;
@@ -424,6 +436,7 @@ export class MercadoLivreProductsSyncService {
           color: variant.color,
           errorMessage: message,
         });
+        await this.recordColorFailure(integrationId, variant, message);
       }
     }
     return { published, failed };
@@ -486,6 +499,145 @@ export class MercadoLivreProductsSyncService {
       entityId: variantId,
       newValue: { externalProductId },
     });
+  }
+
+  /** Registra (ou atualiza) uma falha de publicação de cor como `SyncJob` — alimenta a tela de
+   * Jobs/Falhas (pedido do usuário: um lugar pra ver o que falhou, com o motivo real, e poder
+   * corrigir e tentar de novo). Upsert por `(integrationId, type, relatedExternalId=variantId)` —
+   * nunca acumula uma linha nova por ciclo do agendador pro mesmo problema não resolvido. */
+  private async recordColorFailure(
+    integrationId: string,
+    variant: { id: string; sku: string; color: string | null },
+    errorMessage: string,
+  ): Promise<void> {
+    const existing = await this.prisma.client.syncJob.findFirst({
+      where: { integrationId, type: MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_COLOR, relatedExternalId: variant.id },
+    });
+    const data = {
+      status: 'FAILED' as const,
+      error: errorMessage,
+      errorCategory: 'VALIDATION',
+      payload: { variantId: variant.id, sku: variant.sku, color: variant.color },
+      finishedAt: new Date(),
+    };
+    if (existing) {
+      await this.prisma.client.syncJob.update({
+        where: { id: existing.id },
+        data: { ...data, attempts: existing.attempts + 1 },
+      });
+      return;
+    }
+    await this.prisma.client.syncJob.create({
+      data: {
+        integrationId,
+        type: MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_COLOR,
+        relatedExternalId: variant.id,
+        attempts: 1,
+        maxAttempts: 1,
+        ...data,
+      },
+    });
+  }
+
+  /** Some com a falha registrada assim que a cor publica com sucesso (inclusive numa tentativa
+   * manual depois de o usuário corrigir o dado) — nunca deixa uma falha resolvida presa na tela. */
+  private async clearColorFailure(integrationId: string, variantId: string): Promise<void> {
+    await this.prisma.client.syncJob.deleteMany({
+      where: { integrationId, type: MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_COLOR, relatedExternalId: variantId },
+    });
+  }
+
+  /** Reprocessa manualmente UMA variante que falhou (chamado pela tela de Jobs/Falhas, botão
+   * "Tentar novamente") — usa os dados ATUAIS do banco, nunca os do momento da falha original:
+   * se o usuário corrigiu a cor da variante enquanto isso, é essa cor nova que será tentada.
+   *
+   * Dois casos possíveis:
+   *   1. A variante já tem um item criado no Mercado Livre (falhou só em marcar a cor do item
+   *      BASE) — reconfirma a categoria do item e tenta `tagBaseItemColor` de novo.
+   *   2. A variante nunca teve item criado (falhou como "cor adicional") — precisa achar uma
+   *      variante irmã (mesmo produto, mesmo tamanho) já publicada pra descobrir
+   *      categoria/family_name/tipo de anúncio, e então publicar esta cor como adicional.
+   */
+  async retryColorPublish(companyId: string, variantId: string): Promise<void> {
+    const integration = await this.credentialsService.requireIntegration(companyId);
+    if (!integration.channelId) throw new NotFoundException('Canal Mercado Livre ainda não conectado.');
+    const channelId = integration.channelId;
+    const integrationId = integration.id;
+
+    const dbVariant = await this.prisma.client.productVariant.findFirst({
+      where: { id: variantId, product: { companyId } },
+      include: { product: { include: { images: { orderBy: { position: 'asc' } } } }, inventory: true },
+    });
+    if (!dbVariant) throw new NotFoundException('Variante não encontrada.');
+
+    const variant = {
+      id: dbVariant.id,
+      sku: dbVariant.sku,
+      color: dbVariant.color,
+      size: dbVariant.size,
+      status: dbVariant.status,
+      suggestedPrice: dbVariant.suggestedPrice,
+      imageUrl: dbVariant.imageUrl,
+      inventory: dbVariant.inventory ? { onHand: dbVariant.inventory.onHand, reserved: dbVariant.inventory.reserved } : null,
+    };
+    const product: ProductForSync = {
+      id: dbVariant.product.id,
+      name: dbVariant.product.name,
+      description: dbVariant.product.description,
+      status: dbVariant.product.status,
+      baseSku: dbVariant.product.baseSku,
+      imageUrl: dbVariant.product.imageUrl,
+      images: dbVariant.product.images.map((i) => ({ url: i.url, position: i.position })),
+      variants: [variant],
+    };
+
+    const { client } = await this.connectorFactory.forCompany(companyId);
+
+    const ownMapping = await this.prisma.client.channelProductMapping.findUnique({
+      where: { channelId_variantId: { channelId, variantId } },
+    });
+
+    if (ownMapping?.externalProductId) {
+      // Caso 1: item já existe, só faltou (ou falhou) marcar a cor do item base.
+      const item = await client.getItem(ownMapping.externalProductId);
+      await this.tagBaseItemColor(client, integrationId, ownMapping.externalProductId, item.category_id as string, variant);
+      return;
+    }
+
+    // Caso 2: nunca foi publicada — acha uma variante irmã (mesmo produto, mesmo tamanho) já
+    // publicada, pra reaproveitar categoria/family_name/tipo de anúncio.
+    const siblingIds = await this.prisma.client.productVariant.findMany({
+      where: { productId: product.id, size: dbVariant.size, id: { not: variantId } },
+      select: { id: true },
+    });
+    const siblingMapping = siblingIds.length
+      ? await this.prisma.client.channelProductMapping.findFirst({
+          where: {
+            channelId,
+            variantId: { in: siblingIds.map((s) => s.id) },
+            externalProductId: { not: null },
+            syncStatus: { in: [ChannelMappingSyncStatus.CONFIRMED, ChannelMappingSyncStatus.AUTO_MATCHED] },
+          },
+        })
+      : null;
+    if (!siblingMapping?.externalProductId) {
+      throw new Error('Nenhuma variante irmã (mesmo produto/tamanho) já publicada foi encontrada — publique a base primeiro.');
+    }
+    const baseItem = await client.getItem(siblingMapping.externalProductId);
+    const base = {
+      categoryId: baseItem.category_id as string,
+      familyName: baseItem.family_name as string,
+      listingTypeId: baseItem.listing_type_id as string,
+    };
+
+    try {
+      await this.publishAdditionalColorItem(client, channelId, companyId, product, variant, base);
+      await this.clearColorFailure(integrationId, variantId);
+    } catch (error) {
+      const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
+      await this.recordColorFailure(integrationId, variant, message);
+      throw error;
+    }
   }
 
   /** Para vínculos já confirmados: recalcula o snapshot (preço, descrição, fotos, status) e só

@@ -82,11 +82,19 @@ function makeService(opts: {
   const mappingUpdate = jest.fn();
   const mappingFindUnique = jest.fn();
   const variantFindMany = jest.fn().mockResolvedValue([]);
+  const variantFindFirst = jest.fn();
+  // Falhas de publicação de cor (SyncJob) — sem uso direto na maioria dos testes deste arquivo,
+  // só precisa nunca lançar (senão um sucesso real vira "failed" só por causa do registro).
+  const syncJobFindFirst = jest.fn().mockResolvedValue(null);
+  const syncJobCreate = jest.fn();
+  const syncJobUpdate = jest.fn();
+  const syncJobDeleteMany = jest.fn();
   const prisma = {
     client: {
       product: { findMany: productFindMany },
       channelProductMapping: { findMany: mappingFindMany, upsert: mappingUpsert, update: mappingUpdate, findUnique: mappingFindUnique },
-      productVariant: { findMany: variantFindMany },
+      productVariant: { findMany: variantFindMany, findFirst: variantFindFirst },
+      syncJob: { findFirst: syncJobFindFirst, create: syncJobCreate, update: syncJobUpdate, deleteMany: syncJobDeleteMany },
     },
   };
 
@@ -104,7 +112,19 @@ function makeService(opts: {
     logger as unknown as AppLoggerService,
   );
 
-  return { service, client, mappingUpsert, mappingUpdate, productFindMany, mappingFindMany, logger };
+  return {
+    service,
+    client,
+    mappingUpsert,
+    mappingUpdate,
+    productFindMany,
+    mappingFindMany,
+    logger,
+    syncJobCreate,
+    syncJobUpdate,
+    syncJobDeleteMany,
+    variantFindFirst,
+  };
 }
 
 describe('MercadoLivreProductsSyncService.publishEligible', () => {
@@ -193,12 +213,42 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
     const azul = makeVariant({ id: 'v-azul', sku: 'SKU-AZUL', color: 'Azul' });
     const client = makeClient();
     client.createItem.mockResolvedValueOnce({ id: 'MLB-BASE', status: 'active' });
-    const { service } = makeService({ products: [makeProductRow([azul])], client });
+    const { service, syncJobDeleteMany } = makeService({ products: [makeProductRow([azul])], client });
 
     await service.publishEligible(COMPANY_ID);
 
     expect(client.updateItem).toHaveBeenCalledWith('MLB-BASE', { attributes: [{ id: 'COLOR', value_id: 'color-azul' }] });
+    // Sucesso limpa qualquer falha anterior registrada pra esta variante (nunca deixa uma
+    // falha resolvida presa na tela de Jobs/Falhas).
+    expect(syncJobDeleteMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ relatedExternalId: 'v-azul' }) }),
+    );
   });
+
+  it(
+    'ACHADO REAL (pedido do usuário): quando o item base nasce sem a cor marcada (cor sem correspondência ' +
+      'no catálogo, ex.: "Mostarda"), registra a falha como SyncJob pra aparecer na tela de Jobs/Falhas',
+    async () => {
+      const mostarda = makeVariant({ id: 'v-mostarda', sku: 'SKU-MOSTARDA', color: 'Mostarda' });
+      const client = makeClient();
+      client.createItem.mockResolvedValueOnce({ id: 'MLB-BASE', status: 'active' });
+      const { service, syncJobCreate } = makeService({ products: [makeProductRow([mostarda])], client });
+
+      await service.publishEligible(COMPANY_ID);
+
+      expect(client.updateItem).not.toHaveBeenCalled();
+      expect(syncJobCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: 'mercadolivre-publish-product-color',
+            relatedExternalId: 'v-mostarda',
+            status: 'FAILED',
+            payload: { variantId: 'v-mostarda', sku: 'SKU-MOSTARDA', color: 'Mostarda' },
+          }),
+        }),
+      );
+    },
+  );
 
   it('ACHADO REAL corrigido: uma cor sem correspondência no catálogo (ex.: nome em inglês) nunca derruba as demais cores do mesmo produto', async () => {
     const azul = makeVariant({ id: 'v-azul', sku: 'SKU-AZUL', color: 'Azul' });
