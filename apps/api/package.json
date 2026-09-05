@@ -47,6 +47,7 @@
     "check-mercadolivre-real-variations": "node dist/cli/check-mercadolivre-real-variations.js",
     "cleanup-orphaned-product-images": "node dist/cli/cleanup-orphaned-product-images.js",
     "check-mercadolivre-invalid-mappings": "node dist/cli/check-mercadolivre-invalid-mappings.js",
+    "check-mercadolivre-family-names": "node dist/cli/check-mercadolivre-family-names.js",
     "reset-mercadolivre-mappings": "node dist/cli/reset-mercadolivre-mappings.js",
     "check-tiktok-product-detail-raw": "node dist/cli/check-tiktok-product-detail-raw.js",
     "check-tiktok-missing-variant-photos": "node dist/cli/check-tiktok-missing-variant-photos.js",
