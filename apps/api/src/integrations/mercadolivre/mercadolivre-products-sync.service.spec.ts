@@ -18,6 +18,7 @@ interface TestVariant {
   id: string;
   sku: string;
   color: string | null;
+  size: string | null;
   status: string;
   suggestedPrice: number;
   imageUrl: string | null;
@@ -30,6 +31,7 @@ function makeVariant(overrides: Partial<TestVariant> = {}): TestVariant {
     id: overrides.id ?? 'variant-1',
     sku: overrides.sku ?? 'SKU-1',
     color: overrides.color ?? null,
+    size: overrides.size ?? null,
     status: overrides.status ?? 'ACTIVE',
     suggestedPrice: overrides.suggestedPrice ?? 100,
     imageUrl: overrides.imageUrl ?? null,
@@ -194,6 +196,35 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
     expect(result).toEqual({ published: 2, failed: 1, skipped: 0 });
     expect(client.createItem).toHaveBeenCalledTimes(2);
     expect(mappingUpsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('DECISÃO DO USUÁRIO: tamanho vira uma família SEPARADA por tamanho (Mercado Livre não tem atributo de tamanho pra bolsas) — cor varia dentro de cada tamanho', async () => {
+    const azulP = makeVariant({ id: 'v-azul-p', sku: 'SKU-AZUL-P', color: 'Azul', size: 'P' });
+    const vermelhoP = makeVariant({ id: 'v-vermelho-p', sku: 'SKU-VERMELHO-P', color: 'Vermelho', size: 'P' });
+    const azulM = makeVariant({ id: 'v-azul-m', sku: 'SKU-AZUL-M', color: 'Azul', size: 'M' });
+    const vermelhoM = makeVariant({ id: 'v-vermelho-m', sku: 'SKU-VERMELHO-M', color: 'Vermelho', size: 'M' });
+    const client = makeClient();
+    client.createItem
+      .mockResolvedValueOnce({ id: 'MLB-P-BASE', status: 'active' })
+      .mockResolvedValueOnce({ id: 'MLB-P-VERMELHO', status: 'active' })
+      .mockResolvedValueOnce({ id: 'MLB-M-BASE', status: 'active' })
+      .mockResolvedValueOnce({ id: 'MLB-M-VERMELHO', status: 'active' });
+    const { service, mappingUpsert } = makeService({
+      products: [makeProductRow([azulP, vermelhoP, azulM, vermelhoM])],
+      client,
+    });
+
+    const result = await service.publishEligible(COMPANY_ID);
+
+    expect(result).toEqual({ published: 4, failed: 0, skipped: 0 });
+    expect(client.createItem).toHaveBeenCalledTimes(4);
+    // Família do tamanho P inclui "P" no título; família do tamanho M inclui "M" — nunca a
+    // mesma família pros dois tamanhos.
+    expect(client.createItem.mock.calls[0][0]).toMatchObject({ family_name: 'Bolsa Teste - P' });
+    expect(client.createItem.mock.calls[1][0]).toMatchObject({ family_name: 'Bolsa Teste - P' });
+    expect(client.createItem.mock.calls[2][0]).toMatchObject({ family_name: 'Bolsa Teste - M' });
+    expect(client.createItem.mock.calls[3][0]).toMatchObject({ family_name: 'Bolsa Teste - M' });
+    expect(mappingUpsert).toHaveBeenCalledTimes(4);
   });
 
   it('quando uma cor já está publicada, busca o item base via getItem e só cria a cor nova', async () => {

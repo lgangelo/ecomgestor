@@ -33,6 +33,7 @@ interface ProductForSync {
     id: string;
     sku: string;
     color: string | null;
+    size: string | null;
     status: string;
     suggestedPrice: unknown;
     imageUrl: string | null;
@@ -125,6 +126,7 @@ export class MercadoLivreProductsSyncService {
         id: variant.id,
         sku: variant.sku,
         color: variant.color,
+        size: variant.size,
         status: variant.status,
         suggestedPrice: variant.suggestedPrice,
         imageUrl: variant.imageUrl,
@@ -166,78 +168,100 @@ export class MercadoLivreProductsSyncService {
     let skipped = 0;
 
     for (const product of products) {
-      try {
-        const activeVariants = product.variants.filter((v) => v.status === 'ACTIVE');
-        if (activeVariants.length === 0) {
-          skipped++;
-          continue;
-        }
-        const colorVariants = activeVariants.filter((v) => v.color);
-        const unpublished = (colorVariants.length > 0 ? colorVariants : activeVariants).filter((v) => !isPublished(v.id));
-        if (unpublished.length === 0) {
-          skipped++; // já publicado por completo — fica pra syncPublished
-          continue;
-        }
+      const activeVariants = product.variants.filter((v) => v.status === 'ACTIVE');
+      if (activeVariants.length === 0) {
+        skipped++;
+        continue;
+      }
 
-        if (colorVariants.length === 0) {
-          // Produto sem nenhuma variante com cor: só a mais antiga, item único.
-          const variant = activeVariants[0];
-          if (isPublished(variant.id)) {
+      // ACHADO REAL (decisão do usuário, confirmado contra a ficha de atributos real da
+      // categoria de bolsas): o Mercado Livre não tem um atributo de TAMANHO nessa categoria —
+      // só COR pode variar dentro da mesma família (`family_name`). Um produto que varia por
+      // tamanho (com ou sem cor junto) precisa virar um anúncio SEPARADO por tamanho — nunca
+      // agrupado com outro tamanho na mesma família. Por isso agrupamos primeiro por tamanho
+      // (uma "mini-família" por grupo), e só DENTRO de cada grupo é que a cor vira variação.
+      const sizeGroups = new Map<string, ProductForSync['variants']>();
+      for (const variant of activeVariants) {
+        const key = variant.size ?? '';
+        const group = sizeGroups.get(key);
+        if (group) group.push(variant);
+        else sizeGroups.set(key, [variant]);
+      }
+
+      for (const [size, group] of sizeGroups) {
+        try {
+          const colorVariants = group.filter((v) => v.color);
+          const unpublished = (colorVariants.length > 0 ? colorVariants : group).filter((v) => !isPublished(v.id));
+          if (unpublished.length === 0) {
+            skipped++; // já publicado por completo — fica pra syncPublished
+            continue;
+          }
+
+          if (colorVariants.length === 0) {
+            // Nem cor nem tamanho diferenciam dentro deste grupo: só a mais antiga, item único.
+            const variant = group[0];
+            if (isPublished(variant.id)) {
+              skipped++;
+              continue;
+            }
+            if (this.available(variant) <= 0) {
+              skipped++;
+              continue;
+            }
+            await this.publishBaseItem(client, channelId, companyId, product, variant, size || undefined);
+            published++;
+            continue;
+          }
+
+          // Grupo com cores: já existe alguma cor publicada (base ou adicional) NESTE tamanho?
+          const alreadyPublishedVariant = colorVariants.find((v) => isPublished(v.id));
+          if (alreadyPublishedVariant) {
+            const mapping = mappingByVariant.get(alreadyPublishedVariant.id)!;
+            const baseItem = await client.getItem(mapping.externalProductId!);
+            const categoryId = baseItem.category_id as string;
+            const familyName = baseItem.family_name as string;
+            const listingTypeId = baseItem.listing_type_id as string;
+            const remaining = colorVariants.filter((v) => !isPublished(v.id));
+            const counts = await this.publishRemainingColors(client, channelId, companyId, product, remaining, {
+              categoryId,
+              familyName,
+              listingTypeId,
+            });
+            published += counts.published;
+            failed += counts.failed;
+            continue;
+          }
+
+          // Nenhuma cor publicada ainda neste tamanho — a base é a primeira com estoque disponível.
+          const baseVariant = colorVariants.find((v) => this.available(v) > 0);
+          if (!baseVariant) {
             skipped++;
             continue;
           }
-          if (this.available(variant) <= 0) {
-            skipped++;
-            continue;
-          }
-          await this.publishBaseItem(client, channelId, companyId, product, variant);
+          const created = await this.publishBaseItem(client, channelId, companyId, product, baseVariant, size || undefined);
           published++;
-          continue;
-        }
-
-        // Produto com cores: já existe alguma cor publicada (base ou adicional)?
-        const alreadyPublishedVariant = colorVariants.find((v) => isPublished(v.id));
-        if (alreadyPublishedVariant) {
-          const mapping = mappingByVariant.get(alreadyPublishedVariant.id)!;
-          const baseItem = await client.getItem(mapping.externalProductId!);
-          const categoryId = baseItem.category_id as string;
-          const familyName = baseItem.family_name as string;
-          const listingTypeId = baseItem.listing_type_id as string;
-          const remaining = colorVariants.filter((v) => !isPublished(v.id));
-          const counts = await this.publishRemainingColors(client, channelId, companyId, product, remaining, {
-            categoryId,
-            familyName,
-            listingTypeId,
+          // ACHADO REAL corrigido: o item base nascia sem o próprio atributo COLOR (só os
+          // scripts manuais faziam esse update de acompanhamento) — sem isso, a cor da base
+          // nunca aparecia marcada no anúncio, mesmo o produto tendo variação de cor.
+          await this.tagBaseItemColor(client, created.itemId, created.categoryId, baseVariant.color);
+          const others = colorVariants.filter((v) => v.id !== baseVariant.id);
+          const counts = await this.publishRemainingColors(client, channelId, companyId, product, others, {
+            categoryId: created.categoryId,
+            familyName: created.familyName,
+            listingTypeId: created.listingTypeId,
           });
           published += counts.published;
           failed += counts.failed;
-          continue;
+        } catch (error) {
+          failed++;
+          const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
+          this.logger.error('mercadolivre_publish_failed', {
+            operation: 'publish_eligible',
+            productId: product.id,
+            size: size || undefined,
+            errorMessage: message,
+          });
         }
-
-        // Nenhuma cor publicada ainda — a base é a primeira com estoque disponível.
-        const baseVariant = colorVariants.find((v) => this.available(v) > 0);
-        if (!baseVariant) {
-          skipped++;
-          continue;
-        }
-        const created = await this.publishBaseItem(client, channelId, companyId, product, baseVariant);
-        published++;
-        // ACHADO REAL corrigido: o item base nascia sem o próprio atributo COLOR (só os
-        // scripts manuais faziam esse update de acompanhamento) — sem isso, a cor da base nunca
-        // aparecia marcada no anúncio, mesmo o produto tendo variação de cor.
-        await this.tagBaseItemColor(client, created.itemId, created.categoryId, baseVariant.color);
-        const others = colorVariants.filter((v) => v.id !== baseVariant.id);
-        const counts = await this.publishRemainingColors(client, channelId, companyId, product, others, {
-          categoryId: created.categoryId,
-          familyName: created.familyName,
-          listingTypeId: created.listingTypeId,
-        });
-        published += counts.published;
-        failed += counts.failed;
-      } catch (error) {
-        failed++;
-        const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
-        this.logger.error('mercadolivre_publish_failed', { operation: 'publish_eligible', productId: product.id, errorMessage: message });
       }
     }
 
@@ -272,14 +296,26 @@ export class MercadoLivreProductsSyncService {
     return brand.id;
   }
 
+  /** Monta o título/family_name do anúncio — inclui o tamanho quando o grupo tem um (ver
+   * comentário em `publishEligible` sobre por que tamanho vira uma família SEPARADA, nunca uma
+   * variação dentro da mesma família de cor), sempre respeitando o limite de 60 caracteres. */
+  private buildFamilyTitle(productName: string, size: string | undefined): string {
+    if (!size) return productName.length > 60 ? productName.slice(0, 60) : productName;
+    const suffix = ` - ${size}`;
+    const maxNameLength = 60 - suffix.length;
+    const truncatedName = productName.length > maxNameLength ? productName.slice(0, maxNameLength) : productName;
+    return `${truncatedName}${suffix}`;
+  }
+
   private async publishBaseItem(
     client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
     channelId: string,
     companyId: string,
     product: ProductForSync,
     variant: ProductForSync['variants'][number],
+    size?: string,
   ): Promise<{ itemId: string; categoryId: string; familyName: string; listingTypeId: string }> {
-    const title = product.name.length > 60 ? product.name.slice(0, 60) : product.name;
+    const title = this.buildFamilyTitle(product.name, size);
     const { categoryId, listingTypeId } = await this.resolveCategoryAndListingType(client, title);
     const brandValueId = await this.resolveBrandValueId(client, categoryId);
 
@@ -480,6 +516,7 @@ export class MercadoLivreProductsSyncService {
           id: v.id,
           sku: v.sku,
           color: v.color,
+          size: v.size,
           status: v.status,
           suggestedPrice: v.suggestedPrice,
           imageUrl: v.imageUrl,
