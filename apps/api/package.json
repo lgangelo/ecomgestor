@@ -36,6 +36,7 @@
     "publish-mercadolivre-item": "node dist/cli/publish-mercadolivre-item.js",
     "add-mercadolivre-variations": "node dist/cli/add-mercadolivre-variations.js",
     "check-tiktok-product-detail-raw": "node dist/cli/check-tiktok-product-detail-raw.js",
+    "check-tiktok-missing-variant-photos": "node dist/cli/check-tiktok-missing-variant-photos.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
