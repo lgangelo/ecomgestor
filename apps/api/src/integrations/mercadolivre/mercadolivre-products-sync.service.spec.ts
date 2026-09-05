@@ -165,6 +165,37 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
     expect(mappingUpsert).toHaveBeenCalledTimes(2);
   });
 
+  it('ACHADO REAL corrigido: marca o próprio item BASE com o atributo COLOR (antes nascia sem isso)', async () => {
+    const azul = makeVariant({ id: 'v-azul', sku: 'SKU-AZUL', color: 'Azul' });
+    const client = makeClient();
+    client.createItem.mockResolvedValueOnce({ id: 'MLB-BASE', status: 'active' });
+    const { service } = makeService({ products: [makeProductRow([azul])], client });
+
+    await service.publishEligible(COMPANY_ID);
+
+    expect(client.updateItem).toHaveBeenCalledWith('MLB-BASE', { attributes: [{ id: 'COLOR', value_id: 'color-azul' }] });
+  });
+
+  it('ACHADO REAL corrigido: uma cor sem correspondência no catálogo (ex.: nome em inglês) nunca derruba as demais cores do mesmo produto', async () => {
+    const azul = makeVariant({ id: 'v-azul', sku: 'SKU-AZUL', color: 'Azul' });
+    // "Pink" não existe na lista de valores de COLOR do makeClient() (só Azul/Vermelho) —
+    // simula exatamente o caso real (cor cadastrada em inglês, catálogo do ML é em português).
+    const pink = makeVariant({ id: 'v-pink', sku: 'SKU-PINK', color: 'Pink' });
+    const vermelho = makeVariant({ id: 'v-vermelho', sku: 'SKU-VERMELHO', color: 'Vermelho' });
+    const client = makeClient();
+    client.createItem
+      .mockResolvedValueOnce({ id: 'MLB-BASE', status: 'active' })
+      .mockResolvedValueOnce({ id: 'MLB-VERMELHO', status: 'active' });
+    const { service, mappingUpsert } = makeService({ products: [makeProductRow([azul, pink, vermelho])], client });
+
+    const result = await service.publishEligible(COMPANY_ID);
+
+    // Base (Azul) + Vermelho publicados com sucesso; só Pink falha — nunca aborta o produto inteiro.
+    expect(result).toEqual({ published: 2, failed: 1, skipped: 0 });
+    expect(client.createItem).toHaveBeenCalledTimes(2);
+    expect(mappingUpsert).toHaveBeenCalledTimes(2);
+  });
+
   it('quando uma cor já está publicada, busca o item base via getItem e só cria a cor nova', async () => {
     const azul = makeVariant({ id: 'v-azul', sku: 'SKU-AZUL', color: 'Azul' });
     const vermelho = makeVariant({ id: 'v-vermelho', sku: 'SKU-VERMELHO', color: 'Vermelho' });

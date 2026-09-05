@@ -204,14 +204,13 @@ export class MercadoLivreProductsSyncService {
           const familyName = baseItem.family_name as string;
           const listingTypeId = baseItem.listing_type_id as string;
           const remaining = colorVariants.filter((v) => !isPublished(v.id));
-          for (const variant of remaining) {
-            await this.publishAdditionalColorItem(client, channelId, companyId, product, variant, {
-              categoryId,
-              familyName,
-              listingTypeId,
-            });
-            published++;
-          }
+          const counts = await this.publishRemainingColors(client, channelId, companyId, product, remaining, {
+            categoryId,
+            familyName,
+            listingTypeId,
+          });
+          published += counts.published;
+          failed += counts.failed;
           continue;
         }
 
@@ -223,15 +222,18 @@ export class MercadoLivreProductsSyncService {
         }
         const created = await this.publishBaseItem(client, channelId, companyId, product, baseVariant);
         published++;
+        // ACHADO REAL corrigido: o item base nascia sem o próprio atributo COLOR (só os
+        // scripts manuais faziam esse update de acompanhamento) — sem isso, a cor da base nunca
+        // aparecia marcada no anúncio, mesmo o produto tendo variação de cor.
+        await this.tagBaseItemColor(client, created.itemId, created.categoryId, baseVariant.color);
         const others = colorVariants.filter((v) => v.id !== baseVariant.id);
-        for (const variant of others) {
-          await this.publishAdditionalColorItem(client, channelId, companyId, product, variant, {
-            categoryId: created.categoryId,
-            familyName: created.familyName,
-            listingTypeId: created.listingTypeId,
-          });
-          published++;
-        }
+        const counts = await this.publishRemainingColors(client, channelId, companyId, product, others, {
+          categoryId: created.categoryId,
+          familyName: created.familyName,
+          listingTypeId: created.listingTypeId,
+        });
+        published += counts.published;
+        failed += counts.failed;
       } catch (error) {
         failed++;
         const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
@@ -305,6 +307,68 @@ export class MercadoLivreProductsSyncService {
     await this.saveMapping(channelId, variant.id, created.id, variant.sku, companyId);
 
     return { itemId: created.id, categoryId, familyName: title, listingTypeId };
+  }
+
+  /** Marca a cor do próprio item base (nasce sem atributo COLOR — só `add-mercadolivre-
+   * variations.ts`, o script manual, fazia esse update de acompanhamento). Nunca aborta a
+   * publicação inteira se falhar (ex.: cor sem correspondência no catálogo) — só loga, o item
+   * continua publicado e vendável, só sem a etiqueta de cor. */
+  private async tagBaseItemColor(
+    client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
+    itemId: string,
+    categoryId: string,
+    color: string | null,
+  ): Promise<void> {
+    if (!color) return;
+    try {
+      const attrs = await client.getCategoryAttributes(categoryId);
+      const colorValueId = attrs.find((a) => a.id === 'COLOR')?.values?.find((v) => v.name.toLowerCase() === color.toLowerCase())?.id;
+      if (!colorValueId) {
+        this.logger.warn('mercadolivre_base_color_not_found', { operation: 'tag_base_item_color', itemId, categoryId, color });
+        return;
+      }
+      await client.updateItem(itemId, { attributes: [{ id: 'COLOR', value_id: colorValueId }] });
+    } catch (error) {
+      this.logger.warn('mercadolivre_base_color_tag_failed', {
+        operation: 'tag_base_item_color',
+        itemId,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /** Publica cada cor adicional isoladamente — ACHADO REAL corrigido: antes, uma cor sem
+   * correspondência no catálogo (ex.: nome em inglês que o Mercado Livre não reconhece) lançava
+   * uma exceção que abortava TODAS as demais cores do mesmo produto (mesmo as que teriam
+   * funcionado). Mesmo padrão defensivo já usado em `add-mercadolivre-variations.ts`: cada cor
+   * conta o próprio sucesso/falha, nunca derruba as irmãs. */
+  private async publishRemainingColors(
+    client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
+    channelId: string,
+    companyId: string,
+    product: ProductForSync,
+    variants: ProductForSync['variants'],
+    base: { categoryId: string; familyName: string; listingTypeId: string },
+  ): Promise<{ published: number; failed: number }> {
+    let published = 0;
+    let failed = 0;
+    for (const variant of variants) {
+      try {
+        await this.publishAdditionalColorItem(client, channelId, companyId, product, variant, base);
+        published++;
+      } catch (error) {
+        failed++;
+        const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
+        this.logger.error('mercadolivre_publish_color_failed', {
+          operation: 'publish_remaining_colors',
+          productId: product.id,
+          variantId: variant.id,
+          color: variant.color,
+          errorMessage: message,
+        });
+      }
+    }
+    return { published, failed };
   }
 
   private async publishAdditionalColorItem(
