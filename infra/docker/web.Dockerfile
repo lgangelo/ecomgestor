@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 FROM node:20-bookworm-slim AS base
 WORKDIR /app
+# Mesmo ajuste do api.Dockerfile: silencia o aviso de versão major do npm embutido na imagem base.
+RUN npm install -g npm@12.0.2
 
 FROM base AS deps
 COPY package.json package-lock.json* ./

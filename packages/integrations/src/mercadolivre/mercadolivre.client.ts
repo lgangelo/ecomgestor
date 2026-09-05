@@ -4,6 +4,9 @@ import {
   MercadoLivreCategoryPrediction,
   MercadoLivreCreateItemInput,
   MercadoLivreCreatedItem,
+  MercadoLivreOrder,
+  MercadoLivreOrderSearchResult,
+  MercadoLivreShipment,
 } from './mercadolivre.types';
 import { MercadoLivreApiError, MercadoLivreErrorCategory } from './mercadolivre.errors';
 
@@ -111,36 +114,29 @@ export class MercadoLivreClient {
     return this.request('PUT', `/items/${itemId}`, { body: input });
   }
 
-  /** Busca pedidos por vendedor — NÃO CONFIRMADO contra uma chamada real com token válido (ver
-   * docs/integrations/mercado-livre.md, seção 4: a tentativa real em 2026-09-04, a partir do
-   * ambiente sandbox usado nesta sessão, foi bloqueada em toda chamada a `/orders/*` (e também
-   * `/items/*`, `/users/me`, `/shipments/*`, `/sites/{site}/listing_types`) pelo edge do próprio
-   * Mercado Livre — HTTP 403 `PA_UNAUTHORIZED_RESULT_FROM_POLICIES` ("blocked_by": "PolicyAgent"),
-   * mesmo com um `Bearer` inválido, ou seja, o bloqueio acontece ANTES de validar o token (é uma
-   * política de rede/IP do lado do Mercado Livre, não um erro de autenticação). `/categories/{id}`
-   * (endpoint público sem auth) respondeu normalmente (200) da mesma máquina, então não é bloqueio
-   * de rede geral — só endpoints que normalmente exigem sessão/token. Query params aqui
-   * (`seller`, `limit`, `offset`, `order.status`) refletem só o que a pesquisa original supôs
-   * (nunca confirmados contra uma resposta real) — retorno tipado como `Record<string, unknown>`
-   * de propósito, pra nunca inventar um campo que não foi visto de verdade. Reexecutar
-   * `apps/api/src/cli/check-mercadolivre-orders.ts` a partir de um ambiente sem esse bloqueio
-   * (ex.: a própria VM de produção) é o próximo passo antes de tipar isto de verdade. */
-  async searchOrders(query: Record<string, string>): Promise<Record<string, unknown>> {
+  /** Busca pedidos por vendedor — CONFIRMADO contra uma chamada real em produção em 2026-09-05
+   * (rodada a partir da VM, sem o bloqueio de política de rede que travou a tentativa anterior a
+   * partir do sandbox usado durante a pesquisa — ver docs/integrations/mercado-livre.md, seção 4).
+   * Parâmetros `seller`/`limit`/`offset` confirmados; `order.status` (filtro opcional) ainda não
+   * foi exercitado numa chamada real. O tipo de retorno cobre só os campos vistos até agora —
+   * qualquer campo novo que aparecer numa chamada futura deve ser adicionado a
+   * `MercadoLivreOrder`/`MercadoLivreOrderSearchResult`, nunca inventado antes de aparecer. */
+  async searchOrders(query: Record<string, string>): Promise<MercadoLivreOrderSearchResult> {
     return this.request('GET', '/orders/search', { query });
   }
 
-  /** Detalhe de um pedido — NÃO CONFIRMADO pelo mesmo motivo de `searchOrders` (bloqueio de rede
-   * do lado do Mercado Livre nesta tentativa, ver comentário acima e docs/integrations/
-   * mercado-livre.md seção 4). Nunca tipar `status`/`payments[]`/`sale_fee` sem antes ver um JSON
-   * real — usar este método (ou `client.request` diretamente) a partir de um ambiente destravado
-   * primeiro. */
-  async getOrder(orderId: string): Promise<Record<string, unknown>> {
+  /** Detalhe de um pedido — CONFIRMADO contra uma chamada real em 2026-09-05 (ver comentário de
+   * `searchOrders` e `MercadoLivreOrder`). Só um pedido (cancelado/estornado) foi visto até agora
+   * — o enum completo de `status` segue incompleto, tratar valores fora dos já documentados em
+   * `MercadoLivreOrder` como desconhecidos. */
+  async getOrder(orderId: string): Promise<MercadoLivreOrder> {
     return this.request('GET', `/orders/${orderId}`);
   }
 
-  /** Detalhe de um envio (id vem de `order.shipping.id`) — NÃO CONFIRMADO pelo mesmo motivo acima;
-   * path inferido pela pesquisa original (nunca confirmado em primeira mão). */
-  async getShipment(shipmentId: string): Promise<Record<string, unknown>> {
+  /** Detalhe de um envio (id vem de `order.shipping.id`) — CONFIRMADO contra uma chamada real em
+   * 2026-09-05 (ver `MercadoLivreShipment`); só o modo `"me2"` (Mercado Envios clássico) e status
+   * `"cancelled"` foram vistos até agora — Full/Flex e outros status seguem sem confirmação. */
+  async getShipment(shipmentId: string): Promise<MercadoLivreShipment> {
     return this.request('GET', `/shipments/${shipmentId}`);
   }
 

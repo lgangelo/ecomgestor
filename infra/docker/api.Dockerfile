@@ -4,6 +4,10 @@
 FROM node:20-bookworm-slim AS base
 WORKDIR /app
 RUN apt-get update -y && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+# node:20-bookworm-slim vem com um npm antigo (10.8.2) que emite aviso de versão major disponível
+# em todo `npm run`/`docker compose run` — sem risco de segurança real, mas silenciamos fixando a
+# versão em vez de deixar o aviso poluir os logs.
+RUN npm install -g npm@12.0.2
 
 FROM base AS deps
 COPY package.json package-lock.json* ./

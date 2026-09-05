@@ -118,3 +118,127 @@ export interface MercadoLivreCreatedItem {
   permalink?: string;
   status?: string;
 }
+
+/** Item de `order_items[]` — CONFIRMADO contra uma chamada real em 2026-09-05 (a partir da VM de
+ * produção, ver docs/integrations/mercado-livre.md seção 4). Campos abaixo são exatamente os que
+ * vieram na resposta real; qualquer campo novo visto numa chamada futura deve ser adicionado aqui
+ * (nunca inventado antes de aparecer de verdade). */
+export interface MercadoLivreOrderItem {
+  item: {
+    id: string;
+    title: string;
+    category_id: string;
+    variation_id: number | null;
+    seller_custom_field: string | null;
+    variation_attributes?: Array<{ name: string; id: string; value_id: string; value_name: string }>;
+    warranty: string | null;
+    condition: string;
+    /** CONFIRMADO presente, mas o valor visto (`"MLB6717678206_201389264747"`, formato
+     * `{item_id}_{variation_id}`) NÃO bateu com o SKU interno enviado como atributo `SELLER_SKU`
+     * na criação do item — precisa investigar se o Mercado Livre sobrescreve este campo com um
+     * valor próprio no modelo "User Products"/`family_name` (cada cor é um item separado), ou se
+     * é outra coisa. NUNCA usar este campo pra casar com `ProductVariant.sku` sem confirmar isso
+     * primeiro. */
+    seller_sku?: string;
+    global_price: number | null;
+    net_weight: number | null;
+    user_product_id?: string;
+  };
+  quantity: number;
+  requested_quantity?: { measure: string; value: number };
+  picked_quantity: number | null;
+  unit_price: number;
+  gross_price?: number;
+  currency_id: string;
+  manufacturing_days: number | null;
+  /** Comissão do Mercado Livre já calculada para este item (valor em `currency_id`, não
+   * percentual) — CONFIRMADO que mora AQUI, em cada item, e não dentro de `payments[]` como a
+   * pesquisa original (antes de qualquer chamada real) tinha suposto. Ver correção na seção 4 do
+   * doc. */
+  sale_fee: number;
+  listing_type_id: string;
+}
+
+/** `GET /orders/{id}` — CONFIRMADO contra uma chamada real em 2026-09-05. Só o único pedido
+ * existente na conta até agora (cancelado/estornado) foi visto — o enum completo de `status`
+ * segue sem confirmação total (só o valor `"cancelled"` foi observado de verdade); tratar
+ * qualquer valor fora dos já vistos aqui como desconhecido, nunca assumir o resto da lista
+ * hipotética antiga (`paid`/`confirmed`/etc.) até aparecer numa resposta real. */
+export interface MercadoLivreOrder {
+  id: number;
+  date_created: string;
+  last_updated: string;
+  date_closed: string | null;
+  pack_id: number | null;
+  fulfilled: boolean;
+  buying_mode: string;
+  total_amount: number;
+  paid_amount: number;
+  order_items: MercadoLivreOrderItem[];
+  currency_id: string;
+  payments: Array<{
+    id: number;
+    order_id: number;
+    payer_id: number;
+    collector: { id: number };
+    payment_method_id: string;
+    payment_type: string;
+    status: string;
+    status_detail: string | null;
+    transaction_amount: number;
+    transaction_amount_refunded: number;
+    taxes_amount: number;
+    total_paid_amount: number;
+    /** CONFIRMADO presente, mas veio `0` no único pagamento visto até agora (pedido cancelado) —
+     * NÃO CONFIRMADO ainda qual valor real aparece num pagamento aprovado/liquidado. Não confundir
+     * com `order_items[].sale_fee`, que é o campo que de fato trouxe um valor não-zero. */
+    marketplace_fee: number;
+    date_approved: string | null;
+    date_created: string;
+    date_last_modified: string;
+  }>;
+  shipping: { id: number } | null;
+  /** CONFIRMADO: só o valor `"cancelled"` visto até agora. */
+  status: string;
+  status_detail: string | null;
+  tags: string[];
+  static_tags?: string[];
+  cancel_detail?: {
+    group: string;
+    code: string;
+    description: string;
+    requested_by: string;
+    date: string;
+    application_id: string;
+  } | null;
+  context: { channel: string; site: string; flows: unknown[] };
+  buyer: { id: number; nickname?: string; first_name?: string; last_name?: string };
+  seller: { id: number; nickname?: string };
+  taxes: { amount: number | null; currency_id: string | null; id: string | null };
+}
+
+/** `GET /orders/search` — CONFIRMADO contra uma chamada real em 2026-09-05. */
+export interface MercadoLivreOrderSearchResult {
+  results: MercadoLivreOrder[];
+  paging: { total: number; offset: number; limit: number };
+}
+
+/** `GET /shipments/{id}` — CONFIRMADO contra uma chamada real em 2026-09-05 (site MLB, envio
+ * cancelado). Campos de endereço/custo/prazo NÃO estão todos listados aqui — só os já usados ou
+ * mais relevantes pro nosso lado; o restante do payload real tem muito mais campos (ver o JSON
+ * completo salvo na sessão que rodou o script, ou rodar `check-mercadolivre-orders` de novo). */
+export interface MercadoLivreShipment {
+  id: number;
+  order_id: number;
+  /** CONFIRMADO valor real `"me2"` (Mercado Envios 2/clássico) no único envio visto — os outros
+   * modos (Full/Flex, ver seção 5 do doc) ainda não foram confirmados por uma chamada real. */
+  mode: string;
+  /** CONFIRMADO: só o valor `"cancelled"` visto até agora (mesmo pedido cancelado acima). */
+  status: string;
+  substatus: string | null;
+  logistic_type?: string;
+  tracking_number: string | null;
+  tracking_method?: string | null;
+  date_created: string;
+  last_updated: string;
+}

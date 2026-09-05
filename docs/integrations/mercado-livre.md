@@ -194,82 +194,69 @@ automático sem confirmar o comportamento real primeiro).
 
 ## 4. Orders API
 
-**Atualização 2026-09-04 — tentativa real de chamada, BLOQUEADA pelo lado do Mercado Livre (não
-resolvida nesta sessão)**
+**Atualização 2026-09-05 — CONFIRMADO contra uma chamada real em produção, a partir da VM**
 
-Foi escrito um script de diagnóstico (`apps/api/src/cli/check-mercadolivre-orders.ts`, registrado
-como `npm run check-mercadolivre-orders`) que usa o `MercadoLivreConnectorFactory` já conectado em
-produção pra chamar `GET /orders/search` (com `seller=<user_id da conta conectada>`) e depois
-`GET /orders/{id}`/`GET /shipments/{id}` pra pedidos reais encontrados — só leitura, nunca
-POST/PUT/DELETE. Ao tentar rodar esse script a partir do ambiente (sandbox) usado nesta sessão de
-trabalho, **toda chamada a endpoints autenticados voltou HTTP 403**:
+O script `apps/api/src/cli/check-mercadolivre-orders.ts` (`npm run check-mercadolivre-orders`) foi
+executado de verdade a partir da VM de produção (o bloqueio de política de rede registrado em
+2026-09-04 só acontecia no ambiente sandbox usado para escrever o script — rodando de onde a
+integração já opera de fato, `GET /orders/search`, `GET /orders/{id}` e `GET /shipments/{id}`
+funcionaram normalmente). A conta conectada (`VENTICELLIBOLSAS`, seller id `532363529`) tinha, no
+momento do teste, **exatamente 1 pedido no total** (`paging.total: 1`) — a loja tinha ficado com
+anúncios pausados/excluídos por um bom tempo antes desta integração (ver início deste documento),
+então o histórico real de pedidos ainda é praticamente inexistente. Isso significa: os campos
+abaixo são REAIS e CONFIRMADOS, mas o **enum completo de `order.status` continua incompleto** —
+só o valor `"cancelled"` foi observado até agora, faltando ver um pedido pago/entregue de verdade.
+Os tipos `MercadoLivreOrder`/`MercadoLivreOrderSearchResult`/`MercadoLivreShipment`
+(`packages/integrations/src/mercadolivre/mercadolivre.types.ts`) cobrem só os campos vistos nesta
+chamada — qualquer campo novo visto numa chamada futura deve ser adicionado lá, nunca inventado.
 
-```json
-{"blocked_by":"PolicyAgent","code":"PA_UNAUTHORIZED_RESULT_FROM_POLICIES","status":403,"message":"At least one policy returned UNAUTHORIZED."}
-```
+**Correção importante em relação à pesquisa original**: a hipótese de que a comissão de venda
+(`sale_fee`) viria decomposta dentro de `payments[]` (com uma entidade separando "custo de vender
+na plataforma" + "custo de cobrança via Mercado Pago" + "taxa de parcelamento") estava **errada**.
+Na chamada real, `sale_fee` mora em cada item de `order_items[]` (um valor já calculado, em
+`currency_id`, não percentual — `14.44` para um item de `76.00`, ≈19% neste caso) — e dentro de
+`payments[]` o campo equivalente (`marketplace_fee`) veio **zerado** (o pedido foi cancelado e
+estornado, então pode ser que esse campo só reflita valor real num pagamento efetivamente
+liquidado — não confirmado, é só uma hipótese). Ou seja: pra calcular a comissão real de uma
+venda, usar `order_items[].sale_fee`, não `payments[].marketplace_fee`.
 
-Isso aconteceu em `GET /orders/search`, `GET /orders/{id}`, `GET /shipments/{id}`, `GET
-/items/{id}`, `GET /sites/{site}/listing_types` e até `GET /users/me` — **mesmo trocando o
-`Authorization: Bearer` real por um valor inventado**, o erro foi idêntico, o que prova que o
-bloqueio acontece **antes** de o Mercado Livre sequer validar o token: é uma política de
-IP/rede do lado do Mercado Livre (resposta vem do próprio edge/CloudFront deles, com o header
-`x-policy-agent-block-code`), não um problema de credencial expirada ou mal configurada. Como
-controle, `GET /categories/{id}` (endpoint público, sem necessidade de token) respondeu **200**
-normalmente a partir da mesma máquina — ou seja, não é um bloqueio geral do domínio
-`api.mercadolibre.com`, só dos endpoints que normalmente exigem sessão/token (o mesmo padrão de
-bloqueio anti-bot já registrado na seção "Limitação importante e honesta" no topo deste documento,
-quando o fetch da própria doc oficial foi recusado com 403).
+**Confirmado (chamada real, `GET /orders/search?seller=<user_id>&limit=&offset=`):**
 
-Isso é consistente com uma sessão anterior ter conseguido `POST /items` de verdade em produção
-(seção 2) — aquele teste rodou a partir de outra máquina/rede (provavelmente a VM de produção ou o
-ambiente normal de desenvolvimento), não deste sandbox específico usado para escrever o script de
-pedidos.
+- Parâmetros `seller`/`limit`/`offset` funcionam exatamente como eram esperados; resposta traz
+  `results[]` + `paging: {total, offset, limit}` (mesmo formato de paginação já usado em outros
+  endpoints do Mercado Livre).
+- Cada pedido tem `pack_id` (agrupamento de pedidos comprados juntos pelo mesmo comprador — existe
+  independente de ter ou não mediação), `mediations[]` (presente quando há uma disputa aberta —
+  neste caso o comprador cancelou via mediação, `cancel_detail.code: "buyer_cancel_express"`),
+  `tags[]` (valores reais vistos: `"pack_order"`, `"not_delivered"`, `"not_paid"` — provavelmente
+  cumulativos/informativos, não um enum fechado de status) e `static_tags[]` (só `"pack_order"`
+  visto, aparenta ser um subconjunto de `tags` que não muda com o tempo).
+- `order_items[].item.seller_sku` está presente, mas **NÃO bate com o SKU interno** que enviamos
+  como atributo `SELLER_SKU` na criação do item — o valor visto (`"MLB6717678206_201389264747"`)
+  tem o formato `{item_id}_{variation_id}`, sugerindo que o Mercado Livre pode estar
+  sobrescrevendo esse campo especificamente no modelo "User Products"/`family_name` (onde cada cor
+  é um item `POST /items` separado). **Antes de usar este campo pra casar pedido↔variação interna,
+  confirmar contra o `SELLER_SKU` real de um produto nosso** — por ora, a estratégia mais segura é
+  casar pelo nosso `ChannelProductMapping` (que já guarda `externalProductId`/`externalSku` por
+  variação), não por este campo.
+- `shipping: {id}` só traz o id — detalhe completo exige `GET /shipments/{id}` à parte (confirmado
+  funcionando, ver abaixo).
 
-**Consequência prática**: o script `check-mercadolivre-orders.ts` está pronto, compila, e segue o
-mesmo padrão dos outros scripts de diagnóstico (`check-mercadolivre-category.ts` etc.) — mas
-**precisa ser executado a partir de um ambiente sem esse bloqueio** (a VM de produção é a aposta
-mais forte, já que é de lá que a integração está de fato conectada e fazendo chamadas de verdade)
-antes que qualquer resultado seu possa ser usado pra confirmar o formato real da API. **Nada
-abaixo nesta seção foi confirmado por uma chamada real que de fato recebeu uma resposta 2xx da
-Orders API** — os métodos `searchOrders`/`getOrder`/`getShipment` foram adicionados ao
-`MercadoLivreClient` (`packages/integrations/src/mercadolivre/mercadolivre.client.ts`) já
-preparados para uso, mas devolvem `Record<string, unknown>` de propósito (nenhum campo foi
-tipado) — tipar isso é o próximo passo, só depois de uma execução bem-sucedida do script contra um
-ambiente destravado.
+### Status do pedido — parcialmente confirmado (só 1 amostra real disponível)
 
-**Confirmado (pesquisa original, ainda não confirmado por chamada real):**
+**Confirmado**: `status: "cancelled"` é um valor real (bate com um dos 4 valores hipotéticos que a
+pesquisa original tinha levantado a partir de nomenclatura de **pack**, não de pedido —
+`released`/`error`/`pending_cancel`/`cancelled` — então pelo menos esse coincidiu). **Ainda não
+confirmado**: todos os outros valores (a hipótese mais comum entre integrações de terceiros é algo
+como `confirmed`/`payment_required`/`paid`/`shipped`/`delivered`/`cancelled`/`invalid`, mas
+**nenhum desses além de `cancelled` foi visto numa resposta real** — não assumir nenhum deles no
+código até aparecer de verdade). Assim que a loja tiver mais pedidos reais (idealmente um pago e
+entregue), rodar `npm run check-mercadolivre-orders` de novo pra completar o enum antes de
+qualquer lógica que dependa de um valor específico de `status`.
 
-- `GET /orders/{order_id}` — detalhe de um pedido.
-- `GET /orders/search` (parâmetros de busca, provavelmente por `seller`/`buyer`/janela de tempo —
-  **formato exato dos parâmetros não confirmado**, nenhuma fonte trouxe a assinatura completa).
-- O pedido traz um campo `payments[]` (pagamentos associados) e um campo `taxes` (soma de
-  impostos do pedido) — junto com tags adicionadas pelo Mercado Livre ou pelo vendedor.
-- **Boa notícia em relação a TikTok/Shopee**: para o site MLB (Brasil), a resposta de `payments[]`
-  já inclui uma entidade detalhando a composição da **taxa de venda (`sale_fee`)** — separando o
-  custo de vender na plataforma, o custo de cobrança via Mercado Pago e a taxa de parcelamento.
-  Ou seja, ao contrário da TikTok e da Shopee (onde a comissão só aparece numa API financeira
-  totalmente separada da API de pedidos), aqui parte da composição da taxa já vem junto no próprio
-  pedido — **mas ver a ressalva da seção 6 sobre "provisões"**, que sugere que o valor
-  definitivamente liquidado/repassado ainda depende de uma API de billing separada.
-
-### Status do pedido — não confirmado (bloqueio de acesso à doc oficial)
-
-Existe uma página oficial dedicada (`status-de-pedidos-rastreamento` /
-`me1-order-states`), mas o fetch foi bloqueado (403) nas duas tentativas (domínio `.com.br` e
-`.com.ar`). Os resultados de busca só trouxeram status de **pack** (agrupamento
-pedido+envio), não o enum de status do **pedido** em si: `released` (pedido e envio pagos),
-`error` (falha no processo), `pending_cancel` (erro irrecuperável), `cancelled`.
-
-**Importante: nenhum enum de `order.status` foi confirmado por uma fonte consultada nesta
-pesquisa.** Não incluo aqui uma lista "provável" de status de pedido porque, diferente da Shopee
-(onde duas fontes trouxeram listas concretas, ainda que divergentes, permitindo montar uma tabela
-hipotética explicitamente marcada como tal), nenhuma fonte consultada aqui trouxe uma lista
-concreta o suficiente pra isso — só uma chamada real a `/orders/search` com pedidos em vários
-estados (ou acesso à doc oficial por outro caminho) resolve isso.
-
-**Ainda não resolvido em 2026-09-04**: a tentativa real de chamar `/orders/search` (ver bloco
-acima) foi bloqueada por uma política de rede do Mercado Livre antes de chegar a qualquer resposta
-com dados de pedido — o enum de `order.status` segue **sem nenhuma confirmação de primeira mão**.
+**Confirmado (`GET /shipments/{id}`)**: `mode: "me2"` (Mercado Envios 2/clássico — ver seção 5),
+`status: "cancelled"` (mesmo pedido), `logistic_type: "drop_off"`, `tracking_method: "Sedex"`. Full
+e Flex (as outras duas modalidades da seção 5) ainda não foram vistas numa resposta real.
 
 ## 5. Envios (Mercado Envios / Full / Flex)
 
