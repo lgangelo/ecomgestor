@@ -231,14 +231,15 @@ venda, usar `order_items[].sale_fee`, não `payments[].marketplace_fee`.
   `tags[]` (valores reais vistos: `"pack_order"`, `"not_delivered"`, `"not_paid"` — provavelmente
   cumulativos/informativos, não um enum fechado de status) e `static_tags[]` (só `"pack_order"`
   visto, aparenta ser um subconjunto de `tags` que não muda com o tempo).
-- `order_items[].item.seller_sku` está presente, mas **NÃO bate com o SKU interno** que enviamos
-  como atributo `SELLER_SKU` na criação do item — o valor visto (`"MLB6717678206_201389264747"`)
-  tem o formato `{item_id}_{variation_id}`, sugerindo que o Mercado Livre pode estar
-  sobrescrevendo esse campo especificamente no modelo "User Products"/`family_name` (onde cada cor
-  é um item `POST /items` separado). **Antes de usar este campo pra casar pedido↔variação interna,
-  confirmar contra o `SELLER_SKU` real de um produto nosso** — por ora, a estratégia mais segura é
-  casar pelo nosso `ChannelProductMapping` (que já guarda `externalProductId`/`externalSku` por
-  variação), não por este campo.
+- `order_items[].item.seller_sku` está presente. No único pedido visto até agora o valor
+  (`"MLB6717678206_201389264747"`, formato `{item_id}_{variation_id}`) não batia com o SKU interno
+  que enviamos como atributo `SELLER_SKU` — **mas isso é esperado**: confirmado pelo usuário que
+  esse pedido é anterior à publicação atual dos produtos (item antigo, de antes do `SELLER_SKU`
+  ser enviado na criação), não um sinal de que o Mercado Livre sobrescreve o campo. Mesmo assim,
+  a estratégia mais segura pra casar pedido↔variação interna continua sendo o nosso
+  `ChannelProductMapping` (que já guarda `externalProductId`/`externalSku` por variação), com
+  `seller_sku` como confirmação auxiliar quando bater — só reavaliar se um pedido de um produto
+  publicado com o `SELLER_SKU` atual também vier divergente.
 - `shipping: {id}` só traz o id — detalhe completo exige `GET /shipments/{id}` à parte (confirmado
   funcionando, ver abaixo).
 
