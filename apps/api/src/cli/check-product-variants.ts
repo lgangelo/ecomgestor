@@ -29,6 +29,7 @@ async function main() {
   for (const product of products) {
     console.log('======================================================');
     console.log(`Produto: ${product.name} (baseSku=${product.baseSku}, productId=${product.id})`);
+    console.log(`  Foto de capa (product.imageUrl): ${product.imageUrl ?? '—'}`);
     for (const variant of product.variants) {
       const mapping = await prisma.channelProductMapping.findFirst({
         where: { variantId: variant.id },
@@ -36,6 +37,7 @@ async function main() {
       });
       console.log(
         `  variante SKU=${variant.sku} color=${variant.color ?? '—'} size=${variant.size ?? '—'} variantId=${variant.id} onHand=${variant.inventory?.onHand ?? 0} reserved=${variant.inventory?.reserved ?? 0}` +
+          ` | foto própria (variant.imageUrl): ${variant.imageUrl ?? '—'}` +
           (mapping
             ? ` | vinculado a externalSku=${mapping.externalSku} externalProductId=${mapping.externalProductId ?? '—'} (${mapping.syncStatus})`
             : ' | SEM vínculo TikTok'),
