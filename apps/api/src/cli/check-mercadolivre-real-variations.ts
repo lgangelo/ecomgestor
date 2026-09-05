@@ -94,7 +94,12 @@ async function main() {
       condition: 'new' as const,
       listing_type_id: listingType.id,
       pictures: [{ source: imageUrl }],
-      attributes: [{ id: 'BRAND', value_id: brandValueId }],
+      // MODEL também é obrigatório nesta categoria (BRAND/MODEL, confirmado desde o início) —
+      // faltava aqui, causou um 400 real (item.attributes.missing_required) na tentativa anterior.
+      attributes: [
+        { id: 'BRAND', value_id: brandValueId },
+        { id: 'MODEL', value_name: 'TESTE-VAR' },
+      ],
     };
 
     if (!confirm) {
