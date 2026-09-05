@@ -24,6 +24,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { buildQueryString } from '@/lib/query-string';
 import { ProductFormDialog } from './product-form-dialog';
 import { ProductBulkDeleteDialog } from './product-bulk-delete-dialog';
+import { ProductPhotoLightbox } from './product-photo-lightbox';
 
 // Filtros e paginação persistem na URL (seção 57 da Fase 4).
 const DEFAULT_FILTERS = { page: 1, search: '', categoryId: '', status: '', hasStock: false };
@@ -32,6 +33,7 @@ export function ProductsView() {
   const [filters, setFilters] = useUrlFilters(DEFAULT_FILTERS);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [selectingAll, setSelectingAll] = React.useState(false);
+  const [lightboxProductId, setLightboxProductId] = React.useState<string | null>(null);
 
   // Campo de busca sempre responde na hora ao digitar (estado local); só o filtro de verdade
   // (URL + busca) atualiza com atraso — sem isso, CADA caractere disparava um `router.replace`
@@ -253,8 +255,18 @@ export function ProductsView() {
                   </TableCell>
                   <TableCell>
                     {product.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo, ou enviada por upload e servida pela nossa própria API
-                      <img src={resolveProductImageUrl(product.imageUrl)} alt="" className="h-14 w-14 rounded object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setLightboxProductId(product.id)}
+                        aria-label={`Ver fotos de ${product.name}`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo, ou enviada por upload e servida pela nossa própria API */}
+                        <img
+                          src={resolveProductImageUrl(product.imageUrl)}
+                          alt=""
+                          className="h-14 w-14 rounded object-cover transition-opacity hover:opacity-80"
+                        />
+                      </button>
                     ) : (
                       <div className="h-14 w-14 rounded bg-muted" />
                     )}
@@ -295,6 +307,12 @@ export function ProductsView() {
           onPageChange={(page) => setFilters({ page })}
         />
       )}
+
+      <ProductPhotoLightbox
+        productId={lightboxProductId}
+        open={lightboxProductId !== null}
+        onOpenChange={(open) => !open && setLightboxProductId(null)}
+      />
     </div>
   );
 }
