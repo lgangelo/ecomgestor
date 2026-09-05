@@ -54,6 +54,7 @@
     "check-mercadolivre-duplicate-publish": "npm run check-mercadolivre-duplicate-publish --workspace=@ecommerce-manager/api --",
     "check-mercadolivre-real-variations": "npm run check-mercadolivre-real-variations --workspace=@ecommerce-manager/api --",
     "cleanup-orphaned-product-images": "npm run cleanup-orphaned-product-images --workspace=@ecommerce-manager/api --",
+    "check-mercadolivre-invalid-mappings": "npm run check-mercadolivre-invalid-mappings --workspace=@ecommerce-manager/api --",
     "reset-mercadolivre-mappings": "npm run reset-mercadolivre-mappings --workspace=@ecommerce-manager/api --",
     "check-tiktok-product-detail-raw": "npm run check-tiktok-product-detail-raw --workspace=@ecommerce-manager/api --",
     "check-tiktok-missing-variant-photos": "npm run check-tiktok-missing-variant-photos --workspace=@ecommerce-manager/api --"

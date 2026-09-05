@@ -173,11 +173,18 @@ reais corrigidos um a um. Isso substitui as suposições da pesquisa original ab
     não existe combinação que produza um único anúncio com seletor de cor visível pro comprador
     nesta conta. O modelo atual do serviço automático (um anúncio por cor, ligados só por
     `family_name`, sem seletor visível — cada cor aparece como produto separado na busca/lista do
-    Mercado Livre) é o único caminho possível via API, não uma limitação do nosso código. Os
-    produtos antigos/inativos do catálogo com várias cores compartilhando um único item id
-    (K9281, K9256, Q9605, K9239, DR678, 0256, R057, SD907) são sobras de antes desta automação
-    existir — provavelmente criados manualmente pelo painel do vendedor antes da conta ser
-    migrada pro modelo "User Products", não reproduzíveis via API hoje.
+    Mercado Livre) é o único caminho possível via API, não uma limitação do nosso código.
+    **CORREÇÃO (a explicação anterior aqui estava errada)**: os produtos do catálogo com várias
+    cores compartilhando um único item id (K9281, K9256, Q9605, K9239, DR678, 0256, R057, SD907)
+    NÃO são sobras de variações reais do Mercado Livre — são vínculos do **TikTok Shop**
+    (`ChannelProductMapping` de outro canal, mesma tabela). O script de diagnóstico usado pra
+    investigar isso (`check-mercadolivre-duplicate-publish.ts`) tinha um bug real: buscava vínculos
+    só por `variantId`, sem filtrar por canal, misturando TikTok e Mercado Livre na mesma lista —
+    corrigido depois (o script agora sempre mostra o canal de cada vínculo). Confirmado consultando
+    um desses itens direto na API real do Mercado Livre: `404 resource not found` — o id nem existe
+    lá. O formato do id (só números, sem prefixo `MLB`) bate com o formato real de produto do
+    TikTok Shop, que de fato suporta múltiplas variações num produto só — daí a aparência de
+    "variação agrupada" nesses vínculos.
 
 ### Dados fiscais (NCM/CSOSN/CEST) — mecanismo SEPARADO
 
