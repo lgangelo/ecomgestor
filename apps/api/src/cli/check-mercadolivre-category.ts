@@ -64,7 +64,14 @@ async function main() {
     for (const attr of attributes) {
       const required = attr.tags?.required ? 'OBRIGATÓRIO' : 'opcional';
       const valueOptions = attr.values?.length ? ` — opções: ${attr.values.map((v) => v.name).join(', ')}` : '';
+      // Imprime TODAS as tags (não só `required`) — CHILD_PK/PARENT_PK (se a categoria tiver)
+      // decidem quais atributos variam dentro de uma mesma família (family_name) no modelo User
+      // Products (ver developers.mercadolivre.com.br/pt_br/user-products): CHILD_PK pode variar
+      // entre itens da família (é o que hoje só testamos pra COLOR — nunca confirmamos se SIZE
+      // também é CHILD_PK nesta categoria).
+      const allTags = attr.tags ? JSON.stringify(attr.tags) : '{}';
       console.log(`[${required}] ${attr.id} (${attr.name}) — tipo: ${attr.value_type ?? '—'}${valueOptions}`);
+      console.log(`    tags: ${allTags}`);
     }
     console.log('----------------------------------------------------');
   } finally {
