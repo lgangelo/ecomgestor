@@ -27,7 +27,7 @@ import { ProductBulkDeleteDialog } from './product-bulk-delete-dialog';
 import { ProductPhotoLightbox } from './product-photo-lightbox';
 
 // Filtros e paginação persistem na URL (seção 57 da Fase 4).
-const DEFAULT_FILTERS = { page: 1, search: '', categoryId: '', status: '', hasStock: false };
+const DEFAULT_FILTERS = { page: 1, search: '', categoryId: '', status: '', hasStock: true };
 
 export function ProductsView() {
   const [filters, setFilters] = useUrlFilters(DEFAULT_FILTERS);
@@ -169,7 +169,10 @@ export function ProductsView() {
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <Checkbox
             checked={filters.hasStock}
-            onCheckedChange={(checked) => setFilters({ hasStock: checked === true || undefined, page: 1 })}
+            // Sempre um boolean explícito (nunca `undefined`) — com o padrão sendo `true` agora,
+            // desmarcar precisa gravar `false` de verdade na URL, senão cair pro padrão faz o
+            // checkbox "voltar sozinho" a marcado.
+            onCheckedChange={(checked) => setFilters({ hasStock: checked === true, page: 1 })}
           />
           Só com estoque
         </label>
