@@ -48,4 +48,31 @@ describe('TikTokConnector.updateInventory', () => {
       body: { skus: [{ id: 'SKU-2', inventory: [{ quantity: 5 }] }] },
     });
   });
+
+  it(
+    'ACHADO REAL: o envelope vem com code 0 (sucesso) mesmo quando data.errors reporta falha por SKU ' +
+      '(ex.: "The warehouse does not exist") — precisa ser conferido explicitamente, ou o estoque nunca ' +
+      'muda na TikTok e ninguém vê erro nenhum',
+    async () => {
+      const client = {
+        request: jest.fn().mockResolvedValue({
+          errors: [
+            {
+              code: 12052990,
+              message: 'Check failed',
+              detail: {
+                sku_id: 'SKU-1',
+                extra_errors: [{ warehouse_id: 'wh-1', code: 12052097, message: 'The warehouse does not exist' }],
+              },
+            },
+          ],
+        }),
+      } as unknown as jest.Mocked<TikTokClient>;
+      const connector = new TikTokConnector(client);
+
+      await expect(
+        connector.updateInventory('company-1', [{ externalProductId: 'prod-A', externalSku: 'SKU-1', available: 3 }]),
+      ).rejects.toThrow(/The warehouse does not exist/);
+    },
+  );
 });

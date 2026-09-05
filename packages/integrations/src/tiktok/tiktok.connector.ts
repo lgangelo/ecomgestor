@@ -17,6 +17,7 @@ import {
   TransactionSyncParams,
 } from '../index';
 import { TikTokClient } from './tiktok.client';
+import { TikTokApiError } from './tiktok.errors';
 import { TIKTOK_PATHS } from './tiktok.types';
 import {
   extractMainImageUrl,
@@ -54,6 +55,20 @@ interface RawPage {
 /** Limite de segurança pra `getInventory` paginar sozinho (ver comentário no método) — 50
  * páginas cobre milhares de SKUs mapeadas, bem além do que uma loja real teria hoje. */
 const MAX_INVENTORY_PAGES = 50;
+
+/** Formato real de erro por SKU de "Update Inventory" — confirmado contra o exemplo oficial da
+ * doc (partner.tiktokshop.com/docv2/page/update-inventory-202309): `code: 0` no envelope mesmo
+ * com isto preenchido, então precisa ser conferido explicitamente (ver `updateInventory`). */
+interface UpdateInventoryResponseData {
+  errors?: Array<{
+    code: number;
+    message: string;
+    detail?: {
+      sku_id?: string;
+      extra_errors?: Array<{ warehouse_id?: string; code: number; message: string }>;
+    };
+  }>;
+}
 
 // Debug temporário: loga só a primeira transação real vista no processo, para confirmar os
 // campos de tipo (`type`/`transaction_type`) e referência ao pedido (`order_id`) sem inundar o
@@ -222,7 +237,14 @@ export class TikTokConnector implements MarketplaceConnector {
 
   /** "Update Inventory" exige um `product_id` só por chamada (é parte do path, não do corpo) —
    * agrupa as atualizações por produto e faz uma chamada por grupo, mesmo que hoje o chamador
-   * real (`TikTokInventorySyncService.push`) sempre mande uma única atualização por vez. */
+   * real (`TikTokInventorySyncService.push`) sempre mande uma única atualização por vez.
+   *
+   * ACHADO REAL: o exemplo oficial de resposta desse endpoint mostra `code: 0` (sucesso) no
+   * envelope geral MESMO quando um SKU específico falha — o erro real fica só dentro de
+   * `data.errors[]` (ex.: `{code: 12052097, message: "The warehouse does not exist"}`). Como
+   * `TikTokClient.request` só olha o `code` do envelope, uma falha por SKU passava batendo como
+   * sucesso — o estoque nunca chegava a mudar na TikTok e ninguém via erro nenhum. Por isso este
+   * método confere `data.errors` explicitamente e lança um erro real se vier algo lá. */
   async updateInventory(companyId: string, updates: InventoryUpdate[]): Promise<void> {
     void companyId;
     const byProduct = new Map<string, InventoryUpdate[]>();
@@ -233,9 +255,18 @@ export class TikTokConnector implements MarketplaceConnector {
     }
 
     for (const [productId, group] of byProduct) {
-      await this.client.request('POST', TIKTOK_PATHS.inventoryUpdate(productId), {
+      const data = await this.client.request<UpdateInventoryResponseData>('POST', TIKTOK_PATHS.inventoryUpdate(productId), {
         body: { skus: group.map((u) => ({ id: u.externalSku, inventory: [{ quantity: u.available }] })) },
       });
+      if (data?.errors?.length) {
+        const message = data.errors
+          .map((e) => {
+            const extra = e.detail?.extra_errors?.map((x) => x.message).join('; ');
+            return `SKU ${e.detail?.sku_id ?? '?'}: ${e.message}${extra ? ` (${extra})` : ''}`;
+          })
+          .join(' | ');
+        throw new TikTokApiError(message, 'VALIDATION');
+      }
     }
   }
 
