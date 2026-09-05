@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Package, Plus, Search } from 'lucide-react';
+import { ImageOff, Package, Plus, Search } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
 import { TableSkeleton } from '@/components/shared/table-skeleton';
@@ -271,7 +271,14 @@ export function ProductsView() {
                         />
                       </button>
                     ) : (
-                      <div className="h-14 w-14 rounded bg-muted" />
+                      // ACHADO REAL: um bloco liso `bg-muted` fica quase invisível no tema escuro
+                      // (muted a 17% de luminosidade contra o fundo da linha a 11% — quase sem
+                      // contraste, sobretudo com luz ambiente forte no celular) — parecia que a
+                      // coluna de foto tinha sumido. Borda + ícone deixam claro que é "sem foto",
+                      // nunca uma foto que falhou silenciosamente ao carregar.
+                      <div className="flex h-14 w-14 items-center justify-center rounded border border-border bg-muted">
+                        <ImageOff className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                      </div>
                     )}
                   </TableCell>
                   <TableCell className="max-w-xs cursor-pointer">
