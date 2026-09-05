@@ -128,12 +128,42 @@ reais corrigidos um a um. Isso substitui as suposições da pesquisa original ab
   via API? falta de algum dado opcional relevante?). Precisa checar no painel do vendedor o motivo
   exibido e, se for só uma questão de ativação manual, confirmar se existe uma chamada
   (`PUT /items/{id}` com `status: "active"`) pra automatizar isso depois.
-- **Variações de verdade** (múltiplos SKUs/cores sob o mesmo anúncio, preço por variação): o
-  teste real só cobriu um item de UMA variação — o payload completo de múltiplas variações sob o
-  modelo `family_name`/User Products **continua não confirmado**, precisa de outro teste real
-  dedicado antes de qualquer produto com mais de uma cor/tamanho ser publicado como variações de
-  um mesmo anúncio (hoje cada variação viraria um anúncio "family" separado, sem ligação entre si
-  visível pro comprador).
+- **ACHADO REAL — `family_name` não agrupa nada pro comprador nesta conta**: confirmado direto na
+  página pública de um anúncio real publicado pela automação (2 cores do mesmo produto, mesmo
+  `family_name`) — a página NÃO mostra seletor de cor nenhum, só um texto solto "Aparência: X", sem
+  link nenhum pra variante irmã. Isso bate com a suspeita já registrada nesta doc: a conta
+  provavelmente não está migrada pro modelo "User Products" (sem tags `CHILD_PK`/`PARENT_PK` na
+  ficha de atributos — ver acima), e pra contas não migradas `family_name` parece ser só metadado
+  solto, sem nenhum efeito real de agrupamento.
+- **Mecanismo clássico `variations[]` — CONFIRMADO contra a doc oficial** (developers.mercadolivre.com.br/
+  pt_br/como-comecar/variacoes, lida direto via browser em 2026-09-05), esse sim junta de verdade
+  várias cores/tamanhos sob UM ÚNICO anúncio, visível pro comprador com seletor de variação:
+  - **NUNCA usar `family_name` junto** — o item usa `title` normal (o modelo clássico, fora do
+    "User Products"). Payload do item: `title`, `category_id`, `price` (base), `currency_id`,
+    `available_quantity`, `buying_mode`, `condition`, `listing_type_id`, `pictures` (capa comum, já
+    confirmada via `source: url`), `attributes` (só os de nível de item — BRAND/MODEL, nunca
+    SELLER_SKU aqui), e um novo campo `variations: [...]`.
+  - **Cada variação exige**: `attribute_combinations` (o(s) atributo(s) com tag `allow_variations`,
+    ex. `{id: "COLOR", value_id, value_name}` — mesma combinação nunca repete entre variações),
+    `price` (a doc avisa que deveria ser o MESMO valor em todas — a VIP só mostra o maior preço e é
+    esse que é cobrado, então preço diferente por cor não funciona como esperado), `available_quantity`
+    (estoque real por SKU), `picture_ids` (ver abaixo). Opcional: `attributes` (atributos com tag
+    `variation_attribute`, ex. EAN) e `seller_custom_field` (referência interna livre, SEM relação
+    com o atributo `SELLER_SKU` — o SKU de catálogo (`SELLER_SKU`) vai dentro do `attributes` de
+    CADA variação, não no nível do item).
+  - **Fotos por variação**: `picture_ids` referencia ids de fotos JÁ EXISTENTES no item (as mesmas
+    do `pictures` de nível de item, ou outras enviadas depois) — não aceita `source: url` direto
+    dentro da variação. Fluxo viável com o que já está confirmado: criar o item com foto(s) via
+    `source: url` normalmente (`POST /items`, sem variations ainda), ler os `id`s reais atribuídos
+    em `pictures[].id` na resposta, e SÓ DEPOIS enviar um `PUT /items/{id}` incluindo `variations`
+    referenciando esses ids — ainda não testado contra uma chamada real, é o próximo passo.
+  - Erro documentado se faltar atributo obrigatório em qualquer variação/item:
+    `400 item.attributes.missing_required`.
+  - **Ainda não confirmado nesta conta**: se o mecanismo `variations[]` (sem `family_name`)
+    realmente funciona aqui — só temos evidência indireta (produtos antigos e inativos no catálogo
+    com várias cores compartilhando o mesmo item id, prováveis sobras de testes anteriores a esta
+    automação). Precisa de um teste real dedicado, contra 1 item novo e isolado, antes de qualquer
+    mudança no serviço automático.
 
 ### Dados fiscais (NCM/CSOSN/CEST) — mecanismo SEPARADO
 
