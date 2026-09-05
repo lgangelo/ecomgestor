@@ -35,6 +35,7 @@
     "check-mercadolivre-category": "node dist/cli/check-mercadolivre-category.js",
     "publish-mercadolivre-item": "node dist/cli/publish-mercadolivre-item.js",
     "add-mercadolivre-variations": "node dist/cli/add-mercadolivre-variations.js",
+    "check-mercadolivre-orders": "node dist/cli/check-mercadolivre-orders.js",
     "check-tiktok-product-detail-raw": "node dist/cli/check-tiktok-product-detail-raw.js",
     "check-tiktok-missing-variant-photos": "node dist/cli/check-tiktok-missing-variant-photos.js",
     "lint": "eslint \"src/**/*.ts\"",

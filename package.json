@@ -43,6 +43,7 @@
     "check-mercadolivre-category": "npm run check-mercadolivre-category --workspace=@ecommerce-manager/api",
     "publish-mercadolivre-item": "npm run publish-mercadolivre-item --workspace=@ecommerce-manager/api",
     "add-mercadolivre-variations": "npm run add-mercadolivre-variations --workspace=@ecommerce-manager/api",
+    "check-mercadolivre-orders": "npm run check-mercadolivre-orders --workspace=@ecommerce-manager/api",
     "check-tiktok-product-detail-raw": "npm run check-tiktok-product-detail-raw --workspace=@ecommerce-manager/api",
     "check-tiktok-missing-variant-photos": "npm run check-tiktok-missing-variant-photos --workspace=@ecommerce-manager/api"
   },

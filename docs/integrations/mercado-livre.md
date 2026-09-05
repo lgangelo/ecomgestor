@@ -194,7 +194,50 @@ automático sem confirmar o comportamento real primeiro).
 
 ## 4. Orders API
 
-**Confirmado:**
+**Atualização 2026-09-04 — tentativa real de chamada, BLOQUEADA pelo lado do Mercado Livre (não
+resolvida nesta sessão)**
+
+Foi escrito um script de diagnóstico (`apps/api/src/cli/check-mercadolivre-orders.ts`, registrado
+como `npm run check-mercadolivre-orders`) que usa o `MercadoLivreConnectorFactory` já conectado em
+produção pra chamar `GET /orders/search` (com `seller=<user_id da conta conectada>`) e depois
+`GET /orders/{id}`/`GET /shipments/{id}` pra pedidos reais encontrados — só leitura, nunca
+POST/PUT/DELETE. Ao tentar rodar esse script a partir do ambiente (sandbox) usado nesta sessão de
+trabalho, **toda chamada a endpoints autenticados voltou HTTP 403**:
+
+```json
+{"blocked_by":"PolicyAgent","code":"PA_UNAUTHORIZED_RESULT_FROM_POLICIES","status":403,"message":"At least one policy returned UNAUTHORIZED."}
+```
+
+Isso aconteceu em `GET /orders/search`, `GET /orders/{id}`, `GET /shipments/{id}`, `GET
+/items/{id}`, `GET /sites/{site}/listing_types` e até `GET /users/me` — **mesmo trocando o
+`Authorization: Bearer` real por um valor inventado**, o erro foi idêntico, o que prova que o
+bloqueio acontece **antes** de o Mercado Livre sequer validar o token: é uma política de
+IP/rede do lado do Mercado Livre (resposta vem do próprio edge/CloudFront deles, com o header
+`x-policy-agent-block-code`), não um problema de credencial expirada ou mal configurada. Como
+controle, `GET /categories/{id}` (endpoint público, sem necessidade de token) respondeu **200**
+normalmente a partir da mesma máquina — ou seja, não é um bloqueio geral do domínio
+`api.mercadolibre.com`, só dos endpoints que normalmente exigem sessão/token (o mesmo padrão de
+bloqueio anti-bot já registrado na seção "Limitação importante e honesta" no topo deste documento,
+quando o fetch da própria doc oficial foi recusado com 403).
+
+Isso é consistente com uma sessão anterior ter conseguido `POST /items` de verdade em produção
+(seção 2) — aquele teste rodou a partir de outra máquina/rede (provavelmente a VM de produção ou o
+ambiente normal de desenvolvimento), não deste sandbox específico usado para escrever o script de
+pedidos.
+
+**Consequência prática**: o script `check-mercadolivre-orders.ts` está pronto, compila, e segue o
+mesmo padrão dos outros scripts de diagnóstico (`check-mercadolivre-category.ts` etc.) — mas
+**precisa ser executado a partir de um ambiente sem esse bloqueio** (a VM de produção é a aposta
+mais forte, já que é de lá que a integração está de fato conectada e fazendo chamadas de verdade)
+antes que qualquer resultado seu possa ser usado pra confirmar o formato real da API. **Nada
+abaixo nesta seção foi confirmado por uma chamada real que de fato recebeu uma resposta 2xx da
+Orders API** — os métodos `searchOrders`/`getOrder`/`getShipment` foram adicionados ao
+`MercadoLivreClient` (`packages/integrations/src/mercadolivre/mercadolivre.client.ts`) já
+preparados para uso, mas devolvem `Record<string, unknown>` de propósito (nenhum campo foi
+tipado) — tipar isso é o próximo passo, só depois de uma execução bem-sucedida do script contra um
+ambiente destravado.
+
+**Confirmado (pesquisa original, ainda não confirmado por chamada real):**
 
 - `GET /orders/{order_id}` — detalhe de um pedido.
 - `GET /orders/search` (parâmetros de busca, provavelmente por `seller`/`buyer`/janela de tempo —
@@ -223,6 +266,10 @@ pesquisa.** Não incluo aqui uma lista "provável" de status de pedido porque, d
 hipotética explicitamente marcada como tal), nenhuma fonte consultada aqui trouxe uma lista
 concreta o suficiente pra isso — só uma chamada real a `/orders/search` com pedidos em vários
 estados (ou acesso à doc oficial por outro caminho) resolve isso.
+
+**Ainda não resolvido em 2026-09-04**: a tentativa real de chamar `/orders/search` (ver bloco
+acima) foi bloqueada por uma política de rede do Mercado Livre antes de chegar a qualquer resposta
+com dados de pedido — o enum de `order.status` segue **sem nenhuma confirmação de primeira mão**.
 
 ## 5. Envios (Mercado Envios / Full / Flex)
 
