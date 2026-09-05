@@ -153,11 +153,16 @@ export class TikTokStockOutboxService {
 
     return comparison.map((row) => {
       const outboxEntry = latestByVariant.get(row.variantId);
+      // ACHADO REAL corrigido: a ordem antiga checava o status do outbox ANTES da comparação ao
+      // vivo — um push manual bem-sucedido (que nunca escreve no outbox, ver
+      // `TikTokInventorySyncService.push`) deixava a linha presa em "Erro" pra sempre, mesmo com
+      // o estoque já batendo de verdade na TikTok. A comparação ao vivo é a fonte de verdade:
+      // se bate agora, é OK, não importa o que uma tentativa automática antiga registrou.
       let status: StockSyncStatus;
-      if (outboxEntry?.status === 'FAILED') status = 'ERRO';
+      if (!row.divergent) status = 'OK';
       else if (outboxEntry?.status === 'PENDING') status = 'PENDENTE';
-      else if (row.divergent) status = 'DIVERGENTE';
-      else status = 'OK';
+      else if (outboxEntry?.status === 'FAILED') status = 'ERRO';
+      else status = 'DIVERGENTE';
 
       return { ...row, status, lastSyncAt: outboxEntry?.processedAt ?? null, lastError: outboxEntry?.lastError ?? null };
     });

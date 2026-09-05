@@ -261,3 +261,62 @@ describe('TikTokStockOutboxService.processPending (Fase 4, seção 52/56)', () =
     expect(failedEntry.lastError).toContain('conector indisponível');
   });
 });
+
+describe('TikTokStockOutboxService.getStatusReport', () => {
+  function makeReportPrisma(outboxEntries: Array<{ variantId: string; status: string; lastError: string | null; createdAt: Date }>) {
+    return {
+      client: {
+        stockSyncOutboxEntry: {
+          findMany: async () =>
+            [...outboxEntries].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
+        },
+      },
+    } as unknown as PrismaService;
+  }
+
+  it(
+    'ACHADO REAL corrigido: um push manual bem-sucedido (nunca escreve no outbox) não fica mais preso em ' +
+      '"Erro" pra sempre — a comparação ao vivo (já batendo) manda mais que uma tentativa FAILED antiga',
+    async () => {
+      const comparison: InventoryComparisonRow[] = [
+        {
+          variantId: 'v-1',
+          sku: 'SKU-1',
+          externalSku: 'ext-1',
+          central: 0,
+          tiktok: 0,
+          divergent: false,
+        },
+      ];
+      const prisma = makeReportPrisma([
+        { variantId: 'v-1', status: 'FAILED', lastError: 'Invalid path', createdAt: new Date('2026-09-05T16:10:00Z') },
+      ]);
+      const service = new TikTokStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
+
+      const [row] = await service.getStatusReport('company-1');
+
+      expect(row.status).toBe('OK');
+    },
+  );
+
+  it('mantém "Erro" quando a comparação ao vivo ainda diverge e a última tentativa falhou', async () => {
+    const comparison: InventoryComparisonRow[] = [
+      {
+        variantId: 'v-1',
+        sku: 'SKU-1',
+        externalSku: 'ext-1',
+        central: 0,
+        tiktok: 1,
+        divergent: true,
+      },
+    ];
+    const prisma = makeReportPrisma([
+      { variantId: 'v-1', status: 'FAILED', lastError: 'Invalid path', createdAt: new Date('2026-09-05T16:10:00Z') },
+    ]);
+    const service = new TikTokStockOutboxService(prisma, makeFakeCredentials('channel-1'), makeFakeInventorySync(comparison));
+
+    const [row] = await service.getStatusReport('company-1');
+
+    expect(row.status).toBe('ERRO');
+  });
+});
