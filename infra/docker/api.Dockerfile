@@ -6,8 +6,10 @@ WORKDIR /app
 RUN apt-get update -y && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 # node:20-bookworm-slim vem com um npm antigo (10.8.2) que emite aviso de versão major disponível
 # em todo `npm run`/`docker compose run` — sem risco de segurança real, mas silenciamos fixando a
-# versão em vez de deixar o aviso poluir os logs.
-RUN npm install -g npm@12.0.2
+# versão em vez de deixar o aviso poluir os logs. CONFIRMADO em build real: npm@12 exige Node
+# ^22.22.2/^24.15.0/>=26 (a imagem é Node 20) e falha com EBADENGINE — por isso ficamos na última
+# 11.x, que aceita Node ^20.17.0 (a imagem tem 20.20.2).
+RUN npm install -g npm@11.19.1
 
 FROM base AS deps
 COPY package.json package-lock.json* ./
