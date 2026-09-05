@@ -27,7 +27,7 @@ interface Row extends PickedVariant {
   unitCost: string;
 }
 
-export function StockEntryFormDialog({ trigger }: { trigger: React.ReactNode }) {
+export function StockEntryFormDialog({ trigger }: { trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const { data: suppliers } = useSuppliers();
   const createEntry = useCreateStockEntry();
@@ -82,7 +82,7 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactNode }) 
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Nova entrada de estoque</DialogTitle>

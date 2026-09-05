@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCategories, useCreateCategory } from '@/hooks/use-categories';
 
-export function CategoryFormDialog({ trigger }: { trigger: React.ReactNode }) {
+export function CategoryFormDialog({ trigger }: { trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const { data: categories } = useCategories();
   const createCategory = useCreateCategory();
@@ -32,7 +32,7 @@ export function CategoryFormDialog({ trigger }: { trigger: React.ReactNode }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nova categoria</DialogTitle>

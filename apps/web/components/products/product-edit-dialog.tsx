@@ -30,7 +30,7 @@ import {
 import { useGenerateProductCopy } from '@/hooks/use-ai-copy';
 import { ImageUploadField } from './image-upload-field';
 
-export function ProductEditDialog({ product, trigger }: { product: ProductDetail; trigger: React.ReactNode }) {
+export function ProductEditDialog({ product, trigger }: { product: ProductDetail; trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const { data: categories } = useCategories();
   const updateProduct = useUpdateProduct(product.id);
@@ -129,7 +129,7 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Editar produto</DialogTitle>

@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCreateRefund } from '@/hooks/use-returns';
 
-export function RegisterRefundDialog({ returnId, trigger }: { returnId: string; trigger: React.ReactNode }) {
+export function RegisterRefundDialog({ returnId, trigger }: { returnId: string; trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const createRefund = useCreateRefund(returnId);
 
@@ -33,7 +33,7 @@ export function RegisterRefundDialog({ returnId, trigger }: { returnId: string; 
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Registrar reembolso</DialogTitle>

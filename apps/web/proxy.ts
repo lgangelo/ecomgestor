@@ -12,7 +12,7 @@ const API_BASE_URL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API
  * sessão em silêncio e repassa os novos cookies antes da página renderizar — o usuário nunca vê a
  * tela de login por causa só de ter ficado inativo por menos que o refresh token permite.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const hasAccessToken = request.cookies.has(AUTH_COOKIE_NAME);
   const hasRefreshToken = request.cookies.has(REFRESH_COOKIE_NAME);
 

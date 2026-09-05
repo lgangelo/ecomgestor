@@ -36,7 +36,7 @@ interface FileResult {
  * por um. Cada arquivo é enviado sequencialmente (nunca em paralelo — evita sobrecarregar o
  * upload e mantém a ordem dos resultados previsível); associação automática funciona igual ao
  * envio único, já que usa a mesma chamada por baixo. */
-export function FiscalBulkUploadDialog({ trigger }: { trigger: React.ReactNode }) {
+export function FiscalBulkUploadDialog({ trigger }: { trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const [files, setFiles] = React.useState<File[]>([]);
   const [type, setType] = React.useState('SALE_INVOICE');
@@ -85,7 +85,7 @@ export function FiscalBulkUploadDialog({ trigger }: { trigger: React.ReactNode }
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Enviar vários XMLs de uma vez</DialogTitle>

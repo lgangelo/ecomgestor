@@ -18,7 +18,7 @@ import { toDateInputValue } from '@/lib/format';
 import { useCreateExpense, useExpenseCategories } from '@/hooks/use-finance';
 import { ExpenseCategoryFormDialog } from './expense-category-form-dialog';
 
-export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
+export function ExpenseFormDialog({ trigger }: { trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const { data: categories } = useExpenseCategories();
   const createExpense = useCreateExpense();
@@ -46,7 +46,7 @@ export function ExpenseFormDialog({ trigger }: { trigger: React.ReactNode }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nova despesa</DialogTitle>

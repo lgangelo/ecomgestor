@@ -18,7 +18,7 @@ import { toDateInputValue } from '@/lib/format';
 import { useExpenseCategories, useUpdateExpense, type ExpenseListItem } from '@/hooks/use-finance';
 import { ExpenseCategoryFormDialog } from './expense-category-form-dialog';
 
-export function ExpenseEditDialog({ expense, trigger }: { expense: ExpenseListItem; trigger: React.ReactNode }) {
+export function ExpenseEditDialog({ expense, trigger }: { expense: ExpenseListItem; trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const { data: categories } = useExpenseCategories();
   const updateExpense = useUpdateExpense(expense.id);
@@ -57,7 +57,7 @@ export function ExpenseEditDialog({ expense, trigger }: { expense: ExpenseListIt
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Editar despesa</DialogTitle>

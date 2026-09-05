@@ -3,10 +3,10 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import type { AuditLogItem } from '@/hooks/use-audit';
 
-export function AuditLogDetailDialog({ log, trigger }: { log: AuditLogItem; trigger: React.ReactNode }) {
+export function AuditLogDetailDialog({ log, trigger }: { log: AuditLogItem; trigger: React.ReactElement }) {
   return (
     <Dialog>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>

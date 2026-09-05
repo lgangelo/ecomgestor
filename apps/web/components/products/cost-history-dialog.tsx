@@ -27,7 +27,7 @@ export function CostHistoryDialog({
   productId: string;
   variantId: string;
   sku: string;
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
 }) {
   const [open, setOpen] = React.useState(false);
   const { data: history } = useCostHistory(open ? variantId : undefined);
@@ -47,7 +47,7 @@ export function CostHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Histórico de custos — {sku}</DialogTitle>

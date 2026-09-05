@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { useStartTikTokImport } from '@/hooks/use-tiktok';
 
-export function TikTokImportWizardDialog({ trigger }: { trigger: React.ReactNode }) {
+export function TikTokImportWizardDialog({ trigger }: { trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const [importProducts, setImportProducts] = React.useState(true);
   const [importOrders, setImportOrders] = React.useState(true);
@@ -25,7 +25,7 @@ export function TikTokImportWizardDialog({ trigger }: { trigger: React.ReactNode
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Conta TikTok conectada</DialogTitle>

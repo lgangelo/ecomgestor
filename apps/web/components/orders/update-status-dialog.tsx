@@ -18,7 +18,7 @@ import { useUpdateOrderStatus } from '@/hooks/use-orders';
 
 const STATUSES = Object.keys(ORDER_STATUS_PRESENTATION);
 
-export function UpdateStatusDialog({ orderId, trigger }: { orderId: string; trigger: React.ReactNode }) {
+export function UpdateStatusDialog({ orderId, trigger }: { orderId: string; trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const [status, setStatus] = React.useState('');
   const [note, setNote] = React.useState('');
@@ -33,7 +33,7 @@ export function UpdateStatusDialog({ orderId, trigger }: { orderId: string; trig
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Atualizar status do pedido</DialogTitle>

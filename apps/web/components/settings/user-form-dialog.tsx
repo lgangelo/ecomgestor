@@ -16,7 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useRoles } from '@/hooks/use-roles';
 import { useCreateUser } from '@/hooks/use-users';
 
-export function UserFormDialog({ trigger }: { trigger: React.ReactNode }) {
+export function UserFormDialog({ trigger }: { trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const { data: roles } = useRoles();
   const createUser = useCreateUser();
@@ -46,7 +46,7 @@ export function UserFormDialog({ trigger }: { trigger: React.ReactNode }) {
         if (!v) setGeneratedPassword(null);
       }}
     >
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Novo usuário</DialogTitle>

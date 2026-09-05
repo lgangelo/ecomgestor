@@ -19,7 +19,7 @@ export function VariantPickerDialog({
   trigger,
   onPick,
 }: {
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
   onPick: (variant: PickedVariant) => void;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -39,7 +39,7 @@ export function VariantPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Selecionar produto e variação</DialogTitle>

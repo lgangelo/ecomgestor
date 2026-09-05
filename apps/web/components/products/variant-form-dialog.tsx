@@ -17,7 +17,7 @@ import { apiFetch } from '@/lib/api-client';
 import { useCreateVariant } from '@/hooks/use-products';
 import { ImageUploadField } from './image-upload-field';
 
-export function VariantFormDialog({ productId, trigger }: { productId: string; trigger: React.ReactNode }) {
+export function VariantFormDialog({ productId, trigger }: { productId: string; trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const createVariant = useCreateVariant(productId);
   const queryClient = useQueryClient();
@@ -55,7 +55,7 @@ export function VariantFormDialog({ productId, trigger }: { productId: string; t
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nova variação (SKU)</DialogTitle>

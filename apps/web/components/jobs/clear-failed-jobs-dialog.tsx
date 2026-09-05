@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useClearFailedJobs } from '@/hooks/use-jobs';
 
-export function ClearFailedJobsDialog({ trigger }: { trigger: React.ReactNode }) {
+export function ClearFailedJobsDialog({ trigger }: { trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const clearFailedJobs = useClearFailedJobs();
 
@@ -23,7 +23,7 @@ export function ClearFailedJobsDialog({ trigger }: { trigger: React.ReactNode })
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Limpar jobs com falha</DialogTitle>

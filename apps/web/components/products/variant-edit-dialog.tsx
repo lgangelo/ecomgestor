@@ -41,7 +41,7 @@ export function VariantEditDialog({
   product: ProductDetail;
   variant: ProductVariantDetail;
   syncBaseSku?: boolean;
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
 }) {
   const [open, setOpen] = React.useState(false);
   const updateVariant = useUpdateVariant(productId, variant.id);
@@ -101,7 +101,7 @@ export function VariantEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Editar variação (SKU)</DialogTitle>

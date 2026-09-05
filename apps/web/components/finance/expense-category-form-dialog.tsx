@@ -18,7 +18,7 @@ export function ExpenseCategoryFormDialog({
   trigger,
   onCreated,
 }: {
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
   onCreated?: (category: ExpenseCategory) => void;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -36,7 +36,7 @@ export function ExpenseCategoryFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nova categoria de despesa</DialogTitle>

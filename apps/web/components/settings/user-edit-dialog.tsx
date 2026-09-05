@@ -16,7 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useRoles } from '@/hooks/use-roles';
 import { useUpdateUser, type UserListItem } from '@/hooks/use-users';
 
-export function UserEditDialog({ user, trigger }: { user: UserListItem; trigger: React.ReactNode }) {
+export function UserEditDialog({ user, trigger }: { user: UserListItem; trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const { data: roles } = useRoles();
   const updateUser = useUpdateUser(user.id);
@@ -42,7 +42,7 @@ export function UserEditDialog({ user, trigger }: { user: UserListItem; trigger:
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Editar usuário</DialogTitle>

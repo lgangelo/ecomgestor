@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useReopenClosing } from '@/hooks/use-finance';
 
-export function ReopenClosingDialog({ closingId, trigger }: { closingId: string; trigger: React.ReactNode }) {
+export function ReopenClosingDialog({ closingId, trigger }: { closingId: string; trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const [reason, setReason] = React.useState('');
   const reopen = useReopenClosing();
@@ -29,7 +29,7 @@ export function ReopenClosingDialog({ closingId, trigger }: { closingId: string;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild onClick={(e) => e.stopPropagation()}>
-        {trigger}
+        {trigger as any}
       </DialogTrigger>
       <DialogContent onClick={(e) => e.stopPropagation()}>
         <DialogHeader>

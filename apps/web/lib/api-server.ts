@@ -13,7 +13,7 @@ const API_BASE_URL = process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API
  * acesso automático aos cookies do navegador.
  */
 export async function apiServerFetch<T>(path: string, init: RequestInit = {}): Promise<T | null> {
-  const cookieHeader = cookies()
+  const cookieHeader = (await cookies())
     .getAll()
     .map((c) => `${c.name}=${c.value}`)
     .join('; ');

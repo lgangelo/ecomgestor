@@ -65,11 +65,11 @@ export function ExpenseCategoryManageDialog({ trigger }: { trigger?: React.React
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        {trigger ?? (
+        {(trigger ?? (
           <Button type="button" variant="outline" size="icon" aria-label="Gerenciar categorias">
             <Settings className="h-4 w-4" />
           </Button>
-        )}
+        )) as any}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

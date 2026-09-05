@@ -116,7 +116,7 @@ export function AssociateFiscalDocumentDialog({
   trigger,
 }: {
   documentId: string;
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
 }) {
   const [open, setOpen] = React.useState(false);
   const associate = useAssociateFiscalDocument();
@@ -133,7 +133,7 @@ export function AssociateFiscalDocumentDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Associar documento fiscal</DialogTitle>

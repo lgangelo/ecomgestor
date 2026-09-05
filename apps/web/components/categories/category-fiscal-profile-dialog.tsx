@@ -54,7 +54,7 @@ export function CategoryFiscalProfileDialog({
 }: {
   categoryId: string;
   categoryName: string;
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
 }) {
   const [open, setOpen] = React.useState(false);
   const [platform, setPlatform] = React.useState('TIKTOK_SHOP');
@@ -98,7 +98,7 @@ export function CategoryFiscalProfileDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Dados fiscais — {categoryName}</DialogTitle>

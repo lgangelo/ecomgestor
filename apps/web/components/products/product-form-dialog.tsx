@@ -22,7 +22,7 @@ import { useCreateProduct } from '@/hooks/use-products';
 import { useGenerateProductCopy } from '@/hooks/use-ai-copy';
 import { ImageUploadField } from './image-upload-field';
 
-export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
+export function ProductFormDialog({ trigger }: { trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const { data: categories } = useCategories();
   const createProduct = useCreateProduct();
@@ -77,7 +77,7 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactNode }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Novo produto</DialogTitle>

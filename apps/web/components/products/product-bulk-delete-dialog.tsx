@@ -19,7 +19,7 @@ export function ProductBulkDeleteDialog({
   onDeleted,
 }: {
   ids: string[];
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
   onDeleted: () => void;
 }) {
   const [open, setOpen] = React.useState(false);
@@ -36,7 +36,7 @@ export function ProductBulkDeleteDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Excluir {ids.length} produto(s)</DialogTitle>

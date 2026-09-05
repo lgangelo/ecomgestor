@@ -21,7 +21,7 @@ export function ProductDeleteDialog({
 }: {
   productId: string;
   productName: string;
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
 }) {
   const [open, setOpen] = React.useState(false);
   const router = useRouter();
@@ -33,7 +33,7 @@ export function ProductDeleteDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Excluir produto</DialogTitle>

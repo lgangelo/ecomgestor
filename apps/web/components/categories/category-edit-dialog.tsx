@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCategories, useUpdateCategory, type Category } from '@/hooks/use-categories';
 
-export function CategoryEditDialog({ category, trigger }: { category: Category; trigger: React.ReactNode }) {
+export function CategoryEditDialog({ category, trigger }: { category: Category; trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const { data: categories } = useCategories();
   const updateCategory = useUpdateCategory(category.id);
@@ -42,7 +42,7 @@ export function CategoryEditDialog({ category, trigger }: { category: Category; 
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Editar categoria</DialogTitle>

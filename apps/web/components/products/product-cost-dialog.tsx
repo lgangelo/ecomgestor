@@ -23,7 +23,7 @@ export function ProductCostDialog({
 }: {
   productId: string;
   variantCount: number;
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
 }) {
   const [open, setOpen] = React.useState(false);
   const createCost = useCreateCostHistoryForProduct(productId);
@@ -43,7 +43,7 @@ export function ProductCostDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Definir custo do produto</DialogTitle>

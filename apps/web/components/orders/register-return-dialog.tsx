@@ -37,7 +37,7 @@ export function RegisterReturnDialog({
 }: {
   orderId: string;
   items: OrderItemDetail[];
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
 }) {
   const [open, setOpen] = React.useState(false);
   const [reason, setReason] = React.useState('');
@@ -75,7 +75,7 @@ export function RegisterReturnDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Registrar devolução</DialogTitle>

@@ -23,7 +23,7 @@ const TYPES = [
   { value: 'OTHER', label: 'Outro' },
 ];
 
-export function FiscalUploadDialog({ trigger }: { trigger: React.ReactNode }) {
+export function FiscalUploadDialog({ trigger }: { trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
   const [file, setFile] = React.useState<File | null>(null);
   const [type, setType] = React.useState('SALE_INVOICE');
@@ -41,7 +41,7 @@ export function FiscalUploadDialog({ trigger }: { trigger: React.ReactNode }) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      <DialogTrigger asChild>{trigger as any}</DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Enviar XML fiscal</DialogTitle>
