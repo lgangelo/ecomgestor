@@ -58,7 +58,7 @@ export function VariantFormDialog({
       barcode: form.barcode || undefined,
       color: form.color || undefined,
       size: form.size || undefined,
-      suggestedPrice: Number(form.suggestedPrice),
+      suggestedPrice: form.suggestedPrice ? Number(form.suggestedPrice) : undefined,
       minStock: Number(form.minStock),
     });
     if (imageFile) {
@@ -104,10 +104,11 @@ export function VariantFormDialog({
                 type="number"
                 step="0.01"
                 min="0"
-                required
+                placeholder="Definir depois"
                 value={form.suggestedPrice}
                 onChange={(e) => setForm((f) => ({ ...f, suggestedPrice: e.target.value }))}
               />
+              <p className="text-xs text-muted-foreground">Pode ficar em branco por enquanto — só é exigido na hora de ativar o produto.</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="minStock">Estoque mínimo</Label>

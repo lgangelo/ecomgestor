@@ -237,9 +237,29 @@ export class ProductsService {
     }
   }
 
+  /** Preço sugerido pode ficar em branco (0) enquanto o produto está sendo montado — pedido do
+   * usuário: só é exigido na hora de ATIVAR (produto ou variação), pra nunca deixar publicar nos
+   * canais de venda um item de graça por esquecimento. */
+  private async assertProductCanActivate(productId: string) {
+    const variants = await this.prisma.client.productVariant.findMany({
+      where: { productId },
+      select: { suggestedPrice: true },
+    });
+    if (!variants.some((v) => Number(v.suggestedPrice) > 0)) {
+      throw new BadRequestException(
+        'Não é possível ativar o produto sem preço sugerido definido em pelo menos uma variação.',
+      );
+    }
+  }
+
   async create(companyId: string, dto: CreateProductDto) {
     if (dto.categoryId) {
       await this.assertCategoryBelongsToCompany(dto.categoryId, companyId);
+    }
+    if (dto.status === ProductStatus.ACTIVE) {
+      throw new BadRequestException(
+        'Não é possível criar o produto já como Ativo — cadastre as variações com preço primeiro, depois ative.',
+      );
     }
 
     try {
@@ -274,6 +294,9 @@ export class ProductsService {
 
     if (dto.categoryId) {
       await this.assertCategoryBelongsToCompany(dto.categoryId, companyId);
+    }
+    if (dto.status === ProductStatus.ACTIVE && existing.status !== ProductStatus.ACTIVE) {
+      await this.assertProductCanActivate(id);
     }
 
     const baseSkuChanged = dto.baseSku !== undefined && dto.baseSku !== existing.baseSku;
@@ -408,13 +431,22 @@ export class ProductsService {
     ids: string[],
     companyId: string,
     status: ProductStatus,
-  ): Promise<{ updated: string[]; notFound: string[] }> {
+  ): Promise<{ updated: string[]; notFound: string[]; blockedNoPrice: string[] }> {
     const products = await this.prisma.client.product.findMany({
       where: { id: { in: ids }, companyId },
-      select: { id: true },
+      select: { id: true, variants: { select: { suggestedPrice: true } } },
     });
-    const updated = products.map((p) => p.id);
-    const notFound = ids.filter((id) => !updated.includes(id));
+    const found = products.map((p) => p.id);
+    const notFound = ids.filter((id) => !found.includes(id));
+
+    // Ativar em lote nunca deixa passar um produto sem nenhum preço (mesma regra de `update`) —
+    // mas, diferente de `update` (1 produto só), aqui os demais selecionados continuam sendo
+    // ativados normalmente; só o(s) sem preço ficam de fora, reportados separado.
+    const blockedNoPrice =
+      status === ProductStatus.ACTIVE
+        ? products.filter((p) => !p.variants.some((v) => Number(v.suggestedPrice) > 0)).map((p) => p.id)
+        : [];
+    const updated = found.filter((id) => !blockedNoPrice.includes(id));
 
     if (updated.length > 0) {
       await this.prisma.client.product.updateMany({
@@ -423,7 +455,7 @@ export class ProductsService {
       });
     }
 
-    return { updated, notFound };
+    return { updated, notFound, blockedNoPrice };
   }
 
   async createVariant(productId: string, companyId: string, dto: CreateVariantDto) {

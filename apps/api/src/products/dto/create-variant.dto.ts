@@ -47,9 +47,13 @@ export class CreateVariantDto {
   @IsNumber()
   height?: number;
 
+  // Opcional: um produto pode ser cadastrado sem preço definido ainda (pedido do usuário) — o
+  // preço só passa a ser exigido na hora de ativar a variação/produto (ver
+  // `ProductsService.assertCanActivate`).
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  suggestedPrice!: number;
+  suggestedPrice?: number;
 
   @IsOptional()
   @Type(() => Number)

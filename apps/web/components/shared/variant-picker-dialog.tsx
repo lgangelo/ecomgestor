@@ -13,6 +13,7 @@ export interface PickedVariant {
   sku: string;
   productName: string;
   suggestedPrice: number;
+  latestCost: number | null;
 }
 
 export function VariantPickerDialog({
@@ -29,9 +30,15 @@ export function VariantPickerDialog({
   const { data: products } = useProducts({ search, pageSize: 10 });
   const { data: product } = useProduct(selectedProductId);
 
-  function handlePick(variantId: string, sku: string, suggestedPrice: string) {
+  function handlePick(variantId: string, sku: string, suggestedPrice: string, latestCost: string | null) {
     if (!product) return;
-    onPick({ variantId, sku, productName: product.name, suggestedPrice: Number(suggestedPrice) });
+    onPick({
+      variantId,
+      sku,
+      productName: product.name,
+      suggestedPrice: Number(suggestedPrice),
+      latestCost: latestCost != null ? Number(latestCost) : null,
+    });
     setOpen(false);
     setSelectedProductId(undefined);
     setSearch('');
@@ -99,7 +106,7 @@ export function VariantPickerDialog({
                   <button
                     key={v.id}
                     type="button"
-                    onClick={() => handlePick(v.id, v.sku, v.suggestedPrice)}
+                    onClick={() => handlePick(v.id, v.sku, v.suggestedPrice, v.latestCost)}
                     className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
                   >
                     <span className="flex min-w-0 items-center gap-3">

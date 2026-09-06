@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { formatBRL } from '@ecommerce-manager/shared';
 import { toDateInputValue } from '@/lib/format';
+import { toast } from '@/components/ui/use-toast';
 import { useSuppliers } from '@/hooks/use-suppliers';
 import { useCreateStockEntry } from '@/hooks/use-stock-entries';
 import { VariantPickerDialog, type PickedVariant } from '@/components/shared/variant-picker-dialog';
@@ -45,7 +46,10 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactElement 
   const extraCosts = Number(shippingCost || 0) + Number(otherCosts || 0);
 
   function addRow(variant: PickedVariant) {
-    setRows((r) => [...r, { ...variant, quantity: '1', unitCost: String(variant.suggestedPrice) }]);
+    // Preço sugerido é preço de VENDA — nunca usar como custo aqui. Se o produto já tem um custo
+    // registrado (`latestCost`), pré-preenche com ele; senão fica em branco pra forçar quem está
+    // dando entrada a informar o custo real desta compra.
+    setRows((r) => [...r, { ...variant, quantity: '1', unitCost: variant.latestCost != null ? String(variant.latestCost) : '' }]);
   }
 
   function updateRow(index: number, patch: Partial<Row>) {
@@ -58,6 +62,10 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactElement 
 
   async function handleSubmit(e: React.FormEvent, status: 'DRAFT' | 'CONFIRMED') {
     e.preventDefault();
+    if (rows.some((r) => !r.unitCost || Number(r.unitCost) <= 0)) {
+      toast({ title: 'Informe o custo unitário de todos os itens antes de salvar.', variant: 'destructive' });
+      return;
+    }
     await createEntry.mutateAsync({
       supplierId: supplierId || undefined,
       entryDate,
@@ -196,6 +204,7 @@ export function StockEntryFormDialog({ trigger }: { trigger: React.ReactElement 
                       type="number"
                       min="0"
                       step="0.01"
+                      placeholder="Custo unit."
                       className="w-28"
                       value={row.unitCost}
                       onChange={(e) => updateRow(index, { unitCost: e.target.value })}

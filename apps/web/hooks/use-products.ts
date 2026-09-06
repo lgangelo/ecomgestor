@@ -181,6 +181,7 @@ export function useBulkDeleteProducts() {
 export interface BulkUpdateProductStatusResult {
   updated: string[];
   notFound: string[];
+  blockedNoPrice: string[];
 }
 
 export function useBulkUpdateProductStatus() {
@@ -195,7 +196,12 @@ export function useBulkUpdateProductStatus() {
     onSuccess: (result, { status }) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       const label = status === 'ACTIVE' ? 'ativado(s)' : status === 'INACTIVE' ? 'inativado(s)' : 'marcado(s) como rascunho';
-      toast({ title: `${result.updated.length} produto(s) ${label}.` });
+      const blocked = result.blockedNoPrice.length;
+      toast({
+        title: `${result.updated.length} produto(s) ${label}.`,
+        description: blocked > 0 ? `${blocked} não foram ativados por não ter preço sugerido em nenhuma variação.` : undefined,
+        variant: blocked > 0 ? 'destructive' : undefined,
+      });
     },
     onError: onErrorToast('Não foi possível atualizar o status dos produtos selecionados'),
   });

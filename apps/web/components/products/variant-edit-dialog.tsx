@@ -135,10 +135,11 @@ export function VariantEditDialog({
                 type="number"
                 step="0.01"
                 min="0"
-                required
+                placeholder="Definir depois"
                 value={form.suggestedPrice}
                 onChange={(e) => setForm((f) => ({ ...f, suggestedPrice: e.target.value }))}
               />
+              <p className="text-xs text-muted-foreground">Pode ficar em branco — só é exigido na hora de ativar o produto.</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-minStock">Estoque mínimo</Label>
