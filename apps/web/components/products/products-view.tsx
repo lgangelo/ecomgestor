@@ -61,7 +61,14 @@ function ProductThumbnail({
         src={resolveProductImageUrl(imageUrl)}
         alt=""
         onError={() => setFailed(true)}
-        className="h-14 w-14 rounded object-cover transition-opacity hover:opacity-80"
+        // ACHADO REAL (relatado como "foto aparece cortada/retangular com o filtro 'Só com
+        // estoque' marcado"): o reset padrão do Tailwind aplica `max-width: 100%` em toda
+        // `<img>` — quando a coluna da tabela fica mais estreita que 56px (outras colunas
+        // mudando de largura conforme os resultados do filtro), isso espreme só a LARGURA da
+        // miniatura, já que a altura fixa (`h-14`) não é afetada — resultado: imagem cortada nas
+        // laterais em vez de quadrada. `max-w-none` garante o tamanho fixo sempre, nunca deixa a
+        // coluna espremer a miniatura.
+        className="h-14 w-14 max-w-none shrink-0 rounded object-cover transition-opacity hover:opacity-80"
       />
     </button>
   );
