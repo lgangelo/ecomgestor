@@ -107,6 +107,18 @@ export class MercadoLivreClient {
     return this.request('GET', `/items/${itemId}`);
   }
 
+  /** Qualidade da publicação — NÃO CONFIRMADO ainda contra uma chamada real nesta conta (achado só
+   * via documentação/busca externa, nunca testado). Segundo a documentação pública, substituiu o
+   * antigo `/health` (descontinuado) e devolve `score`/`level` gerais mais uma lista de `buckets`
+   * (título, imagens, ficha técnica, descrição, etc.), cada um com o próprio `status` e uma lista
+   * de `variables` pendentes/completas — é o jeito oficial de descobrir, pro Mercado Livre, o que
+   * está faltando pra melhorar a qualidade de um anúncio JÁ PUBLICADO, em vez de adivinhar a
+   * partir da ficha de atributos da categoria. Primeiro uso deve vir de um script de diagnóstico
+   * contra um item real, igual todo o resto desta integração. */
+  async getItemPerformance(itemId: string): Promise<Record<string, unknown>> {
+    return this.request('GET', `/item/${itemId}/performance`);
+  }
+
   /** Atualiza um item já existente (preço, estoque, fotos, variações, etc.) — NÃO CONFIRMADO
    * ainda contra uma chamada real com `variations`/`pictures` (ver docs/integrations/
    * mercado-livre.md); primeira tentativa deve vir de um script de diagnóstico. */
