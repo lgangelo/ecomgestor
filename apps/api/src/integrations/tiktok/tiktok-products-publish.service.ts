@@ -20,6 +20,16 @@ import { TikTokCredentialsService } from './tiktok-credentials.service';
 // ciclo inteiro.
 const MAX_PRODUCTS_PER_CYCLE = 50;
 
+// DECISÃO DO USUÁRIO: `package_weight`/`package_dimensions` (nível do produto, exigido pela
+// TikTok pra criar — achado real, código 12052116) são medidas da EMBALAGEM DE ENVIO, não do
+// produto em si (doc oficial: "measured after packing the product"). O peso/dimensões já
+// cadastrados por variação (`ProductVariant.weight/length/width/height`) provavelmente
+// representam o produto, não a embalagem, e nem sempre estão preenchidos — em vez de depender
+// disso, usa um padrão fixo pra todos os produtos (baseado num pacote de envio pequeno real,
+// confirmado pelo usuário). Nunca lê `ProductVariant.weight/length/width/height` pra isso.
+const DEFAULT_PACKAGE_WEIGHT_GRAMS = '200';
+const DEFAULT_PACKAGE_DIMENSIONS_CM = { length: '10', width: '5', height: '10' };
+
 interface ProductForPublish {
   id: string;
   name: string;
@@ -38,10 +48,6 @@ interface ProductForPublish {
     suggestedPrice: unknown;
     imageUrl: string | null;
     inventory: { onHand: number; reserved: number } | null;
-    weight: unknown;
-    length: unknown;
-    width: unknown;
-    height: unknown;
   }>;
 }
 
@@ -103,10 +109,6 @@ export class TikTokProductsPublishService {
         suggestedPrice: variant.suggestedPrice,
         imageUrl: variant.imageUrl,
         inventory: variant.inventory ? { onHand: variant.inventory.onHand, reserved: variant.inventory.reserved } : null,
-        weight: variant.weight,
-        length: variant.length,
-        width: variant.width,
-        height: variant.height,
       })),
     }));
   }
@@ -310,25 +312,6 @@ export class TikTokProductsPublishService {
       });
     }
 
-    // ACHADO REAL (primeiro produto de teste real): "package_dimensions"/"package_weight" ficam
-    // no nível do PRODUTO (não por SKU) e a TikTok recusa a criação sem eles — "Invalid Parameter.
-    // Parameter `package_dimensions` is invalid because all package dimensions must be positive
-    // numeric values." (código 12052116; Category Rules confirma `package_dimension.is_required:
-    // true` pra "Bolsas") mesmo quando o campo é só OMITIDO (nunca mandamos zero, a TikTok trata
-    // ausente igual a zero). Nosso cadastro guarda peso/dimensões por VARIAÇÃO, nunca por produto
-    // — usa a primeira variante elegível (mesmo padrão de "usar a primeira variante" já adotado
-    // pro Mercado Livre). Unidades: nosso cadastro já usa kg/cm (telas "Peso (kg)"/"Comprimento
-    // (cm)" etc.) — `KILOGRAM`/`CENTIMETER` batem com o código de erro documentado 12019061
-    // ("...does not support imperial units on non-US local products"), que só faz sentido se o
-    // valor padrão esperado for métrico. Nunca confirmado contra os enums exatos da doc (a TikTok
-    // não expôs a lista fechada de unidades na tabela de parâmetros) — primeiro teste real decide.
-    const dimensionsSource = eligibleVariants[0];
-    if (!dimensionsSource?.weight || !dimensionsSource.length || !dimensionsSource.width || !dimensionsSource.height) {
-      throw new UnprocessableEntityException(
-        `Variante "${dimensionsSource?.sku ?? '?'}" sem peso/dimensões cadastradas — a categoria da TikTok Shop exige isso pra criar o produto. Cadastre peso e dimensões (aba de medidas do produto) antes de publicar.`,
-      );
-    }
-
     return {
       title: product.name.length > 255 ? product.name.slice(0, 255) : product.name,
       description: product.description ?? product.name,
@@ -336,13 +319,8 @@ export class TikTokProductsPublishService {
       ...(categoryMapping.externalCategoryVersion ? { category_version: categoryMapping.externalCategoryVersion as 'v1' | 'v2' } : {}),
       main_images: mainImages,
       skus,
-      package_weight: { value: String(dimensionsSource.weight), unit: 'KILOGRAM' },
-      package_dimensions: {
-        length: String(dimensionsSource.length),
-        width: String(dimensionsSource.width),
-        height: String(dimensionsSource.height),
-        unit: 'CENTIMETER',
-      },
+      package_weight: { value: DEFAULT_PACKAGE_WEIGHT_GRAMS, unit: 'GRAM' },
+      package_dimensions: { ...DEFAULT_PACKAGE_DIMENSIONS_CM, unit: 'CENTIMETER' },
     };
   }
 
