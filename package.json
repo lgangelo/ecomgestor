@@ -30,6 +30,7 @@
     "check-product-variants": "npm run check-product-variants --workspace=@ecommerce-manager/api --",
     "check-product-images": "npm run check-product-images --workspace=@ecommerce-manager/api --",
     "check-product-description": "npm run check-product-description --workspace=@ecommerce-manager/api --",
+    "check-product-description-quality": "npm run check-product-description-quality --workspace=@ecommerce-manager/api --",
     "check-tiktok-product-detail": "npm run check-tiktok-product-detail --workspace=@ecommerce-manager/api --",
     "check-tiktok-order-detail": "npm run check-tiktok-order-detail --workspace=@ecommerce-manager/api --",
     "manually-link-order-item": "npm run manually-link-order-item --workspace=@ecommerce-manager/api --",

@@ -48,6 +48,16 @@ describe('buildProductCopyPrompt', () => {
     expect(prompt).toMatch(/foto real do produto foi anexada/i);
   });
 
+  it(
+    'PEDIDO DO USUÁRIO: exige os 3 blocos da descrição mesmo com poucas informações fornecidas ' +
+      '(achado real: descrição gerada com pouco preenchimento saiu curta/genérica demais)',
+    () => {
+      const semNadaPreenchido = buildProductCopyPrompt({ titleHint: 'Bolsa média' });
+      expect(semNadaPreenchido).toMatch(/sempre obrigatórios/i);
+      expect(semNadaPreenchido).toMatch(/nunca devolva uma descrição de uma linha só ou um resumo genérico curto/i);
+    },
+  );
+
   it('destaca courvim e acabamento premium só quando a marca é Venticelli', () => {
     const venticelli = buildProductCopyPrompt({ titleHint: 'Bolsa média', brand: 'Venticelli' });
     const outraMarca = buildProductCopyPrompt({ titleHint: 'Bolsa média', brand: 'Outra Marca' });

@@ -98,6 +98,11 @@ export function buildProductCopyPrompt(input: GenerateProductCopyInput): string 
     '   informado);',
     '3) uma última linha com uma chamada pra ação (CTA) direta.',
     'Nenhum desses blocos deve mencionar uma cor específica do produto, pelo mesmo motivo do título.',
+    '\nOs 3 blocos acima da descrição são SEMPRE obrigatórios, mesmo quando as informações fornecidas abaixo',
+    'forem poucas ou nenhuma — nunca devolva uma descrição de uma linha só ou um resumo genérico curto. Com',
+    'poucos dados, use o próprio tipo de produto e o contexto de marca/categoria como base pra benefícios',
+    'plausíveis e verdadeiros desse tipo de item (praticidade, versatilidade, uso no dia a dia/trabalho/viagem),',
+    'sem inventar especificação técnica, material ou detalhe visual que não tenha sido informado.',
     facts.length > 0 ? `\nInformações fornecidas sobre o produto:\n${facts.map((f) => `- ${f}`).join('\n')}` : '',
     input.image
       ? '\nUma foto real do produto foi anexada — baseie material, formato e demais detalhes visíveis NELA, mas'
