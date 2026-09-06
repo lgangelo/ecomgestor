@@ -38,6 +38,13 @@ export interface MercadoLivreFailedJob {
   error: string | null;
   createdAt: string;
   finishedAt: string | null;
+  // Só preenchidos pra falhas de publicação de produto (type "mercadolivre-publish-product-color")
+  // — contexto suficiente pra mostrar/editar direto nesta tela, sem abrir outra.
+  variantId?: string | null;
+  productId?: string | null;
+  productName?: string | null;
+  sku?: string | null;
+  color?: string | null;
 }
 
 export function useMercadoLivreStatus() {
@@ -113,6 +120,27 @@ export function useRetryMercadoLivreJob() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mercadolivre', 'jobs'] }),
     onError: (error) => {
       toast({ title: error instanceof ApiError ? error.message : 'Não foi possível reprocessar o job.' });
+    },
+  });
+}
+
+/** Corrige a cor da variante direto na tela de Falhas (pedido do usuário: editar e reenviar sem
+ * abrir outra tela) e, em seguida, tenta a publicação de novo — duas chamadas já existentes
+ * (atualizar variação + retry de job), nunca um endpoint novo. */
+export function useFixMercadoLivreColorAndRetry() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ jobId, variantId, color }: { jobId: string; variantId: string; color: string }) => {
+      await apiFetch(`/products/variants/${variantId}`, { method: 'PATCH', body: { color } });
+      await apiFetch(`/integrations/mercadolivre/jobs/${jobId}/retry`, { method: 'POST' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mercadolivre', 'jobs'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast({ title: 'Cor corrigida — publicação reenviada.' });
+    },
+    onError: (error) => {
+      toast({ title: error instanceof ApiError ? error.message : 'Não foi possível corrigir e reenviar.' });
     },
   });
 }

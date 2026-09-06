@@ -105,17 +105,40 @@ export class MercadoLivreJobsService {
       take: 100,
     });
 
-    return jobs.map((job) => ({
-      id: job.id,
-      type: job.type,
-      relatedExternalId: job.relatedExternalId,
-      attempts: job.attempts,
-      maxAttempts: job.maxAttempts,
-      errorCategory: job.errorCategory,
-      error: job.error,
-      createdAt: job.createdAt,
-      finishedAt: job.finishedAt,
-    }));
+    // Pedido do usuário: a falha de publicação de cor precisa aparecer com contexto de verdade
+    // (nome do produto, SKU, cor tentada) — não só o id da variante — pra dar pra editar e
+    // reenviar direto nesta tela, sem precisar abrir outra. `relatedExternalId` é o variantId
+    // pra este tipo de job (nunca um id externo de verdade, ao contrário dos outros tipos).
+    const colorJobVariantIds = jobs
+      .filter((j) => j.type === MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_COLOR && j.relatedExternalId)
+      .map((j) => j.relatedExternalId!);
+    const variants = colorJobVariantIds.length
+      ? await this.prisma.client.productVariant.findMany({
+          where: { id: { in: colorJobVariantIds } },
+          include: { product: { select: { id: true, name: true } } },
+        })
+      : [];
+    const variantById = new Map(variants.map((v) => [v.id, v]));
+
+    return jobs.map((job) => {
+      const variant = job.relatedExternalId ? variantById.get(job.relatedExternalId) : undefined;
+      return {
+        id: job.id,
+        type: job.type,
+        relatedExternalId: job.relatedExternalId,
+        attempts: job.attempts,
+        maxAttempts: job.maxAttempts,
+        errorCategory: job.errorCategory,
+        error: job.error,
+        createdAt: job.createdAt,
+        finishedAt: job.finishedAt,
+        variantId: variant?.id ?? null,
+        productId: variant?.product.id ?? null,
+        productName: variant?.product.name ?? null,
+        sku: variant?.sku ?? null,
+        color: variant?.color ?? null,
+      };
+    });
   }
 
   async prepareRetry(jobId: string, companyId: string) {

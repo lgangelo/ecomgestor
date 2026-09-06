@@ -29,6 +29,44 @@ import { ProductPhotoLightbox } from './product-photo-lightbox';
 // Filtros e paginação persistem na URL (seção 57 da Fase 4).
 const DEFAULT_FILTERS = { page: 1, search: '', categoryId: '', status: '', hasStock: true };
 
+/** ACHADO REAL (relatado como "some a foto no mobile ao trocar de página/filtro"): os dados
+ * sempre tinham `imageUrl` cadastrado — o problema real é a foto falhando ao CARREGAR no
+ * celular (rede instável trocando de wifi/dados), e com `alt=""` o navegador não mostra nada
+ * quando isso acontece — a coluna parecia ter sumido. Agora, se a foto falhar ao carregar,
+ * mostra o mesmo indicador visível (borda + ícone) usado quando não há foto cadastrada — nunca
+ * um espaço em branco silencioso. */
+function ProductThumbnail({
+  imageUrl,
+  productName,
+  onClick,
+}: {
+  imageUrl: string | null;
+  productName: string;
+  onClick: () => void;
+}) {
+  const [failed, setFailed] = React.useState(false);
+
+  if (!imageUrl || failed) {
+    return (
+      <div className="flex h-14 w-14 items-center justify-center rounded border border-border bg-muted">
+        <ImageOff className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+      </div>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} aria-label={`Ver fotos de ${productName}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo, ou enviada por upload e servida pela nossa própria API */}
+      <img
+        src={resolveProductImageUrl(imageUrl)}
+        alt=""
+        onError={() => setFailed(true)}
+        className="h-14 w-14 rounded object-cover transition-opacity hover:opacity-80"
+      />
+    </button>
+  );
+}
+
 export function ProductsView() {
   const [filters, setFilters] = useUrlFilters(DEFAULT_FILTERS);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -257,29 +295,11 @@ export function ProductsView() {
                     />
                   </TableCell>
                   <TableCell>
-                    {product.imageUrl ? (
-                      <button
-                        type="button"
-                        onClick={() => setLightboxProductId(product.id)}
-                        aria-label={`Ver fotos de ${product.name}`}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element -- URL remota do canal externo, ou enviada por upload e servida pela nossa própria API */}
-                        <img
-                          src={resolveProductImageUrl(product.imageUrl)}
-                          alt=""
-                          className="h-14 w-14 rounded object-cover transition-opacity hover:opacity-80"
-                        />
-                      </button>
-                    ) : (
-                      // ACHADO REAL: um bloco liso `bg-muted` fica quase invisível no tema escuro
-                      // (muted a 17% de luminosidade contra o fundo da linha a 11% — quase sem
-                      // contraste, sobretudo com luz ambiente forte no celular) — parecia que a
-                      // coluna de foto tinha sumido. Borda + ícone deixam claro que é "sem foto",
-                      // nunca uma foto que falhou silenciosamente ao carregar.
-                      <div className="flex h-14 w-14 items-center justify-center rounded border border-border bg-muted">
-                        <ImageOff className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                      </div>
-                    )}
+                    <ProductThumbnail
+                      imageUrl={product.imageUrl}
+                      productName={product.name}
+                      onClick={() => setLightboxProductId(product.id)}
+                    />
                   </TableCell>
                   <TableCell className="max-w-xs cursor-pointer">
                     <Link href={`/produtos/${product.id}`} className="hover:underline">
