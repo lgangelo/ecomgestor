@@ -25,6 +25,14 @@ export interface AppConfig {
     inventoryPushEnabled: boolean;
     reconcileIntervalMinutes: number;
     financeSyncIntervalMinutes: number;
+    /** Publicação/atualização automática de produto — pedido do usuário (produtos nascem só na
+     * nossa plataforma e são publicados quando ficam ACTIVE). AO CONTRÁRIO do Mercado Livre
+     * (`mercadoLivre.productsSyncEnabled`, que nasce ligado): nasce DESLIGADO — nada aqui
+     * (Create/Partial Edit Product, Upload Image, Get Categories/Attributes/Warehouses) foi
+     * confirmado ainda contra uma chamada real nesta conta, só contra documentação oficial.
+     * Só ligar depois de rodar os scripts de diagnóstico (check-tiktok-*) contra a conta real e
+     * confirmar os formatos de resposta. */
+    productsSyncEnabled: boolean;
   };
   shopee: {
     enabled: boolean;
@@ -128,6 +136,9 @@ export default (): AppConfig => ({
     // reconciliação de pedidos — 60 min por padrão é suficiente pra "taxas da plataforma"
     // aparecer no mesmo dia em que o pedido é liquidado, sem gerar chamada excessiva à API.
     financeSyncIntervalMinutes: parseInt(process.env.TIKTOK_FINANCE_SYNC_INTERVAL_MINUTES ?? '60', 10),
+    // Default FALSE de propósito (ao contrário do Mercado Livre) — nada da publicação de produto
+    // foi confirmado ainda contra uma chamada real nesta conta.
+    productsSyncEnabled: process.env.TIKTOK_PRODUCTS_SYNC_ENABLED === 'true',
   },
   shopee: {
     enabled: Boolean(process.env.SHOPEE_PARTNER_ID && process.env.SHOPEE_PARTNER_KEY),

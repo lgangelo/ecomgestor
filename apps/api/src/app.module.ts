@@ -34,6 +34,7 @@ import { MercadoLivreModule } from './integrations/mercadolivre/mercadolivre.mod
 import { TikTokStockOutboxSchedulerModule } from './integrations/tiktok/tiktok-stock-outbox-scheduler.module';
 import { MercadoLivreStockOutboxSchedulerModule } from './integrations/mercadolivre/mercadolivre-stock-outbox-scheduler.module';
 import { MercadoLivreProductsSyncSchedulerModule } from './integrations/mercadolivre/mercadolivre-products-sync-scheduler.module';
+import { TikTokProductsPublishSchedulerModule } from './integrations/tiktok/tiktok-products-publish-scheduler.module';
 import { CompanyModule } from './company/company.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
@@ -80,6 +81,7 @@ import { AiModule } from './ai/ai.module';
     TikTokStockOutboxSchedulerModule,
     MercadoLivreStockOutboxSchedulerModule,
     MercadoLivreProductsSyncSchedulerModule,
+    TikTokProductsPublishSchedulerModule,
     CompanyModule,
     UsersModule,
     RolesModule,

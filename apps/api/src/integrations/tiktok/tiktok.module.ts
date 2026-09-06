@@ -12,6 +12,7 @@ import { TikTokOAuthController } from './tiktok-oauth.controller';
 import { TikTokWebhookService } from './tiktok-webhook.service';
 import { TikTokWebhookController } from './tiktok-webhook.controller';
 import { TikTokProductsSyncService } from './tiktok-products-sync.service';
+import { TikTokProductsPublishService } from './tiktok-products-publish.service';
 import { TikTokOrdersSyncService } from './tiktok-orders-sync.service';
 import { TikTokInventorySyncService } from './tiktok-inventory-sync.service';
 import { TikTokFinanceSyncService } from './tiktok-finance-sync.service';
@@ -45,6 +46,7 @@ import { TikTokQueueService } from '../../queue/tiktok-queue.service';
     TikTokOAuthService,
     TikTokWebhookService,
     TikTokProductsSyncService,
+    TikTokProductsPublishService,
     TikTokOrdersSyncService,
     TikTokInventorySyncService,
     TikTokFinanceSyncService,
@@ -60,6 +62,7 @@ import { TikTokQueueService } from '../../queue/tiktok-queue.service';
     TikTokTokenRefreshService,
     TikTokConnectorFactory,
     TikTokProductsSyncService,
+    TikTokProductsPublishService,
     TikTokOrdersSyncService,
     TikTokInventorySyncService,
     TikTokFinanceSyncService,
