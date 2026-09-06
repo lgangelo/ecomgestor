@@ -175,13 +175,20 @@ export class TikTokClient {
    * `content-type` manualmente (o `fetch` gera o boundary sozinho a partir do `FormData`).
    * ACHADO (não confirmado por uma chamada real): a assinatura de requests multipart da TikTok
    * Shop trata o corpo como string vazia na fórmula do HMAC — documentado assim pela TikTok para
-   * outros endpoints de upload de arquivo da Open API. */
+   * outros endpoints de upload de arquivo da Open API.
+   *
+   * ACHADO REAL confirmado em produção (e na documentação oficial de "Upload Product Image" e
+   * "Upload Product File" — as únicas duas chamadas de query documentada como só `app_key`/
+   * `sign`/`timestamp`, sem `shop_cipher`): mandar `shop_cipher` aqui faz a TikTok responder
+   * "Unexpected identifier. The 'shop_cipher' query parameter is not required for this request."
+   * (código 36009004) — diferente de quase todo o resto da integração (que exige o parâmetro).
+   * Nunca adicionar `shop_cipher` de volta aqui sem antes confirmar contra a doc oficial do
+   * endpoint específico. */
   private async requestMultipart<T>(path: string, form: FormData): Promise<T> {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const query: Record<string, string> = {
       app_key: this.config.appKey,
       timestamp,
-      ...(this.config.shopCipher ? { shop_cipher: this.config.shopCipher } : {}),
     };
     const sign = signApiRequest({ path, query, body: '', appSecret: this.config.appSecret });
     const searchParams = new URLSearchParams({ ...query, sign, access_token: this.config.accessToken });
