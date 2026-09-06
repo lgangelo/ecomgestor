@@ -128,14 +128,18 @@ endpoint — só `36009003`, "Internal error", aparece lá); sem `shop_cipher`, 
 documentado `106013` ("Missing identifier... required"). Ou seja: o MESMO endpoint, pra MESMA
 conta, reclama dos dois lados — contradiz tanto a doc oficial quanto o comportamento de todo o
 resto da integração (busca de produto/pedido/estoque usa o mesmo `shop_cipher`, mesma função de
-assinatura, sem problema nenhum). Hipóteses ainda não confirmadas: (a) o valor salvo de
-`shop_cipher` ficou desatualizado depois de obtido uma única vez no connect/reconnect (nunca é
-buscado de novo automaticamente — ver `check-tiktok-shop-cipher.ts`, script criado pra comparar o
-valor salvo contra um buscado na hora via `Get Authorized Shops`); (b) comportamento genuíno da
-plataforma pra este endpoint específico, numa loja local (não cross-border) — nesse caso o caminho
-é abrir chamado no suporte da TikTok citando o código `36009004`. **Nunca reverter a chamada pra
-omitir `shop_cipher` de novo sem antes confirmar isso** — uma tentativa anterior de omitir (baseada
-só no texto do erro, sem o código) piorou o resultado.
+assinatura, sem problema nenhum). **Descartado via `check-tiktok-shop-cipher.ts` (rodado em produção)**: o `shop_cipher` salvo bate
+exatamente com um buscado na hora via `Get Authorized Shops` — não está desatualizado, a hipótese
+de staleness está descartada. Sobra a explicação (b): comportamento genuíno da plataforma para este
+endpoint específico (`Get Attributes`), nesta loja local BR (não cross-border) — contradiz a própria
+documentação oficial (que marca `shop_cipher` como `Required`). **Não há mais nada a investigar do
+nosso lado** — o caminho é abrir chamado no suporte da TikTok citando o código `36009004`
+("Unexpected identifier... not required") para `GET /product/202309/categories/{id}/attributes`.
+Até isso ser resolvido pela TikTok, a publicação automática de produto (`TikTokProductsPublishService`)
+fica bloqueada bem no primeiro produto real testado — o kill switch (`tiktok.productsSyncEnabled`)
+permanece desligado. **Nunca reverter a chamada pra omitir `shop_cipher` de novo sem antes
+confirmar via código numérico do erro** — uma tentativa anterior de omitir (baseada só no texto,
+sem o código) piorou o resultado.
 
 ## 3. Host da API (produção)
 
