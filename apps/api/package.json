@@ -69,6 +69,8 @@
     "cache-tiktok-category-attributes": "node dist/cli/cache-tiktok-category-attributes.js",
     "publish-tiktok-item": "node dist/cli/publish-tiktok-item.js",
     "sync-tiktok-status": "node dist/cli/sync-tiktok-status.js",
+    "check-mercadolivre-fiscal-information": "node dist/cli/check-mercadolivre-fiscal-information.js",
+    "send-mercadolivre-fiscal-information": "node dist/cli/send-mercadolivre-fiscal-information.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"

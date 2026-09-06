@@ -334,6 +334,37 @@ export class MercadoLivreProductsSyncService {
     }
   }
 
+  /** DRY-RUN: monta (sem enviar) o payload de "Enviar Dados Fiscais" pra UMA variação — usado
+   * pelo CLI de diagnóstico, pra revisar antes de confiar no envio real. Devolve `undefined`
+   * (nunca lança) quando a categoria não tem perfil fiscal configurado ou a variação não tem
+   * custo cadastrado — mesma regra de `buildFiscalInformationPayload`. */
+  async previewFiscalInformation(companyId: string, variantId: string): Promise<MercadoLivreFiscalInformationInput | undefined> {
+    const products = await this.fetchProducts(companyId);
+    const product = products.find((p) => p.variants.some((v) => v.id === variantId));
+    const variant = product?.variants.find((v) => v.id === variantId);
+    if (!product || !variant) {
+      throw new NotFoundException('Variante não encontrada, ou o produto não está ACTIVE.');
+    }
+    const fiscalProfile = await this.resolveFiscalProfile(product.categoryId, new Map());
+    return this.buildFiscalInformationPayload(product, variant, fiscalProfile);
+  }
+
+  /** Envia DE VERDADE os dados fiscais de UMA variação — pedido do usuário: confirmar contra uma
+   * chamada real antes de confiar no ciclo automático completo (`syncPublished`) pra todo o
+   * catálogo. Nunca inventa dado: lança um erro claro (em vez de mandar algo incompleto) quando
+   * `previewFiscalInformation` devolve `undefined`. */
+  async sendFiscalInformationNow(companyId: string, variantId: string): Promise<MercadoLivreFiscalInformationInput> {
+    const payload = await this.previewFiscalInformation(companyId, variantId);
+    if (!payload) {
+      throw new UnprocessableEntityException(
+        'Categoria sem CategoryFiscalProfile configurado pro Mercado Livre, ou variação sem custo cadastrado — nada a enviar.',
+      );
+    }
+    const { client } = await this.connectorFactory.forCompany(companyId);
+    await client.setFiscalInformation(payload);
+    return payload;
+  }
+
   private async fetchProducts(companyId: string): Promise<ProductForSync[]> {
     const rows = await this.prisma.client.product.findMany({
       where: { companyId, status: 'ACTIVE' },
