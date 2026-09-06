@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelMappingSyncStatus, ProductExternalMaterial } from '@ecommerce-manager/database';
 import { MercadoLivreApiError, MercadoLivreCreateItemInput, MercadoLivreCreatedItem } from '@ecommerce-manager/integrations';
@@ -371,11 +371,11 @@ export class MercadoLivreProductsSyncService {
   ): Promise<{ categoryId: string; listingTypeId: string }> {
     const predictions = await client.predictCategory(SITE_ID, title, 1);
     const categoryId = predictions[0]?.category_id;
-    if (!categoryId) throw new Error(`Nenhuma categoria sugerida pro título "${title}".`);
+    if (!categoryId) throw new UnprocessableEntityException(`Nenhuma categoria sugerida pro título "${title}".`);
 
     const listingTypes = await client.getListingTypes(SITE_ID);
     const listingType = listingTypes.find((t) => t.id === PREFERRED_LISTING_TYPE_ID) ?? listingTypes[0];
-    if (!listingType) throw new Error(`Nenhum tipo de publicação disponível pro site ${SITE_ID}.`);
+    if (!listingType) throw new UnprocessableEntityException(`Nenhum tipo de publicação disponível pro site ${SITE_ID}.`);
 
     return { categoryId, listingTypeId: listingType.id };
   }
@@ -386,7 +386,7 @@ export class MercadoLivreProductsSyncService {
   ): Promise<string> {
     const attrs = await client.getCategoryAttributes(categoryId);
     const brand = attrs.find((a) => a.id === 'BRAND')?.values?.find((v) => v.name.toLowerCase() === BRAND_FALLBACK_NAME.toLowerCase());
-    if (!brand) throw new Error(`Valor de catálogo "${BRAND_FALLBACK_NAME}" pra BRAND não encontrado nesta categoria.`);
+    if (!brand) throw new UnprocessableEntityException(`Valor de catálogo "${BRAND_FALLBACK_NAME}" pra BRAND não encontrado nesta categoria.`);
     return brand.id;
   }
 
@@ -581,7 +581,7 @@ export class MercadoLivreProductsSyncService {
     const attrs = await client.getCategoryAttributes(base.categoryId);
     const colorValueId = resolveColorValueId(attrs, variant.color ?? '');
     if (!colorValueId) {
-      throw new Error(`Cor "${variant.color}" não encontrada na lista de valores da categoria ${base.categoryId}.`);
+      throw new UnprocessableEntityException(`Cor "${variant.color}" não encontrada na lista de valores da categoria ${base.categoryId}.`);
     }
     const brandValueId = await this.resolveBrandValueId(client, base.categoryId);
     const genderValueId = attrs.find((a) => a.id === 'GENDER')?.values?.find((v) => v.name.toLowerCase() === GENDER_VALUE_NAME.toLowerCase())?.id;
@@ -722,13 +722,21 @@ export class MercadoLivreProductsSyncService {
    * erro — sem toast de erro, sem nada visível, a falha simplesmente continua na tela igual antes.
    * Chamado só pelos dois métodos de retry MANUAL (nunca pelo fluxo automático em lote): confere
    * se a falha ainda está registrada logo depois da tentativa, e lança o erro real de volta pro
-   * chamador (a tela de Jobs/Falhas já tem um toast de erro genérico pronto pra mostrar isso). */
+   * chamador (a tela de Jobs/Falhas já tem um toast de erro genérico pronto pra mostrar isso).
+   *
+   * ACHADO REAL corrigido (2ª rodada): `throw new Error(...)` (sem ser uma `HttpException`) cai
+   * no filtro global de exceções (`AllExceptionsFilter`) como status >= 500 — que, de propósito,
+   * troca a mensagem real por um "Erro interno do servidor" genérico antes de devolver pro
+   * cliente (pra nunca vazar detalhe interno de verdade). Isso escondia a mensagem real de
+   * validação (a mesma coisa que a correção acima tentou expor) atrás de um 500 opaco. Por isso
+   * `UnprocessableEntityException` (422, sempre repassada com a mensagem intacta pelo filtro) —
+   * nunca `Error` puro pra erro que precisa aparecer pro usuário. */
   private async throwIfStillFailing(integrationId: string, type: string, variantId: string): Promise<void> {
     const stillFailing = await this.prisma.client.syncJob.findFirst({
       where: { integrationId, type, relatedExternalId: variantId, status: 'FAILED' },
     });
     if (stillFailing) {
-      throw new Error(stillFailing.error ?? 'A tentativa falhou novamente.');
+      throw new UnprocessableEntityException(stillFailing.error ?? 'A tentativa falhou novamente.');
     }
   }
 
@@ -751,7 +759,7 @@ export class MercadoLivreProductsSyncService {
       where: { channelId_variantId: { channelId, variantId } },
     });
     if (!mapping?.externalProductId) {
-      throw new Error('Esta variante ainda não foi publicada no Mercado Livre — não há item pra atualizar a descrição.');
+      throw new UnprocessableEntityException('Esta variante ainda não foi publicada no Mercado Livre — não há item pra atualizar a descrição.');
     }
 
     const { client } = await this.connectorFactory.forCompany(companyId);
@@ -841,7 +849,7 @@ export class MercadoLivreProductsSyncService {
         })
       : null;
     if (!siblingMapping?.externalProductId) {
-      throw new Error('Nenhuma variante irmã (mesmo produto/tamanho) já publicada foi encontrada — publique a base primeiro.');
+      throw new UnprocessableEntityException('Nenhuma variante irmã (mesmo produto/tamanho) já publicada foi encontrada — publique a base primeiro.');
     }
     const baseItem = await client.getItem(siblingMapping.externalProductId);
     const base = {
