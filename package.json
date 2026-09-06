@@ -60,6 +60,7 @@
     "check-mercadolivre-invalid-mappings": "npm run check-mercadolivre-invalid-mappings --workspace=@ecommerce-manager/api --",
     "check-mercadolivre-family-names": "npm run check-mercadolivre-family-names --workspace=@ecommerce-manager/api --",
     "check-mercadolivre-item-performance": "npm run check-mercadolivre-item-performance --workspace=@ecommerce-manager/api --",
+    "check-mercadolivre-listing-types": "npm run check-mercadolivre-listing-types --workspace=@ecommerce-manager/api --",
     "reset-mercadolivre-mappings": "npm run reset-mercadolivre-mappings --workspace=@ecommerce-manager/api --",
     "check-tiktok-product-detail-raw": "npm run check-tiktok-product-detail-raw --workspace=@ecommerce-manager/api --",
     "check-tiktok-missing-variant-photos": "npm run check-tiktok-missing-variant-photos --workspace=@ecommerce-manager/api --"

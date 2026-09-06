@@ -146,6 +146,40 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
   });
 
   it(
+    'DECISÃO DO USUÁRIO (confirmado via /item/performance real): preenche o atributo GENDER como ' +
+      '"Feminino" quando a categoria tiver esse atributo, sem precisar cadastrar por produto',
+    async () => {
+      const variant = makeVariant();
+      const client = makeClient();
+      client.getCategoryAttributes = jest.fn().mockResolvedValue([
+        { id: 'BRAND', values: [{ id: 'brand-generic', name: 'Generic' }] },
+        { id: 'COLOR', values: [{ id: 'color-azul', name: 'Azul' }, { id: 'color-vermelho', name: 'Vermelho' }] },
+        { id: 'GENDER', values: [{ id: 'gender-feminino', name: 'Feminino' }, { id: 'gender-masculino', name: 'Masculino' }] },
+      ]);
+      const { service } = makeService({ products: [makeProductRow([variant])], client });
+
+      await service.publishEligible(COMPANY_ID);
+
+      expect(client.createItem.mock.calls[0][0]).toMatchObject({
+        attributes: expect.arrayContaining([{ id: 'GENDER', value_id: 'gender-feminino' }]),
+      });
+    },
+  );
+
+  it(
+    'nunca falha nem envia o atributo GENDER quando a categoria não tiver esse atributo (ex.: cama/mesa/banho)',
+    async () => {
+      const variant = makeVariant();
+      const { service, client } = makeService({ products: [makeProductRow([variant])] });
+
+      await service.publishEligible(COMPANY_ID);
+
+      const attributes = client.createItem.mock.calls[0][0].attributes as Array<{ id: string }>;
+      expect(attributes.find((a) => a.id === 'GENDER')).toBeUndefined();
+    },
+  );
+
+  it(
     'ACHADO REAL (produto SKU LG032-2, erro item.description.type.invalid): remove tags HTML da ' +
       'descrição antes de mandar pro Mercado Livre, que exige texto plano — descrição salva no cadastro ' +
       'como "<p>Bolsa quadrada feminina</p>" vira texto puro',
@@ -246,6 +280,27 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
     expect(client.createItem.mock.calls[0][0]).toMatchObject({ family_name: 'Bolsa Teste' });
     expect(client.createItem.mock.calls[1][0]).toMatchObject({ family_name: 'Bolsa Teste', available_quantity: 0 });
     expect(mappingUpsert).toHaveBeenCalledTimes(2);
+  });
+
+  it('preenche GENDER também no item de cor adicional (não só no item base)', async () => {
+    const azul = makeVariant({ id: 'v-azul', sku: 'SKU-AZUL', color: 'Azul', inventory: { onHand: 5, reserved: 0 } });
+    const vermelho = makeVariant({ id: 'v-vermelho', sku: 'SKU-VERMELHO', color: 'Vermelho', inventory: { onHand: 0, reserved: 0 } });
+    const client = makeClient();
+    client.getCategoryAttributes = jest.fn().mockResolvedValue([
+      { id: 'BRAND', values: [{ id: 'brand-generic', name: 'Generic' }] },
+      { id: 'COLOR', values: [{ id: 'color-azul', name: 'Azul' }, { id: 'color-vermelho', name: 'Vermelho' }] },
+      { id: 'GENDER', values: [{ id: 'gender-feminino', name: 'Feminino' }] },
+    ]);
+    client.createItem
+      .mockResolvedValueOnce({ id: 'MLB-BASE', status: 'active' })
+      .mockResolvedValueOnce({ id: 'MLB-COR-2', status: 'active' });
+    const { service } = makeService({ products: [makeProductRow([azul, vermelho])], client });
+
+    await service.publishEligible(COMPANY_ID);
+
+    expect(client.createItem.mock.calls[1][0]).toMatchObject({
+      attributes: expect.arrayContaining([{ id: 'GENDER', value_id: 'gender-feminino' }]),
+    });
   });
 
   it('ACHADO REAL corrigido: marca o próprio item BASE com o atributo COLOR (antes nascia sem isso)', async () => {

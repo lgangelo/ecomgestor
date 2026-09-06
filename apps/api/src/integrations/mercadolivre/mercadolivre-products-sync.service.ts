@@ -13,6 +13,12 @@ import { MercadoLivreCredentialsService } from './mercadolivre-credentials.servi
 const SITE_ID = 'MLB';
 const CURRENCY_ID = 'BRL';
 const BRAND_FALLBACK_NAME = 'Generic';
+// DECISÃO DO USUÁRIO (confirmado via /item/performance real — atributo GENDER marcado como
+// pendente na ficha técnica): a Venticelli é uma marca de bolsas femininas, então preenche sempre
+// como "Feminino" — nunca precisa ser cadastrado por produto. Só se aplica em categorias que
+// tenham esse atributo (ex.: Bolsas); categorias sem GENDER (ex.: cama/mesa/banho) simplesmente
+// não recebem esse atributo, sem erro.
+const GENDER_VALUE_NAME = 'Feminino';
 // Mesma preferência confirmada em produção pelos scripts manuais (publish-mercadolivre-item.ts) —
 // sempre confirmada contra a lista real da conta antes de usar, nunca hard-codada sozinha.
 const PREFERRED_LISTING_TYPE_ID = 'gold_special';
@@ -336,6 +342,17 @@ export class MercadoLivreProductsSyncService {
     return brand.id;
   }
 
+  /** Opcional e tolerante (ao contrário de `resolveBrandValueId`): categorias sem atributo GENDER
+   * (ex.: cama/mesa/banho) devolvem `undefined` em vez de erro — nem toda categoria vendida tem
+   * esse atributo, só as de moda/vestuário/acessórios. */
+  private async resolveGenderValueId(
+    client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
+    categoryId: string,
+  ): Promise<string | undefined> {
+    const attrs = await client.getCategoryAttributes(categoryId);
+    return attrs.find((a) => a.id === 'GENDER')?.values?.find((v) => v.name.toLowerCase() === GENDER_VALUE_NAME.toLowerCase())?.id;
+  }
+
   /** Monta o título/family_name do anúncio — inclui o tamanho quando o grupo tem um (ver
    * comentário em `publishEligible` sobre por que tamanho vira uma família SEPARADA, nunca uma
    * variação dentro da mesma família de cor), sempre respeitando o limite de 60 caracteres. */
@@ -359,6 +376,7 @@ export class MercadoLivreProductsSyncService {
     const title = this.buildFamilyTitle(product.name, size);
     const { categoryId, listingTypeId } = await this.resolveCategoryAndListingType(client, title);
     const brandValueId = await this.resolveBrandValueId(client, categoryId);
+    const genderValueId = await this.resolveGenderValueId(client, categoryId);
 
     const payload: MercadoLivreCreateItemInput = {
       category_id: categoryId,
@@ -374,6 +392,7 @@ export class MercadoLivreProductsSyncService {
         { id: 'BRAND', value_id: brandValueId },
         { id: 'SELLER_SKU', value_name: variant.sku },
         { id: 'MODEL', value_name: product.baseSku },
+        ...(genderValueId ? [{ id: 'GENDER', value_id: genderValueId }] : []),
       ],
     };
 
@@ -504,6 +523,7 @@ export class MercadoLivreProductsSyncService {
       throw new Error(`Cor "${variant.color}" não encontrada na lista de valores da categoria ${base.categoryId}.`);
     }
     const brandValueId = await this.resolveBrandValueId(client, base.categoryId);
+    const genderValueId = attrs.find((a) => a.id === 'GENDER')?.values?.find((v) => v.name.toLowerCase() === GENDER_VALUE_NAME.toLowerCase())?.id;
 
     const payload: MercadoLivreCreateItemInput = {
       category_id: base.categoryId,
@@ -522,6 +542,7 @@ export class MercadoLivreProductsSyncService {
         { id: 'SELLER_SKU', value_name: variant.sku },
         { id: 'MODEL', value_name: product.baseSku },
         { id: 'COLOR', value_id: colorValueId },
+        ...(genderValueId ? [{ id: 'GENDER', value_id: genderValueId }] : []),
       ],
     };
 
