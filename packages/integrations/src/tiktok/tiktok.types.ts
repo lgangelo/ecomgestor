@@ -110,6 +110,13 @@ export const TIKTOK_PATHS = {
   productPartialEdit: (productId: string) => `/product/${PARTIAL_EDIT_API_VERSION}/products/${productId}/partial_edit`,
   /** "Upload Product File" — vídeo/PDF de produto. Ver `TikTokClient.uploadProductFile`. */
   filesUpload: `/product/${API_VERSION}/files/upload`,
+  /** "Deactivate Products" — CONFIRMADO (deactivate-products-202309). Corpo:
+   * `{ product_ids: string[] }` (máx. 20). Esconde o produto dos compradores, sem excluir —
+   * status vira `Seller_deactivated`. */
+  productsDeactivate: `/product/${API_VERSION}/products/deactivate`,
+  /** "Activate Product" — CONFIRMADO (activate-product-202309). Mesmo corpo do deactivate.
+   * Reativar manda o produto pra revisão de novo (status `Pending` até a TikTok aprovar). */
+  productsActivate: `/product/${API_VERSION}/products/activate`,
 } as const;
 
 export interface TikTokCredentials {

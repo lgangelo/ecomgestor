@@ -273,3 +273,99 @@ describe('TikTokProductsPublishService.publishSingleProduct', () => {
     await expect(service.publishSingleProduct(COMPANY_ID, 'product-1')).rejects.toThrow(/não devolveu product_id/);
   });
 });
+
+describe('TikTokProductsPublishService.syncStatus', () => {
+  function makeSyncStatusService(opts: {
+    mappings: Array<{ id: string; variantId: string; externalProductId: string; lastPushedSnapshotHash: string | null }>;
+    productStatusByVariantId: Record<string, string>;
+  }) {
+    const mappingFindMany = jest.fn().mockResolvedValue(opts.mappings);
+    const mappingUpdateMany = jest.fn();
+    const variantFindMany = jest.fn().mockResolvedValue(
+      Object.entries(opts.productStatusByVariantId).map(([id, status]) => ({ id, product: { status } })),
+    );
+    const connector = { activateProducts: jest.fn().mockResolvedValue({}), deactivateProducts: jest.fn().mockResolvedValue({}) };
+
+    const prisma = {
+      client: {
+        channelProductMapping: { findMany: mappingFindMany, updateMany: mappingUpdateMany },
+        productVariant: { findMany: variantFindMany },
+      },
+    };
+    const credentialsService = { requireIntegration: jest.fn().mockResolvedValue({ id: 'integration-1', channelId: CHANNEL_ID }) };
+    const connectorFactory = { forCompany: jest.fn().mockResolvedValue({ connector }) };
+    const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
+    const service = new TikTokProductsPublishService(
+      {} as unknown as ConfigService,
+      prisma as unknown as PrismaService,
+      credentialsService as unknown as TikTokCredentialsService,
+      connectorFactory as unknown as TikTokConnectorFactory,
+      { log: jest.fn() } as unknown as AuditService,
+      logger as unknown as AppLoggerService,
+    );
+
+    return { service, connector, mappingUpdateMany };
+  }
+
+  it('desativa (Deactivate Products) quando o produto local fica INACTIVE e nunca foi sincronizado assim antes', async () => {
+    const { service, connector, mappingUpdateMany } = makeSyncStatusService({
+      mappings: [{ id: 'map-1', variantId: 'v1', externalProductId: 'tt-ext-1', lastPushedSnapshotHash: null }],
+      productStatusByVariantId: { v1: 'INACTIVE' },
+    });
+
+    const result = await service.syncStatus(COMPANY_ID);
+
+    expect(connector.deactivateProducts).toHaveBeenCalledWith(['tt-ext-1']);
+    expect(connector.activateProducts).not.toHaveBeenCalled();
+    expect(mappingUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['map-1'] } }, data: expect.objectContaining({ lastPushedSnapshotHash: 'inactive' }) }),
+    );
+    expect(result).toEqual({ activated: 0, deactivated: 1, unchanged: 0, failed: 0 });
+  });
+
+  it('reativa (Activate Product) quando o produto local volta a ficar ACTIVE depois de desativado', async () => {
+    const { service, connector } = makeSyncStatusService({
+      mappings: [{ id: 'map-1', variantId: 'v1', externalProductId: 'tt-ext-1', lastPushedSnapshotHash: 'inactive' }],
+      productStatusByVariantId: { v1: 'ACTIVE' },
+    });
+
+    const result = await service.syncStatus(COMPANY_ID);
+
+    expect(connector.activateProducts).toHaveBeenCalledWith(['tt-ext-1']);
+    expect(connector.deactivateProducts).not.toHaveBeenCalled();
+    expect(result).toEqual({ activated: 1, deactivated: 0, unchanged: 0, failed: 0 });
+  });
+
+  it('nunca chama a API de novo quando o status já bate com o último sincronizado', async () => {
+    const { service, connector } = makeSyncStatusService({
+      mappings: [{ id: 'map-1', variantId: 'v1', externalProductId: 'tt-ext-1', lastPushedSnapshotHash: 'inactive' }],
+      productStatusByVariantId: { v1: 'INACTIVE' },
+    });
+
+    const result = await service.syncStatus(COMPANY_ID);
+
+    expect(connector.activateProducts).not.toHaveBeenCalled();
+    expect(connector.deactivateProducts).not.toHaveBeenCalled();
+    expect(result).toEqual({ activated: 0, deactivated: 0, unchanged: 1, failed: 0 });
+  });
+
+  it('agrupa várias variações do MESMO produto TikTok numa única chamada — ativo se QUALQUER uma vier de produto local ACTIVE', async () => {
+    const { service, connector, mappingUpdateMany } = makeSyncStatusService({
+      mappings: [
+        { id: 'map-1', variantId: 'v1', externalProductId: 'tt-ext-1', lastPushedSnapshotHash: 'inactive' },
+        { id: 'map-2', variantId: 'v2', externalProductId: 'tt-ext-1', lastPushedSnapshotHash: 'inactive' },
+      ],
+      productStatusByVariantId: { v1: 'INACTIVE', v2: 'ACTIVE' },
+    });
+
+    const result = await service.syncStatus(COMPANY_ID);
+
+    expect(connector.activateProducts).toHaveBeenCalledTimes(1);
+    expect(connector.activateProducts).toHaveBeenCalledWith(['tt-ext-1']);
+    expect(mappingUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ['map-1', 'map-2'] } } }),
+    );
+    expect(result.activated).toBe(1);
+  });
+});

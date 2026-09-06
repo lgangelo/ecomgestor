@@ -75,7 +75,8 @@
     "check-tiktok-shop-cipher": "npm run check-tiktok-shop-cipher --workspace=@ecommerce-manager/api --",
     "check-tiktok-mapped-categories": "npm run check-tiktok-mapped-categories --workspace=@ecommerce-manager/api --",
     "cache-tiktok-category-attributes": "npm run cache-tiktok-category-attributes --workspace=@ecommerce-manager/api --",
-    "publish-tiktok-item": "npm run publish-tiktok-item --workspace=@ecommerce-manager/api --"
+    "publish-tiktok-item": "npm run publish-tiktok-item --workspace=@ecommerce-manager/api --",
+    "sync-tiktok-status": "npm run sync-tiktok-status --workspace=@ecommerce-manager/api --"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",

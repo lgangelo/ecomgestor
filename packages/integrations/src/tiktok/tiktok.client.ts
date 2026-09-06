@@ -171,6 +171,19 @@ export class TikTokClient {
     return this.request('POST', TIKTOK_PATHS.productPartialEdit(productId), { body: payload });
   }
 
+  /** "Deactivate Products" — CONFIRMADO via documentação oficial. Esconde da vitrine (status vira
+   * `Seller_deactivated`), nunca exclui. Máx. 20 ids por chamada — quem chama nunca deve mandar
+   * mais que isso de uma vez (a doc não diz o que acontece acima do limite, nunca assumir). */
+  async deactivateProducts(productIds: string[]): Promise<Record<string, unknown>> {
+    return this.request('POST', TIKTOK_PATHS.productsDeactivate, { body: { product_ids: productIds } });
+  }
+
+  /** "Activate Product" — CONFIRMADO via documentação oficial. Reativar manda o produto pra
+   * revisão de novo (status `Pending` até a TikTok aprovar) — nunca volta direto pra `Activate`. */
+  async activateProducts(productIds: string[]): Promise<Record<string, unknown>> {
+    return this.request('POST', TIKTOK_PATHS.productsActivate, { body: { product_ids: productIds } });
+  }
+
   /** Fetch multipart compartilhado por `uploadProductFile`/`uploadImage` — nunca define
    * `content-type` manualmente (o `fetch` gera o boundary sozinho a partir do `FormData`).
    * ACHADO (não confirmado por uma chamada real): a assinatura de requests multipart da TikTok

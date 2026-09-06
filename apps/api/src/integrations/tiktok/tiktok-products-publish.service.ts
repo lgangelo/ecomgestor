@@ -473,4 +473,84 @@ export class TikTokProductsPublishService {
     }
     return { published, failed, skipped };
   }
+
+  /** Sincroniza status (ativo/inativo) dos produtos JÁ publicados na TikTok Shop — pedido do
+   * usuário: produto que fica INACTIVE na nossa plataforma precisa ficar desativado lá também, e
+   * reativado se voltar a ficar ACTIVE. Reaproveita `lastPushedSnapshotHash` (já existe no schema,
+   * usado pelo Mercado Livre) só como marcador do ÚLTIMO status enviado ('active'/'inactive') —
+   * nunca chama `activate`/`deactivate` de novo à toa se nada mudou desde o último ciclo.
+   *
+   * A TikTok só tem status POR PRODUTO (`product_id`), nunca por SKU — diferente do Mercado Livre,
+   * que consegue pausar uma cor só. Aqui, decide pelo status do PRODUTO local: se QUALQUER
+   * variante publicada daquele `product_id` pertence a um produto local ACTIVE, o produto na
+   * TikTok fica ativo; só desativa quando NENHUMA variante publicada pertence a um produto ACTIVE.
+   * Nunca decide por `variant.status` sozinho (a TikTok não tem como desativar 1 SKU só). */
+  async syncStatus(companyId: string): Promise<{ activated: number; deactivated: number; unchanged: number; failed: number }> {
+    const integration = await this.credentialsService.requireIntegration(companyId);
+    if (!integration.channelId) return { activated: 0, deactivated: 0, unchanged: 0, failed: 0 };
+    const channelId = integration.channelId;
+
+    const mappings = await this.prisma.client.channelProductMapping.findMany({
+      where: { channelId, variantId: { not: null }, externalProductId: { not: null } },
+      take: MAX_PRODUCTS_PER_CYCLE * 10,
+    });
+    if (mappings.length === 0) return { activated: 0, deactivated: 0, unchanged: 0, failed: 0 };
+
+    const variantIds = [...new Set(mappings.map((m) => m.variantId as string))];
+    const variants = await this.prisma.client.productVariant.findMany({
+      where: { id: { in: variantIds } },
+      select: { id: true, product: { select: { status: true } } },
+    });
+    const productActiveByVariantId = new Map(variants.map((v) => [v.id, v.product.status === 'ACTIVE']));
+
+    // Agrupa por externalProductId (1 produto TikTok pode ter N variações mapeadas) — decide
+    // "deveria estar ativo" se QUALQUER variante daquele produto TikTok vier de um produto local
+    // ACTIVE; guarda também os ids de mapeamento pra atualizar o marcador de status de todos juntos.
+    const byExternalProduct = new Map<string, { mappingIds: string[]; shouldBeActive: boolean; lastStatus: string | null }>();
+    for (const mapping of mappings) {
+      const isFromActiveProduct = productActiveByVariantId.get(mapping.variantId as string);
+      if (isFromActiveProduct === undefined) continue; // variante órfã (produto/variante apagados) — nunca decide sem dado real
+      const key = mapping.externalProductId as string;
+      const entry = byExternalProduct.get(key) ?? { mappingIds: [], shouldBeActive: false, lastStatus: mapping.lastPushedSnapshotHash };
+      entry.mappingIds.push(mapping.id);
+      if (isFromActiveProduct) entry.shouldBeActive = true;
+      byExternalProduct.set(key, entry);
+    }
+
+    const { connector } = await this.connectorFactory.forCompany(companyId);
+    let activated = 0;
+    let deactivated = 0;
+    let unchanged = 0;
+    let failed = 0;
+
+    for (const [externalProductId, entry] of byExternalProduct) {
+      const desiredStatus = entry.shouldBeActive ? 'active' : 'inactive';
+      if (entry.lastStatus === desiredStatus) {
+        unchanged++;
+        continue;
+      }
+      try {
+        if (entry.shouldBeActive) {
+          await connector.activateProducts([externalProductId]);
+          activated++;
+        } else {
+          await connector.deactivateProducts([externalProductId]);
+          deactivated++;
+        }
+        await this.prisma.client.channelProductMapping.updateMany({
+          where: { id: { in: entry.mappingIds } },
+          data: { lastPushedSnapshotHash: desiredStatus, lastPushedAt: new Date() },
+        });
+      } catch (error) {
+        failed++;
+        const message = error instanceof TikTokApiError ? error.message : error instanceof Error ? error.message : String(error);
+        this.logger.error('tiktok_sync_status_failed', { operation: 'sync_status', externalProductId, desiredStatus, errorMessage: message });
+      }
+    }
+
+    if (activated > 0 || deactivated > 0 || failed > 0) {
+      this.logger.log('tiktok_status_synced', { operation: 'sync_status', activated, deactivated, unchanged, failed });
+    }
+    return { activated, deactivated, unchanged, failed };
+  }
 }

@@ -56,6 +56,22 @@ export class TikTokProductsPublishSchedulerService {
             error: (error as Error).message,
           });
         }
+
+        // Pedido do usuário: produto que fica INACTIVE na nossa plataforma precisa ficar
+        // desativado na TikTok Shop também (e reativado se voltar a ficar ACTIVE) — roda no
+        // mesmo ciclo/lock da publicação, nunca um scheduler separado à toa.
+        try {
+          const statusResult = await this.productsPublish.syncStatus(company.id);
+          if (statusResult.activated > 0 || statusResult.deactivated > 0 || statusResult.failed > 0) {
+            this.logger.log('tiktok_status_sync_cycle', { operation: 'run', companyId: company.id, ...statusResult });
+          }
+        } catch (error) {
+          this.logger.error('tiktok_status_sync_cycle_failed', {
+            operation: 'run',
+            companyId: company.id,
+            error: (error as Error).message,
+          });
+        }
       }
     } finally {
       await this.redis.client.del(lockKey);

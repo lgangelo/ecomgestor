@@ -385,6 +385,14 @@ export class TikTokConnector implements MarketplaceConnector {
   async partialEditProduct(productId: string, payload: Parameters<TikTokClient['partialEditProduct']>[1]) {
     return this.client.partialEditProduct(productId, payload);
   }
+
+  async deactivateProducts(productIds: string[]) {
+    return this.client.deactivateProducts(productIds);
+  }
+
+  async activateProducts(productIds: string[]) {
+    return this.client.activateProducts(productIds);
+  }
 }
 
 function buildPageQuery(params: PageParams): Record<string, string> {
