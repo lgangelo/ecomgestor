@@ -23,13 +23,18 @@ export class TikTokClient {
   async request<T>(
     method: HttpMethod,
     path: string,
-    options: { query?: Record<string, string>; body?: unknown } = {},
+    options: { query?: Record<string, string>; body?: unknown; skipShopCipher?: boolean } = {},
   ): Promise<T> {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const query: Record<string, string> = {
       app_key: this.config.appKey,
       timestamp,
-      ...(this.config.shopCipher ? { shop_cipher: this.config.shopCipher } : {}),
+      // ACHADO REAL: "Get Attributes" rejeita `shop_cipher` de vez ("Unexpected identifier. The
+      // 'shop_cipher' query parameter is not required for this request.") — é um endpoint de
+      // taxonomia/catálogo global, não específico da loja, diferente da maioria dos outros
+      // endpoints de negócio (que exigem `shop_cipher`). `options.skipShopCipher` deixa o
+      // chamador omitir isso caso a caso, sem afetar o comportamento padrão de mais nada.
+      ...(this.config.shopCipher && !options.skipShopCipher ? { shop_cipher: this.config.shopCipher } : {}),
       ...(options.query ?? {}),
     };
     const bodyStr = options.body !== undefined ? JSON.stringify(options.body) : '';
@@ -122,12 +127,15 @@ export class TikTokClient {
   }
 
   /** "Get Attributes" — CONFIRMADO via documentação oficial (exemplo de resposta reproduzido
-   * literalmente). NÃO CONFIRMADO ainda contra uma chamada real nesta conta. */
+   * literalmente). ACHADO REAL contra a conta de produção: esse endpoint rejeita `shop_cipher`
+   * ("Unexpected identifier. The 'shop_cipher' query parameter is not required for this
+   * request.") — é taxonomia/catálogo global, não específico da loja. `skipShopCipher: true`
+   * omite o parâmetro só nessa chamada. */
   async getCategoryAttributes(categoryId: string, categoryVersion?: 'v1' | 'v2'): Promise<TikTokCategoryAttribute[]> {
     const data = await this.request<{ attributes?: Array<Record<string, unknown>> }>(
       'GET',
       TIKTOK_PATHS.categoryAttributes(categoryId),
-      { query: categoryVersion ? { category_version: categoryVersion } : undefined },
+      { query: categoryVersion ? { category_version: categoryVersion } : undefined, skipShopCipher: true },
     );
     return (data.attributes ?? []).map((a) => ({
       id: String(a.id),
