@@ -3,13 +3,19 @@
  * Diagnóstico (somente leitura) — pedido do usuário: "investigar todos os campos que fazem o
  * produto ter uma boa pontuação no Mercado Livre". Em vez de adivinhar a partir da ficha de
  * atributos da categoria (que só diz o que É POSSÍVEL preencher, não o que realmente pesa na
- * qualidade/ranking), chama o endpoint oficial de qualidade de publicação
- * (`GET /item/{id}/performance`, documentado como substituto do antigo `/health`) contra um item
- * REAL já publicado nesta conta, e imprime a resposta bruta — ainda NÃO CONFIRMADO nesta conta,
- * primeiro uso real desta chamada.
+ * qualidade/ranking), chama o endpoint oficial de qualidade de publicação e imprime a resposta
+ * bruta.
+ *
+ * ACHADO REAL: existem DOIS endpoints diferentes dependendo do tipo de ID — `/item/{id}/performance`
+ * pro ID clássico que `createItem` devolve (ex.: `MLB7594543328`), e `/user-product/{id}/performance`
+ * pro ID de agrupamento de família (ex.: `MLBU5088811667`, visível na URL de edição do anúncio no
+ * site do vendedor — nunca devolvido pelas nossas chamadas). Usar o caminho errado pro tipo de ID
+ * devolve um 404 genérico do Mercado Livre, sem dizer que o caminho está errado. Este script detecta
+ * sozinho pelo formato (`MLB` + `U` + dígitos = user-product; `MLB` + dígitos direto = item).
  *
  * Uso:
  *   npm run check-mercadolivre-item-performance --workspace=@ecommerce-manager/api -- MLB1234567890
+ *   npm run check-mercadolivre-item-performance --workspace=@ecommerce-manager/api -- MLBU1234567890
  */
 import { NestFactory } from '@nestjs/core';
 import { PrismaClient } from '@ecommerce-manager/database';
@@ -38,8 +44,11 @@ async function main() {
     const connectorFactory = app.get(MercadoLivreConnectorFactory);
     const { client } = await connectorFactory.forCompany(company.id);
 
-    const performance = await client.getItemPerformance(itemId);
-    console.log(`Qualidade da publicação — item ${itemId}:`);
+    const isUserProduct = /^[A-Z]{3}U\d+$/i.test(itemId);
+    const performance = isUserProduct
+      ? await client.getUserProductPerformance(itemId)
+      : await client.getItemPerformance(itemId);
+    console.log(`Qualidade da publicação — ${isUserProduct ? 'user-product' : 'item'} ${itemId}:`);
     console.log('----------------------------------------------------');
     console.log(JSON.stringify(performance, null, 2));
   } finally {

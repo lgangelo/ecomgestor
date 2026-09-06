@@ -107,16 +107,24 @@ export class MercadoLivreClient {
     return this.request('GET', `/items/${itemId}`);
   }
 
-  /** Qualidade da publicação — NÃO CONFIRMADO ainda contra uma chamada real nesta conta (achado só
-   * via documentação/busca externa, nunca testado). Segundo a documentação pública, substituiu o
-   * antigo `/health` (descontinuado) e devolve `score`/`level` gerais mais uma lista de `buckets`
-   * (título, imagens, ficha técnica, descrição, etc.), cada um com o próprio `status` e uma lista
-   * de `variables` pendentes/completas — é o jeito oficial de descobrir, pro Mercado Livre, o que
+  /** Qualidade da publicação de um ITEM clássico (o que `createItem` sempre devolve, ex.:
+   * `MLB7594543328`) — devolve `score`/`level` gerais mais uma lista de `buckets` (título,
+   * imagens, ficha técnica, descrição, etc.), cada um com o próprio `status` e uma lista de
+   * `variables` pendentes/completas. É o jeito oficial de descobrir, pro Mercado Livre, o que
    * está faltando pra melhorar a qualidade de um anúncio JÁ PUBLICADO, em vez de adivinhar a
-   * partir da ficha de atributos da categoria. Primeiro uso deve vir de um script de diagnóstico
-   * contra um item real, igual todo o resto desta integração. */
+   * partir da ficha de atributos da categoria. ACHADO REAL: existe um endpoint IRMÃO,
+   * `getUserProductPerformance`, pro ID de agrupamento de família (`MLBU...`, visível na tela do
+   * vendedor) — os dois caminhos são diferentes (`/item/` x `/user-product/`, singular), tentar o
+   * ID errado no caminho errado devolve um 404 genérico do Mercado Livre, não um erro específico. */
   async getItemPerformance(itemId: string): Promise<Record<string, unknown>> {
     return this.request('GET', `/item/${itemId}/performance`);
+  }
+
+  /** Mesmo recurso de qualidade que `getItemPerformance`, mas pro ID de "user product" (família
+   * de variações, prefixo `MLBU...` — visível na URL de edição do anúncio no site do vendedor,
+   * nunca devolvido pelas nossas chamadas de `createItem`). Ver nota em `getItemPerformance`. */
+  async getUserProductPerformance(userProductId: string): Promise<Record<string, unknown>> {
+    return this.request('GET', `/user-product/${userProductId}/performance`);
   }
 
   /** Atualiza um item já existente (preço, estoque, fotos, variações, etc.) — NÃO CONFIRMADO
