@@ -63,7 +63,8 @@
     "check-mercadolivre-listing-types": "npm run check-mercadolivre-listing-types --workspace=@ecommerce-manager/api --",
     "reset-mercadolivre-mappings": "npm run reset-mercadolivre-mappings --workspace=@ecommerce-manager/api --",
     "check-tiktok-product-detail-raw": "npm run check-tiktok-product-detail-raw --workspace=@ecommerce-manager/api --",
-    "check-tiktok-missing-variant-photos": "npm run check-tiktok-missing-variant-photos --workspace=@ecommerce-manager/api --"
+    "check-tiktok-missing-variant-photos": "npm run check-tiktok-missing-variant-photos --workspace=@ecommerce-manager/api --",
+    "check-tiktok-upload-product-file": "npm run check-tiktok-upload-product-file --workspace=@ecommerce-manager/api --"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",

@@ -55,6 +55,57 @@ export class TikTokClient {
       );
     }
 
+    return this.handleResponse<T>(response);
+  }
+
+  /** Upload de arquivo não-imagem (PDF ou vídeo) pra associar a um produto — "Upload Product
+   * File" da Product API (`POST /product/202309/files/upload`), escopo `seller.product.basic`.
+   * NÃO CONFIRMADO ainda contra uma chamada real nesta conta (achado só via documentação oficial
+   * navegada pelo Partner Center) — primeiro uso deve vir de um script de diagnóstico, igual todo
+   * o resto desta integração.
+   *
+   * Diferente de `request()`: o corpo é `multipart/form-data` (arquivo binário + nome), nunca
+   * JSON. ACHADO (também não confirmado por uma chamada real): a assinatura de requests
+   * multipart da TikTok Shop trata o corpo como string vazia na fórmula do HMAC — documentado
+   * assim pela TikTok para outros endpoints de upload de arquivo da Open API; se a assinatura
+   * falhar contra uma chamada real, é o primeiro lugar a revisar. Nunca define o header
+   * `content-type` manualmente — o `fetch` precisa gerar o boundary do multipart sozinho a
+   * partir do `FormData`, um header fixo quebraria isso.
+   */
+  async uploadProductFile(params: { buffer: Buffer; filename: string }): Promise<{ id?: string; url?: string; [key: string]: unknown }> {
+    const path = '/product/202309/files/upload';
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const query: Record<string, string> = {
+      app_key: this.config.appKey,
+      timestamp,
+      ...(this.config.shopCipher ? { shop_cipher: this.config.shopCipher } : {}),
+    };
+    const sign = signApiRequest({ path, query, body: '', appSecret: this.config.appSecret });
+    const searchParams = new URLSearchParams({ ...query, sign, access_token: this.config.accessToken });
+    const url = `${TIKTOK_HOSTS.api}${path}?${searchParams.toString()}`;
+
+    const form = new FormData();
+    form.append('data', new Blob([params.buffer]), params.filename);
+    form.append('name', params.filename);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'x-tts-access-token': this.config.accessToken },
+        body: form,
+      });
+    } catch (error) {
+      throw new TikTokApiError(
+        `Falha de rede ao chamar a API da TikTok Shop: ${(error as Error).message}`,
+        'TEMPORARY',
+      );
+    }
+
+    return this.handleResponse(response);
+  }
+
+  private async handleResponse<T>(response: Response): Promise<T> {
     if (response.status === 429) {
       const retryAfter = Number(response.headers.get('retry-after') ?? '1');
       throw new TikTokApiError('Rate limit excedido pela TikTok Shop', 'RATE_LIMIT', 429, retryAfter);

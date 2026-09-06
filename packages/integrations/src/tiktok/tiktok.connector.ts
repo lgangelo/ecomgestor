@@ -346,6 +346,14 @@ export class TikTokConnector implements MarketplaceConnector {
     void companyId;
     return this.client.request('GET', TIKTOK_PATHS.productDetail(externalProductId));
   }
+
+  /** Repassa pro "Upload Product File" do cliente — ver comentário em `TikTokClient.uploadProductFile`
+   * (NÃO CONFIRMADO ainda contra uma chamada real nesta conta). Usado hoje só pelo CLI de
+   * diagnóstico `check-tiktok-upload-product-file`; nunca chamado pelo fluxo de sincronização
+   * normal até essa confirmação acontecer. */
+  async uploadProductFile(buffer: Buffer, filename: string): Promise<Record<string, unknown>> {
+    return this.client.uploadProductFile({ buffer, filename });
+  }
 }
 
 function buildPageQuery(params: PageParams): Record<string, string> {

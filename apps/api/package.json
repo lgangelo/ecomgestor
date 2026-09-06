@@ -56,6 +56,7 @@
     "reset-mercadolivre-mappings": "node dist/cli/reset-mercadolivre-mappings.js",
     "check-tiktok-product-detail-raw": "node dist/cli/check-tiktok-product-detail-raw.js",
     "check-tiktok-missing-variant-photos": "node dist/cli/check-tiktok-missing-variant-photos.js",
+    "check-tiktok-upload-product-file": "node dist/cli/check-tiktok-upload-product-file.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
