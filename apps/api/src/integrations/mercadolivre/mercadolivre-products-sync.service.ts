@@ -221,12 +221,23 @@ export class MercadoLivreProductsSyncService {
     return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
   }
 
+  /** ACHADO REAL (pedido do usuário): capa e galeria adicional são do PRODUTO — a foto da
+   * VARIAÇÃO serve só pra identificar visualmente qual cor corresponde àquele anúncio, nunca deve
+   * substituir a capa/galeria do produto. Bug anterior: a foto da variação virava a capa sempre
+   * que existia, e a capa de verdade do produto (`product.imageUrl`) ficava de fora da lista por
+   * completo. Ordem agora: capa do produto primeiro (cai pra foto da variação só quando o produto
+   * não tem capa própria ainda), depois a galeria do produto, depois a foto da variação por
+   * último (nunca duplicada se já apareceu antes). */
   private pictures(product: ProductForSync, variant: ProductForSync['variants'][number]): Array<{ source: string }> {
-    const cover = variant.imageUrl && /^https?:\/\//.test(variant.imageUrl) ? variant.imageUrl : product.imageUrl;
-    const urls = [cover, ...product.images.slice().sort((a, b) => a.position - b.position).map((i) => i.url)].filter(
+    const productCover = product.imageUrl && /^https?:\/\//.test(product.imageUrl) ? product.imageUrl : undefined;
+    const variantPhoto = variant.imageUrl && /^https?:\/\//.test(variant.imageUrl) ? variant.imageUrl : undefined;
+    const gallery = product.images.slice().sort((a, b) => a.position - b.position).map((i) => i.url);
+
+    const urls = [productCover ?? variantPhoto, ...gallery, variantPhoto].filter(
       (url): url is string => Boolean(url) && /^https?:\/\//.test(url as string),
     );
-    // Nunca manda a mesma URL duas vezes (a capa pode já estar na galeria).
+    // Nunca manda a mesma URL duas vezes (a capa pode já estar na galeria, ou coincidir com a
+    // foto da variação).
     return Array.from(new Set(urls)).map((source) => ({ source }));
   }
 

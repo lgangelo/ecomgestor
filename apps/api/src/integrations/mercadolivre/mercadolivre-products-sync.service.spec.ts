@@ -152,6 +152,64 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
   });
 
   it(
+    'ACHADO REAL (pedido do usuário): capa e galeria do PRODUTO vêm primeiro, a foto da ' +
+      'variação só entra depois (nunca substitui a capa do produto)',
+    async () => {
+      const variant = makeVariant({ imageUrl: 'https://cdn.example.com/variacao-azul.jpg' });
+      const { service, client } = makeService({
+        products: [
+          makeProductRow([variant], {
+            imageUrl: 'https://cdn.example.com/capa.jpg',
+            images: [
+              { url: 'https://cdn.example.com/galeria-2.jpg', position: 2 },
+              { url: 'https://cdn.example.com/galeria-1.jpg', position: 1 },
+            ],
+          }),
+        ],
+      });
+
+      await service.publishEligible(COMPANY_ID);
+
+      expect(client.createItem.mock.calls[0][0]).toMatchObject({
+        pictures: [
+          { source: 'https://cdn.example.com/capa.jpg' },
+          { source: 'https://cdn.example.com/galeria-1.jpg' },
+          { source: 'https://cdn.example.com/galeria-2.jpg' },
+          { source: 'https://cdn.example.com/variacao-azul.jpg' },
+        ],
+      });
+    },
+  );
+
+  it(
+    'ACHADO REAL (pedido do usuário): sem capa própria do produto, a foto da variação assume só ' +
+      'como fallback da capa (nunca sem nenhuma foto)',
+    async () => {
+      const variant = makeVariant({ imageUrl: 'https://cdn.example.com/variacao-azul.jpg' });
+      // `makeProductRow` usa `??` nos defaults — passar `imageUrl: null` não teria efeito (null
+      // também é nullish), por isso monta o produto direto aqui, sem o helper.
+      const productWithoutCover = {
+        id: 'product-1',
+        name: 'Bolsa Teste',
+        description: 'Descrição',
+        status: 'ACTIVE',
+        baseSku: 'BASE-1',
+        imageUrl: null as string | null,
+        externalMaterial: null,
+        images: [] as Array<{ url: string; position: number }>,
+        variants: [variant],
+      } as unknown as ReturnType<typeof makeProductRow>;
+      const { service, client } = makeService({ products: [productWithoutCover] });
+
+      await service.publishEligible(COMPANY_ID);
+
+      expect(client.createItem.mock.calls[0][0]).toMatchObject({
+        pictures: [{ source: 'https://cdn.example.com/variacao-azul.jpg' }],
+      });
+    },
+  );
+
+  it(
     'DECISÃO DO USUÁRIO (confirmado via /item/performance real): preenche o atributo GENDER como ' +
       '"Feminino" quando a categoria tiver esse atributo, sem precisar cadastrar por produto',
     async () => {
