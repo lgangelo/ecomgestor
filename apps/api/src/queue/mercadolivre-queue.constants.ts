@@ -18,6 +18,10 @@ export const MERCADO_LIVRE_JOBS = {
   // uma cor não ter sido publicada (ex.: "cor não encontrada no catálogo") e permitir tentar de
   // novo manualmente depois de corrigir o dado — pedido explícito do usuário.
   PUBLISH_PRODUCT_COLOR: 'mercadolivre-publish-product-color',
+  // Mesmo papel do acima, mas pra falha ao definir a DESCRIÇÃO de um item já criado — achado real
+  // do usuário: a descrição nunca chegava ao Mercado Livre em alguns anúncios, e antes disso não
+  // tinha nenhum jeito de saber por quê (só um log, nunca visível na tela de Falhas).
+  PUBLISH_PRODUCT_DESCRIPTION: 'mercadolivre-publish-product-description',
 } as const;
 
 export type MercadoLivreJobName = (typeof MERCADO_LIVRE_JOBS)[keyof typeof MERCADO_LIVRE_JOBS];

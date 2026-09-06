@@ -105,16 +105,17 @@ export class MercadoLivreJobsService {
       take: 100,
     });
 
-    // Pedido do usuário: a falha de publicação de cor precisa aparecer com contexto de verdade
-    // (nome do produto, SKU, cor tentada) — não só o id da variante — pra dar pra editar e
-    // reenviar direto nesta tela, sem precisar abrir outra. `relatedExternalId` é o variantId
-    // pra este tipo de job (nunca um id externo de verdade, ao contrário dos outros tipos).
-    const colorJobVariantIds = jobs
-      .filter((j) => j.type === MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_COLOR && j.relatedExternalId)
+    // Pedido do usuário: a falha de publicação de cor/descrição precisa aparecer com contexto de
+    // verdade (nome do produto, SKU, cor tentada) — não só o id da variante — pra dar pra editar
+    // e reenviar direto nesta tela, sem precisar abrir outra. `relatedExternalId` é o variantId
+    // pra estes dois tipos de job (nunca um id externo de verdade, ao contrário dos outros tipos).
+    const productJobTypes: string[] = [MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_COLOR, MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_DESCRIPTION];
+    const productJobVariantIds = jobs
+      .filter((j) => productJobTypes.includes(j.type) && j.relatedExternalId)
       .map((j) => j.relatedExternalId!);
-    const variants = colorJobVariantIds.length
+    const variants = productJobVariantIds.length
       ? await this.prisma.client.productVariant.findMany({
-          where: { id: { in: colorJobVariantIds } },
+          where: { id: { in: productJobVariantIds } },
           include: { product: { select: { id: true, name: true } } },
         })
       : [];
@@ -173,6 +174,10 @@ export class MercadoLivreJobsService {
       case MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_COLOR:
         if (!relatedExternalId) return;
         await this.productsSync.retryColorPublish(user.companyId, relatedExternalId);
+        return;
+      case MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_DESCRIPTION:
+        if (!relatedExternalId) return;
+        await this.productsSync.retryDescriptionPublish(user.companyId, relatedExternalId);
         return;
       default:
         return;

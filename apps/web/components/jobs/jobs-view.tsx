@@ -47,6 +47,7 @@ const JOB_TYPES = [
   'mercadolivre-import-orders',
   'mercadolivre-reconcile-orders',
   'mercadolivre-publish-product-color',
+  'mercadolivre-publish-product-description',
 ];
 
 function formatDuration(ms: number | null): string {

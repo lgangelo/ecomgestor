@@ -19,10 +19,25 @@ import {
 const JOB_LABELS: Record<string, string> = {
   'mercadolivre-import-orders': 'Importação de pedidos',
   'mercadolivre-reconcile-orders': 'Reconciliação de pedidos',
-  'mercadolivre-publish-product-color': 'Publicação de produto',
+  'mercadolivre-publish-product-color': 'Publicação de produto (cor)',
+  'mercadolivre-publish-product-description': 'Publicação de produto (descrição)',
 };
 
 const PUBLISH_COLOR_TYPE = 'mercadolivre-publish-product-color';
+
+/** Referência da linha: nome do produto + SKU quando temos esse contexto (falhas de cor/
+ * descrição), senão o id bruto do job (falhas de outros tipos, sem produto associado). */
+function JobReferenceCell({ job }: { job: MercadoLivreFailedJob }) {
+  if (job.productName) {
+    return (
+      <TableCell>
+        <p className="font-medium">{job.productName}</p>
+        <p className="text-xs text-muted-foreground">{job.sku ?? '—'}</p>
+      </TableCell>
+    );
+  }
+  return <TableCell>{job.relatedExternalId ?? '—'}</TableCell>;
+}
 
 /** Falha de publicação de produto (pedido do usuário) — mostra o produto/SKU/cor de verdade
  * (não só o id da variante) e deixa corrigir a cor e reenviar direto aqui, sem abrir outra
@@ -35,10 +50,7 @@ function ProductColorFailureRow({ job }: { job: MercadoLivreFailedJob }) {
   return (
     <TableRow>
       <TableCell>{JOB_LABELS[job.type] ?? job.type}</TableCell>
-      <TableCell>
-        <p className="font-medium">{job.productName ?? '—'}</p>
-        <p className="text-xs text-muted-foreground">{job.sku ?? '—'}</p>
-      </TableCell>
+      <JobReferenceCell job={job} />
       <TableCell>{formatDate(job.createdAt, true)}</TableCell>
       <TableCell>
         {job.attempts}/{job.maxAttempts}
@@ -108,7 +120,7 @@ export function MercadoLivreFailuresTab() {
           ) : (
             <TableRow key={job.id}>
               <TableCell>{JOB_LABELS[job.type] ?? job.type}</TableCell>
-              <TableCell>{job.relatedExternalId ?? '—'}</TableCell>
+              <JobReferenceCell job={job} />
               <TableCell>{formatDate(job.createdAt, true)}</TableCell>
               <TableCell>
                 {job.attempts}/{job.maxAttempts}

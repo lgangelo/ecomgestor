@@ -210,7 +210,7 @@ export class MercadoLivreProductsSyncService {
               skipped++;
               continue;
             }
-            await this.publishBaseItem(client, channelId, companyId, product, variant, size || undefined);
+            await this.publishBaseItem(client, channelId, integrationId, companyId, product, variant, size || undefined);
             published++;
             continue;
           }
@@ -240,7 +240,7 @@ export class MercadoLivreProductsSyncService {
             skipped++;
             continue;
           }
-          const created = await this.publishBaseItem(client, channelId, companyId, product, baseVariant, size || undefined);
+          const created = await this.publishBaseItem(client, channelId, integrationId, companyId, product, baseVariant, size || undefined);
           published++;
           // ACHADO REAL corrigido: o item base nascia sem o próprio atributo COLOR (só os
           // scripts manuais faziam esse update de acompanhamento) — sem isso, a cor da base
@@ -312,6 +312,7 @@ export class MercadoLivreProductsSyncService {
   private async publishBaseItem(
     client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
     channelId: string,
+    integrationId: string,
     companyId: string,
     product: ProductForSync,
     variant: ProductForSync['variants'][number],
@@ -347,25 +348,30 @@ export class MercadoLivreProductsSyncService {
     // recriava um NOVO item idêntico no próximo ciclo do agendador, pra sempre (confirmado em
     // produção: 157 anúncios duplicados do mesmo produto).
     await this.saveMapping(channelId, variant.id, created.id, variant.sku, companyId);
-    await this.trySetDescription(client, created.id, product.description);
+    await this.trySetDescription(client, integrationId, created.id, variant, product.description);
 
     return { itemId: created.id, categoryId, familyName: title, listingTypeId };
   }
 
   /** Nunca aborta a publicação por causa da descrição — o item já existe e o vínculo já foi
-   * salvo nesse ponto; uma falha aqui só significa que o anúncio fica sem descrição até o
-   * próximo ciclo de `syncPublished` tentar de novo (também não-fatal, ver lá). */
+   * salvo nesse ponto; uma falha aqui só significa que o anúncio fica sem descrição até alguém
+   * corrigir e tentar de novo (pedido do usuário: essa falha precisa ficar visível — antes só
+   * virava um log, e ninguém via que a descrição nunca chegou ao Mercado Livre). */
   private async trySetDescription(
     client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
+    integrationId: string,
     itemId: string,
+    variant: { id: string; sku: string },
     description: string | null,
   ): Promise<void> {
     if (!description) return;
     try {
       await client.setItemDescription(itemId, description);
+      await this.clearDescriptionFailure(integrationId, variant.id);
     } catch (error) {
       const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
       this.logger.warn('mercadolivre_set_description_failed', { operation: 'try_set_description', itemId, errorMessage: message });
+      await this.recordDescriptionFailure(integrationId, variant, message);
     }
   }
 
@@ -423,7 +429,7 @@ export class MercadoLivreProductsSyncService {
     let failed = 0;
     for (const variant of variants) {
       try {
-        await this.publishAdditionalColorItem(client, channelId, companyId, product, variant, base);
+        await this.publishAdditionalColorItem(client, channelId, integrationId, companyId, product, variant, base);
         await this.clearColorFailure(integrationId, variant.id);
         published++;
       } catch (error) {
@@ -445,6 +451,7 @@ export class MercadoLivreProductsSyncService {
   private async publishAdditionalColorItem(
     client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
     channelId: string,
+    integrationId: string,
     companyId: string,
     product: ProductForSync,
     variant: ProductForSync['variants'][number],
@@ -482,7 +489,7 @@ export class MercadoLivreProductsSyncService {
     // Mesmo achado/correção de `publishBaseItem`: salva o vínculo assim que o item existe, antes
     // de qualquer chamada de acompanhamento que possa falhar.
     await this.saveMapping(channelId, variant.id, created.id, variant.sku, companyId);
-    await this.trySetDescription(client, created.id, product.description);
+    await this.trySetDescription(client, integrationId, created.id, variant, product.description);
   }
 
   private async saveMapping(channelId: string, variantId: string, externalProductId: string, externalSku: string, companyId: string) {
@@ -545,6 +552,70 @@ export class MercadoLivreProductsSyncService {
     await this.prisma.client.syncJob.deleteMany({
       where: { integrationId, type: MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_COLOR, relatedExternalId: variantId },
     });
+  }
+
+  /** Mesmo padrão de `recordColorFailure`/`clearColorFailure`, pra falha de `setItemDescription`
+   * (pedido do usuário: essa falha precisa ficar visível, com jeito de corrigir e reenviar). */
+  private async recordDescriptionFailure(
+    integrationId: string,
+    variant: { id: string; sku: string },
+    errorMessage: string,
+  ): Promise<void> {
+    const existing = await this.prisma.client.syncJob.findFirst({
+      where: { integrationId, type: MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_DESCRIPTION, relatedExternalId: variant.id },
+    });
+    const data = {
+      status: 'FAILED' as const,
+      error: errorMessage,
+      errorCategory: 'VALIDATION',
+      payload: { variantId: variant.id, sku: variant.sku },
+      finishedAt: new Date(),
+    };
+    if (existing) {
+      await this.prisma.client.syncJob.update({ where: { id: existing.id }, data: { ...data, attempts: existing.attempts + 1 } });
+      return;
+    }
+    await this.prisma.client.syncJob.create({
+      data: { integrationId, type: MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_DESCRIPTION, relatedExternalId: variant.id, attempts: 1, maxAttempts: 1, ...data },
+    });
+  }
+
+  private async clearDescriptionFailure(integrationId: string, variantId: string): Promise<void> {
+    await this.prisma.client.syncJob.deleteMany({
+      where: { integrationId, type: MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_DESCRIPTION, relatedExternalId: variantId },
+    });
+  }
+
+  /** Reprocessa manualmente a descrição de UMA variante que falhou (tela de Jobs/Falhas) — usa a
+   * descrição ATUAL do produto (se o usuário editou o texto, é essa versão nova que é tentada) e
+   * exige que o item já exista no Mercado Livre (só entra aqui quem já tem vínculo — a falha só
+   * acontece depois da criação, nunca antes). */
+  async retryDescriptionPublish(companyId: string, variantId: string): Promise<void> {
+    const integration = await this.credentialsService.requireIntegration(companyId);
+    if (!integration.channelId) throw new NotFoundException('Canal Mercado Livre ainda não conectado.');
+    const channelId = integration.channelId;
+
+    const dbVariant = await this.prisma.client.productVariant.findFirst({
+      where: { id: variantId, product: { companyId } },
+      include: { product: true },
+    });
+    if (!dbVariant) throw new NotFoundException('Variante não encontrada.');
+
+    const mapping = await this.prisma.client.channelProductMapping.findUnique({
+      where: { channelId_variantId: { channelId, variantId } },
+    });
+    if (!mapping?.externalProductId) {
+      throw new Error('Esta variante ainda não foi publicada no Mercado Livre — não há item pra atualizar a descrição.');
+    }
+
+    const { client } = await this.connectorFactory.forCompany(companyId);
+    await this.trySetDescription(
+      client,
+      integration.id,
+      mapping.externalProductId,
+      { id: dbVariant.id, sku: dbVariant.sku },
+      dbVariant.product.description,
+    );
   }
 
   /** Reprocessa manualmente UMA variante que falhou (chamado pela tela de Jobs/Falhas, botão
@@ -631,7 +702,7 @@ export class MercadoLivreProductsSyncService {
     };
 
     try {
-      await this.publishAdditionalColorItem(client, channelId, companyId, product, variant, base);
+      await this.publishAdditionalColorItem(client, channelId, integrationId, companyId, product, variant, base);
       await this.clearColorFailure(integrationId, variantId);
     } catch (error) {
       const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
@@ -729,7 +800,7 @@ export class MercadoLivreProductsSyncService {
           // ver docs/integrations/mercado-livre.md antes de confiar cegamente neste campo.
           status: product.status === 'ACTIVE' && variant.status === 'ACTIVE' ? 'active' : 'paused',
         });
-        await this.trySetDescription(client, mapping.externalProductId!, product.description);
+        await this.trySetDescription(client, integration.id, mapping.externalProductId!, variant, product.description);
         await this.prisma.client.channelProductMapping.update({
           where: { channelId_variantId: { channelId, variantId: mapping.variantId! } },
           data: { lastPushedSnapshotHash: hash, lastPushedAt: new Date() },

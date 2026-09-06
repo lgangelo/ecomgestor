@@ -180,6 +180,30 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
     expect(client.createItem).not.toHaveBeenCalled();
   });
 
+  it(
+    'ACHADO REAL (pedido do usuário): quando setItemDescription falha, registra a falha como SyncJob ' +
+      'pra aparecer na tela de Jobs/Falhas (antes só virava um log, invisível pro usuário)',
+    async () => {
+      const variant = makeVariant();
+      const client = makeClient();
+      client.setItemDescription = jest.fn().mockRejectedValue(new Error('descrição rejeitada'));
+      const { service, syncJobCreate } = makeService({ products: [makeProductRow([variant])], client });
+
+      await service.publishEligible(COMPANY_ID);
+
+      expect(syncJobCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            type: 'mercadolivre-publish-product-description',
+            relatedExternalId: 'variant-1',
+            status: 'FAILED',
+            payload: { variantId: 'variant-1', sku: 'SKU-1' },
+          }),
+        }),
+      );
+    },
+  );
+
   it('pula produto sem cor sem estoque disponível', async () => {
     const variant = makeVariant({ inventory: { onHand: 0, reserved: 0 } });
     const { service, client } = makeService({ products: [makeProductRow([variant])] });
