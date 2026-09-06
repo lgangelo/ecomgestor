@@ -237,16 +237,6 @@ export class TikTokProductsPublishService {
 
     let attrs = caches.attrsByCategory.get(categoryMapping.externalCategoryId);
     if (!attrs) {
-      // ACHADO REAL em investigação: a MESMA chamada, com a MESMA categoria, funciona isolada
-      // (check-tiktok-category-attributes) mas falha aqui dentro — breadcrumb temporário pra
-      // capturar o valor EXATO (com tipo) sendo passado, já que essa é a única diferença ainda
-      // não confirmada byte a byte entre os dois caminhos. Remover depois de confirmado.
-      this.logger.log('tiktok_publish_debug_category_call', {
-        externalCategoryId: JSON.stringify(categoryMapping.externalCategoryId),
-        externalCategoryIdLength: categoryMapping.externalCategoryId.length,
-        externalCategoryVersionRaw: JSON.stringify(categoryMapping.externalCategoryVersion),
-        externalCategoryVersionType: typeof categoryMapping.externalCategoryVersion,
-      });
       attrs = await connector.getCategoryAttributes(
         categoryMapping.externalCategoryId,
         categoryMapping.externalCategoryVersion as 'v1' | 'v2' | undefined,

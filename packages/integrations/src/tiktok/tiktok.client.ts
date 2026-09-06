@@ -29,11 +29,9 @@ export class TikTokClient {
     const query: Record<string, string> = {
       app_key: this.config.appKey,
       timestamp,
-      // ACHADO REAL: "Get Attributes" rejeita `shop_cipher` de vez ("Unexpected identifier. The
-      // 'shop_cipher' query parameter is not required for this request.") — é um endpoint de
-      // taxonomia/catálogo global, não específico da loja, diferente da maioria dos outros
-      // endpoints de negócio (que exigem `shop_cipher`). `options.skipShopCipher` deixa o
-      // chamador omitir isso caso a caso, sem afetar o comportamento padrão de mais nada.
+      // `options.skipShopCipher` existe pro chamador omitir o parâmetro caso a caso, se um
+      // endpoint específico confirmar (via código numérico do erro, nunca só o texto) que não o
+      // aceita — nenhum endpoint usa essa opção hoje.
       ...(this.config.shopCipher && !options.skipShopCipher ? { shop_cipher: this.config.shopCipher } : {}),
       ...(options.query ?? {}),
     };
@@ -42,6 +40,15 @@ export class TikTokClient {
 
     const searchParams = new URLSearchParams({ ...query, sign, access_token: this.config.accessToken });
     const url = `${TIKTOK_HOSTS.api}${path}?${searchParams.toString()}`;
+
+    // ACHADO REAL em investigação: a MESMA chamada (mesmo path, mesmo categoryId, mesmo
+    // shop_cipher confirmado válido) funciona isolada mas falha dentro do fluxo de publicação de
+    // produto — breadcrumb temporário pra comparar a URL byte a byte entre as duas execuções.
+    // Nunca loga `sign`/`access_token` (segredo). Remover depois de confirmado.
+    if (path.includes('/attributes')) {
+      // eslint-disable-next-line no-console
+      console.log('[tiktok-debug-request]', JSON.stringify({ method, path, query }));
+    }
 
     let response: Response;
     try {
