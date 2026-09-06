@@ -19,6 +19,12 @@ function makeVariant(overrides: Partial<Record<string, unknown>> = {}) {
     suggestedPrice: overrides.suggestedPrice ?? 100,
     imageUrl: overrides.imageUrl ?? null,
     inventory: overrides.inventory === undefined ? { onHand: 5, reserved: 0 } : overrides.inventory,
+    // Peso/dimensões — obrigatório pra criar produto na TikTok Shop (achado real); todo teste
+    // "feliz" precisa de um valor por padrão, senão cai no erro de medidas faltando à toa.
+    weight: overrides.weight === undefined ? '0.3' : overrides.weight,
+    length: overrides.length === undefined ? '20' : overrides.length,
+    width: overrides.width === undefined ? '15' : overrides.width,
+    height: overrides.height === undefined ? '10' : overrides.height,
     createdAt: new Date(),
   };
 }
@@ -112,8 +118,21 @@ describe('TikTokProductsPublishService.buildProductPayload', () => {
           seller_sku: 'SKU-1',
         },
       ],
+      package_weight: { value: '0.3', unit: 'KILOGRAM' },
+      package_dimensions: { length: '20', width: '15', height: '10', unit: 'CENTIMETER' },
     });
   });
+
+  it(
+    'ACHADO REAL (produto de teste real, código 12052116): lança erro claro quando a variante ' +
+      'não tem peso/dimensões cadastradas — a TikTok recusa criar sem isso pra esta categoria',
+    async () => {
+      const variant = makeVariant({ weight: null });
+      const { service } = makeService({ products: [makeProductRow([variant])] });
+
+      await expect(service.buildProductPayload(COMPANY_ID, 'product-1')).rejects.toThrow(/sem peso\/dimensões cadastradas/i);
+    },
+  );
 
   it('usa o warehouse_id fixo (TIKTOK_DEFAULT_WAREHOUSE_ID) sem chamar getWarehouses', async () => {
     const variant = makeVariant();
