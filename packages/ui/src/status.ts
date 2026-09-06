@@ -65,6 +65,10 @@ export const TIKTOK_AREA_STATUS_PRESENTATION: Record<string, StatusPresentation>
   CONFORME_DISPONIBILIDADE: { label: 'Conforme disponibilidade', tone: 'info' },
 };
 
+/** Mesmo vocabulário de `TIKTOK_AREA_STATUS_PRESENTATION` (OK/STALE/DEGRADED/...), com nome
+ * genérico pra uso em qualquer painel de saúde de integração além da TikTok (ex.: Mercado Livre). */
+export const INTEGRATION_AREA_STATUS_PRESENTATION = TIKTOK_AREA_STATUS_PRESENTATION;
+
 export const FISCAL_DOCUMENT_STATUS_PRESENTATION: Record<string, StatusPresentation> = {
   PENDING: { label: 'Pendente', tone: 'warning' },
   ISSUED: { label: 'Emitido', tone: 'success' },

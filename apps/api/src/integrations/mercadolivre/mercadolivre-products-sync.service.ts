@@ -1187,6 +1187,13 @@ export class MercadoLivreProductsSyncService {
       }
     }
 
+    // Checkpoint pra tela de status (Visão geral) — mesmo padrão do checkpoint de pedidos.
+    const checkpoints = (integration.syncCheckpoints as Record<string, string> | null) ?? {};
+    await this.prisma.client.integration.update({
+      where: { id: integration.id },
+      data: { syncCheckpoints: { ...checkpoints, productsSyncAt: new Date().toISOString() } },
+    });
+
     if (updated > 0 || failed > 0) {
       this.logger.log('mercadolivre_products_updated', { operation: 'sync_published', updated, failed, unchanged });
     }

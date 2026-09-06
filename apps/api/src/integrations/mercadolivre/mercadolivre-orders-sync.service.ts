@@ -131,6 +131,18 @@ export class MercadoLivreOrdersSyncService {
       changes.push(`... e mais ${changesOmitted} mudança(s) não listada(s).`);
     }
 
+    // Checkpoint pra tela de status (Visão geral) — v1 não filtra por data (ver comentário da
+    // classe), então isto só marca QUANDO a última sincronização completa rodou, não "a partir de
+    // onde continuar".
+    const checkpoints = (integration.syncCheckpoints as Record<string, string> | null) ?? {};
+    await this.prisma.client.integration.update({
+      where: { id: integration.id },
+      data: {
+        lastSyncAt: new Date(),
+        syncCheckpoints: { ...checkpoints, ordersSyncAt: new Date().toISOString() },
+      },
+    });
+
     this.logger.log('mercadolivre_orders_synced', { operation: 'sync_orders', imported, updated, skipped, failed });
     return { imported, updated, skipped, failed, changes };
   }

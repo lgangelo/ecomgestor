@@ -23,10 +23,11 @@ function makeOrder(overrides: Partial<{ id: number; status: string }> = {}) {
 
 function makeService(opts: { orderAlreadyKnown: boolean; results: ReturnType<typeof makeOrder>[]; total: number }) {
   const findUnique = jest.fn().mockResolvedValue(opts.orderAlreadyKnown ? { id: 'existing-order' } : null);
-  const prisma = { client: { order: { findUnique } } };
+  const integrationUpdate = jest.fn().mockResolvedValue({});
+  const prisma = { client: { order: { findUnique }, integration: { update: integrationUpdate } } };
 
   const credentialsService = {
-    requireIntegration: jest.fn().mockResolvedValue({ id: 'integration-1', channelId: CHANNEL_ID }),
+    requireIntegration: jest.fn().mockResolvedValue({ id: 'integration-1', channelId: CHANNEL_ID, syncCheckpoints: null }),
     getCredentials: jest.fn().mockResolvedValue({ userId: 'ml-user-1' }),
   };
 
@@ -45,7 +46,7 @@ function makeService(opts: { orderAlreadyKnown: boolean; results: ReturnType<typ
     logger as unknown as AppLoggerService,
   );
 
-  return { service, findUnique, searchOrders, ordersService };
+  return { service, findUnique, searchOrders, ordersService, integrationUpdate };
 }
 
 describe('MercadoLivreOrdersSyncService.syncOrders', () => {

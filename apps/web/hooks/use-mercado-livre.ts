@@ -12,8 +12,17 @@ export interface MercadoLivreStatus {
   storeName?: string | null;
   lastError?: string | null;
   lastSyncAt?: string | null;
-  checkpoints?: { ordersSyncAt?: string };
+  checkpoints?: { ordersSyncAt?: string; productsSyncAt?: string };
   autoInventorySyncEnabled?: boolean;
+  publishedProductCount?: number;
+  last24h?: { ordersImported: number; failures: number };
+  areas?: {
+    oauth: string;
+    orders: string;
+    products: string;
+    inventory: string;
+    fiscal: string;
+  };
 }
 
 export interface MercadoLivreInventoryComparisonRow {

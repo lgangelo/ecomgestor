@@ -6,14 +6,15 @@ import { PageHeader } from '@/components/shared/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useMercadoLivreStatus } from '@/hooks/use-mercado-livre';
+import { MercadoLivreOverviewTab } from './mercado-livre/mercado-livre-overview-tab';
 import { MercadoLivreSettingsTab } from './mercado-livre/mercado-livre-settings-tab';
 import { MercadoLivreInventoryTab } from './mercado-livre/mercado-livre-inventory-tab';
 import { MercadoLivreFailuresTab } from './mercado-livre/mercado-livre-failures-tab';
 
 /**
- * Integração Mercado Livre — sincronização automática de pedidos (Bloco 1) e estoque (Bloco 2)
- * já implementadas, seguindo o mesmo padrão de `tiktok-view.tsx`. Publicação de produtos ainda é
- * manual (scripts de CLI) — sem tela própria por enquanto.
+ * Integração Mercado Livre — sincronização automática de pedidos (Bloco 1), estoque (Bloco 2) e
+ * publicação/atualização de produtos (Bloco 3) já implementadas, seguindo o mesmo padrão de
+ * `tiktok-view.tsx`.
  */
 export function MercadoLivreIntegrationView() {
   const { data: status, isLoading } = useMercadoLivreStatus();
@@ -40,12 +41,16 @@ export function MercadoLivreIntegrationView() {
           </p>
         </div>
       ) : (
-        <Tabs defaultValue="configuracoes">
+        <Tabs defaultValue="visao-geral">
           <TabsList className="flex-wrap">
+            <TabsTrigger value="visao-geral">Visão geral</TabsTrigger>
             <TabsTrigger value="configuracoes">Configurações</TabsTrigger>
             <TabsTrigger value="estoque">Estoque</TabsTrigger>
             <TabsTrigger value="falhas">Falhas</TabsTrigger>
           </TabsList>
+          <TabsContent value="visao-geral">
+            <MercadoLivreOverviewTab status={status} />
+          </TabsContent>
           <TabsContent value="configuracoes">
             <MercadoLivreSettingsTab status={status} />
           </TabsContent>

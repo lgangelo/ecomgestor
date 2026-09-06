@@ -102,6 +102,7 @@ function makeService(opts: {
   // Nulo por padrão — a maioria dos testes não configura perfil fiscal nenhum, então
   // `tryFiscalInformation` nunca chama a API de verdade (payload sai `undefined`).
   const fiscalProfileFindUnique = jest.fn().mockResolvedValue(null);
+  const integrationUpdate = jest.fn().mockResolvedValue({});
   const prisma = {
     client: {
       product: { findMany: productFindMany },
@@ -109,10 +110,13 @@ function makeService(opts: {
       productVariant: { findMany: variantFindMany, findFirst: variantFindFirst },
       categoryFiscalProfile: { findUnique: fiscalProfileFindUnique },
       syncJob: { findFirst: syncJobFindFirst, create: syncJobCreate, update: syncJobUpdate, deleteMany: syncJobDeleteMany },
+      integration: { update: integrationUpdate },
     },
   };
 
-  const credentialsService = { requireIntegration: jest.fn().mockResolvedValue({ id: 'integration-1', channelId: CHANNEL_ID }) };
+  const credentialsService = {
+    requireIntegration: jest.fn().mockResolvedValue({ id: 'integration-1', channelId: CHANNEL_ID, syncCheckpoints: null }),
+  };
   const connectorFactory = { forCompany: jest.fn().mockResolvedValue({ client }) };
   const audit = { log: jest.fn() };
   const logger = { setContext: jest.fn(), log: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -141,6 +145,7 @@ function makeService(opts: {
     syncJobDeleteMany,
     variantFindFirst,
     fiscalProfileFindUnique,
+    integrationUpdate,
   };
 }
 
