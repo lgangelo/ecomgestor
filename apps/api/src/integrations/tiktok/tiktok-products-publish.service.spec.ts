@@ -51,13 +51,14 @@ function makeService(opts: {
   connector?: ReturnType<typeof makeConnector>;
   categoryMapping?: { externalCategoryId: string; externalCategoryVersion: string | null; cachedAttributes?: unknown } | null;
   defaultWarehouseId?: string | null;
+  existingMappings?: Array<{ variantId: string }>;
 }) {
   const connector = opts.connector ?? makeConnector();
   const configValues: Record<string, unknown> = { 'tiktok.defaultWarehouseId': opts.defaultWarehouseId ?? 'warehouse-fixed-1' };
   const configService = { get: jest.fn((key: string) => configValues[key]) };
 
   const productFindMany = jest.fn().mockResolvedValue(opts.products);
-  const mappingFindMany = jest.fn().mockResolvedValue([]);
+  const mappingFindMany = jest.fn().mockResolvedValue(opts.existingMappings ?? []);
   const mappingUpsert = jest.fn();
   const categoryMappingFindUnique = jest.fn().mockResolvedValue(
     opts.categoryMapping === undefined ? { externalCategoryId: 'tt-cat-1', externalCategoryVersion: null } : opts.categoryMapping,
@@ -230,4 +231,40 @@ describe('TikTokProductsPublishService.buildProductPayload', () => {
       expect(payload.main_images).toEqual([{ uri: 'tos-fake-uri' }]);
     },
   );
+});
+
+describe('TikTokProductsPublishService.publishSingleProduct', () => {
+  it('cria o produto de verdade (createProduct) e grava o vínculo pra cada variante elegível', async () => {
+    const variant = makeVariant();
+    const { service, connector, mappingUpsert } = makeService({ products: [makeProductRow([variant])] });
+
+    const result = await service.publishSingleProduct(COMPANY_ID, 'product-1');
+
+    expect(connector.createProduct).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ externalProductId: 'tt-product-1', variantsPublished: 1 });
+    expect(mappingUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ channelId: CHANNEL_ID, variantId: variant.id, externalProductId: 'tt-product-1' }),
+      }),
+    );
+  });
+
+  it('lança erro claro quando todas as variantes já estão publicadas', async () => {
+    const variant = makeVariant();
+    const { service } = makeService({
+      products: [makeProductRow([variant])],
+      existingMappings: [{ variantId: variant.id as string }],
+    });
+
+    await expect(service.publishSingleProduct(COMPANY_ID, 'product-1')).rejects.toThrow(/Nenhuma variante elegível/);
+  });
+
+  it('lança erro claro quando a criação não devolve product_id reconhecível', async () => {
+    const variant = makeVariant();
+    const connector = makeConnector();
+    connector.createProduct = jest.fn().mockResolvedValue({});
+    const { service } = makeService({ products: [makeProductRow([variant])], connector });
+
+    await expect(service.publishSingleProduct(COMPANY_ID, 'product-1')).rejects.toThrow(/não devolveu product_id/);
+  });
 });

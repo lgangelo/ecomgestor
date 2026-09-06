@@ -340,6 +340,80 @@ export class TikTokProductsPublishService {
     return this.buildCreateProductPayload(product, eligibleVariants, connector, { attrsByCategory: new Map() });
   }
 
+  /** Monta o payload, chama `createProduct` DE VERDADE e grava o vínculo — compartilhado entre
+   * `publishEligible` (ciclo automático em lote) e `publishSingleProduct` (1 produto só, sob
+   * demanda). Nunca engole erro: quem chama decide o que fazer com published++/failed++ etc. */
+  private async publishOneProduct(
+    product: ProductForPublish,
+    eligibleVariants: ProductForPublish['variants'],
+    connector: Awaited<ReturnType<TikTokConnectorFactory['forCompany']>>['connector'],
+    caches: { warehouseId?: string; attrsByCategory: Map<string, TikTokCategoryAttribute[]> },
+    channelId: string,
+    integrationId: string,
+    companyId: string,
+  ): Promise<string> {
+    const payload = await this.buildCreateProductPayload(product, eligibleVariants, connector, caches);
+    const created = await connector.createProduct(payload);
+    const externalProductId = String((created as Record<string, unknown>).product_id ?? '');
+    if (!externalProductId) {
+      throw new UnprocessableEntityException('Create Product não devolveu product_id — formato de resposta não reconhecido.');
+    }
+
+    for (const variant of eligibleVariants) {
+      await this.prisma.client.channelProductMapping.upsert({
+        where: { channelId_variantId: { channelId, variantId: variant.id } },
+        create: { channelId, variantId: variant.id, externalProductId, externalSku: variant.sku, syncStatus: ChannelMappingSyncStatus.CONFIRMED },
+        update: { externalProductId, externalSku: variant.sku, syncStatus: ChannelMappingSyncStatus.CONFIRMED },
+      });
+    }
+    await this.clearPublishFailure(integrationId, product.id);
+    await this.audit.log({
+      companyId,
+      userId: null,
+      action: 'TIKTOK_PRODUCT_PUBLISHED',
+      entity: 'channel_product_mapping',
+      entityId: product.id,
+      newValue: { externalProductId },
+    });
+    return externalProductId;
+  }
+
+  /** Publica UM produto específico DE VERDADE (chama `createProduct`, cria o anúncio real na
+   * TikTok Shop) — pedido do usuário: testar com segurança 1 produto real antes de confiar no
+   * ciclo automático completo pra todo o catálogo, mesmo papel do `publish-mercadolivre-item.ts`.
+   * Diferente de `buildProductPayload` (dry-run, nunca cria nada). */
+  async publishSingleProduct(companyId: string, productId: string): Promise<{ externalProductId: string; variantsPublished: number }> {
+    const integration = await this.credentialsService.requireIntegration(companyId);
+    if (!integration.channelId) throw new NotFoundException('Canal TikTok Shop ainda não conectado.');
+    const channelId = integration.channelId;
+
+    const products = await this.fetchProducts(companyId);
+    const product = products.find((p) => p.id === productId);
+    if (!product) throw new NotFoundException('Produto não encontrado, ou não está ACTIVE.');
+
+    const existingMappings = await this.prisma.client.channelProductMapping.findMany({
+      where: { channelId, variantId: { in: product.variants.map((v) => v.id) } },
+      select: { variantId: true },
+    });
+    const alreadyPublished = new Set(existingMappings.map((m) => m.variantId));
+    const eligibleVariants = product.variants.filter((v) => v.status === 'ACTIVE' && !alreadyPublished.has(v.id));
+    if (eligibleVariants.length === 0) {
+      throw new UnprocessableEntityException('Nenhuma variante elegível — todas já publicadas na TikTok Shop, ou nenhuma ACTIVE.');
+    }
+
+    const { connector } = await this.connectorFactory.forCompany(companyId);
+    const externalProductId = await this.publishOneProduct(
+      product,
+      eligibleVariants,
+      connector,
+      { attrsByCategory: new Map() },
+      channelId,
+      integration.id,
+      companyId,
+    );
+    return { externalProductId, variantsPublished: eligibleVariants.length };
+  }
+
   /** Publica todo produto ACTIVE ainda sem vínculo TikTok Shop (nenhuma variante mapeada) — uma
    * chamada de `createProduct` por produto, com TODAS as variações como `skus[]`. */
   async publishEligible(companyId: string): Promise<{ published: number; failed: number; skipped: number }> {
@@ -372,29 +446,7 @@ export class TikTokProductsPublishService {
       }
 
       try {
-        const payload = await this.buildCreateProductPayload(product, eligibleVariants, connector, caches);
-        const created = await connector.createProduct(payload);
-        const externalProductId = String((created as Record<string, unknown>).product_id ?? '');
-        if (!externalProductId) {
-          throw new UnprocessableEntityException('Create Product não devolveu product_id — formato de resposta não reconhecido.');
-        }
-
-        for (const variant of eligibleVariants) {
-          await this.prisma.client.channelProductMapping.upsert({
-            where: { channelId_variantId: { channelId, variantId: variant.id } },
-            create: { channelId, variantId: variant.id, externalProductId, externalSku: variant.sku, syncStatus: ChannelMappingSyncStatus.CONFIRMED },
-            update: { externalProductId, externalSku: variant.sku, syncStatus: ChannelMappingSyncStatus.CONFIRMED },
-          });
-        }
-        await this.clearPublishFailure(integration.id, product.id);
-        await this.audit.log({
-          companyId,
-          userId: null,
-          action: 'TIKTOK_PRODUCT_PUBLISHED',
-          entity: 'channel_product_mapping',
-          entityId: product.id,
-          newValue: { externalProductId },
-        });
+        await this.publishOneProduct(product, eligibleVariants, connector, caches, channelId, integration.id, companyId);
         published++;
       } catch (error) {
         failed++;

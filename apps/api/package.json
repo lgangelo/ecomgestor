@@ -67,6 +67,7 @@
     "check-tiktok-shop-cipher": "node dist/cli/check-tiktok-shop-cipher.js",
     "check-tiktok-mapped-categories": "node dist/cli/check-tiktok-mapped-categories.js",
     "cache-tiktok-category-attributes": "node dist/cli/cache-tiktok-category-attributes.js",
+    "publish-tiktok-item": "node dist/cli/publish-tiktok-item.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
