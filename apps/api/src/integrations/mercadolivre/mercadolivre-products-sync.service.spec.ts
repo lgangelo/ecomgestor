@@ -56,7 +56,7 @@ function makeProductRow(variants: ReturnType<typeof makeVariant>[], overrides: P
 function makeClient() {
   return {
     predictCategory: jest.fn().mockResolvedValue([{ category_id: 'MLB123', category_name: 'Bolsas' }]),
-    getListingTypes: jest.fn().mockResolvedValue([{ id: 'gold_special', name: 'Clássico' }]),
+    getListingTypes: jest.fn().mockResolvedValue([{ id: 'gold_special', name: 'Clássico' }, { id: 'gold_pro', name: 'Premium' }]),
     getCategoryAttributes: jest.fn().mockResolvedValue([
       { id: 'BRAND', values: [{ id: 'brand-generic', name: 'Generic' }] },
       { id: 'COLOR', values: [{ id: 'color-azul', name: 'Azul' }, { id: 'color-vermelho', name: 'Vermelho' }] },
@@ -138,6 +138,9 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
     expect(client.createItem).toHaveBeenCalledTimes(1);
     expect(client.createItem.mock.calls[0][0]).toMatchObject({ family_name: 'Bolsa Teste', category_id: 'MLB123' });
     expect(client.setItemDescription).toHaveBeenCalledWith('MLB-NEW-1', 'Descrição');
+    // DECISÃO DO USUÁRIO (confirmado via GET /sites/MLB/listing_types real): "Premium" é o id
+    // `gold_pro`, nunca `gold_premium` (que é "Diamante") — habilita parcelamento sem juros.
+    expect(client.createItem.mock.calls[0][0]).toMatchObject({ listing_type_id: 'gold_pro' });
     expect(mappingUpsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({ channelId: CHANNEL_ID, variantId: variant.id, externalProductId: 'MLB-NEW-1' }),

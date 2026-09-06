@@ -19,9 +19,13 @@ const BRAND_FALLBACK_NAME = 'Generic';
 // tenham esse atributo (ex.: Bolsas); categorias sem GENDER (ex.: cama/mesa/banho) simplesmente
 // não recebem esse atributo, sem erro.
 const GENDER_VALUE_NAME = 'Feminino';
-// Mesma preferência confirmada em produção pelos scripts manuais (publish-mercadolivre-item.ts) —
-// sempre confirmada contra a lista real da conta antes de usar, nunca hard-codada sozinha.
-const PREFERRED_LISTING_TYPE_ID = 'gold_special';
+// DECISÃO DO USUÁRIO: trocado de "gold_special" (Clássico) pra "gold_pro" — confirmado via
+// GET /sites/MLB/listing_types que o nome de exibição "Premium" corresponde ao id `gold_pro`
+// (NUNCA `gold_premium`, que na verdade é a exibição "Diamante" — nomes de exibição e ids da API
+// não seguem a mesma ordem/nomenclatura, por isso sempre confirmar contra a lista real antes de
+// usar, nunca adivinhar). Habilita parcelamento sem juros (`UP_FINANCING`, confirmado como
+// pendente via GET /item/{id}/performance real).
+const PREFERRED_LISTING_TYPE_ID = 'gold_pro';
 // Teto de produtos processados por ciclo — a primeira publicação de um item custa várias chamadas
 // de API (predictCategory + getCategoryAttributes + createItem + setItemDescription); nunca travar
 // um ciclo inteiro nem estourar o rate limit estimado (~1500 req/min, não confirmado — ver
