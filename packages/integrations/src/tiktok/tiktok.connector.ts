@@ -354,6 +354,37 @@ export class TikTokConnector implements MarketplaceConnector {
   async uploadProductFile(buffer: Buffer, filename: string): Promise<Record<string, unknown>> {
     return this.client.uploadProductFile({ buffer, filename });
   }
+
+  /** Repassa pros novos métodos do cliente (publicação de produto — pedido do usuário) — todos
+   * NÃO CONFIRMADOS ainda contra uma chamada real nesta conta, ver comentário de cada um em
+   * `TikTokClient`. Nunca chamados pelo fluxo de sincronização automático até a confirmação. */
+  async uploadImage(buffer: Buffer, filename: string, useCase: Parameters<TikTokClient['uploadImage']>[0]['useCase']) {
+    return this.client.uploadImage({ buffer, filename, useCase });
+  }
+
+  async getCategories(params?: Parameters<TikTokClient['getCategories']>[0]) {
+    return this.client.getCategories(params);
+  }
+
+  async getCategoryRules(categoryId: string, categoryVersion?: 'v1' | 'v2') {
+    return this.client.getCategoryRules(categoryId, categoryVersion);
+  }
+
+  async getCategoryAttributes(categoryId: string, categoryVersion?: 'v1' | 'v2') {
+    return this.client.getCategoryAttributes(categoryId, categoryVersion);
+  }
+
+  async getWarehouses() {
+    return this.client.getWarehouses();
+  }
+
+  async createProduct(payload: Parameters<TikTokClient['createProduct']>[0]) {
+    return this.client.createProduct(payload);
+  }
+
+  async partialEditProduct(productId: string, payload: Parameters<TikTokClient['partialEditProduct']>[1]) {
+    return this.client.partialEditProduct(productId, payload);
+  }
 }
 
 function buildPageQuery(params: PageParams): Record<string, string> {

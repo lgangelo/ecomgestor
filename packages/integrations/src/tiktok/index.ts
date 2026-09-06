@@ -1,4 +1,5 @@
 export * from './tiktok.types';
+export * from './tiktok-product-publish.types';
 export * from './tiktok.errors';
 export * from './tiktok.signer';
 export * from './tiktok.auth';

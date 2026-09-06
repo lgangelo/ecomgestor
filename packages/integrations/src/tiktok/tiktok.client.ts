@@ -1,6 +1,7 @@
 import { signApiRequest } from './tiktok.signer';
-import { TIKTOK_HOSTS, TikTokEnvelope, isTikTokEnvelope } from './tiktok.types';
+import { TIKTOK_HOSTS, TIKTOK_PATHS, TikTokEnvelope, isTikTokEnvelope } from './tiktok.types';
 import { TikTokApiError, TikTokErrorCategory } from './tiktok.errors';
+import { TikTokCategoryAttribute, TikTokCreateProductInput, TikTokImageUseCase, TikTokUploadedImage } from './tiktok-product-publish.types';
 
 export interface TikTokClientConfig {
   appKey: string;
@@ -73,7 +74,102 @@ export class TikTokClient {
    * partir do `FormData`, um header fixo quebraria isso.
    */
   async uploadProductFile(params: { buffer: Buffer; filename: string }): Promise<{ id?: string; url?: string; [key: string]: unknown }> {
-    const path = '/product/202309/files/upload';
+    const form = new FormData();
+    form.append('data', new Blob([params.buffer]), params.filename);
+    form.append('name', params.filename);
+    return this.requestMultipart(TIKTOK_PATHS.filesUpload, form);
+  }
+
+  /** "Upload Product Image" — CONFIRMADO via documentação oficial (exemplo de resposta
+   * reproduzido literalmente: `{code:0, data:{uri, url, height, width, use_case}, message}`).
+   * ACHADO da doc, importante: "You will not be able to use any image URLs that are not hosted
+   * by TikTok Shop" — toda foto usada em `main_images`/`sku_img` precisa passar por aqui
+   * primeiro; nunca manda a URL do nosso R2 direto. Usa o `uri` devolvido (não a `url` completa)
+   * no payload de criar/editar produto. NÃO CONFIRMADO ainda contra uma chamada real nesta conta. */
+  async uploadImage(params: { buffer: Buffer; filename: string; useCase: TikTokImageUseCase }): Promise<TikTokUploadedImage> {
+    const form = new FormData();
+    form.append('data', new Blob([params.buffer]), params.filename);
+    form.append('use_case', params.useCase);
+    const data = await this.requestMultipart<Record<string, unknown>>(TIKTOK_PATHS.imagesUpload, form);
+    return {
+      uri: String(data.uri),
+      url: String(data.url),
+      width: Number(data.width),
+      height: Number(data.height),
+      useCase: String(data.use_case),
+    };
+  }
+
+  /** "Get Categories" — NÃO CONFIRMADO ainda (a doc oficial não mostrou um exemplo de resposta
+   * completo pra esse endpoint, só os parâmetros de busca) — devolve o corpo bruto de `data`,
+   * sem assumir a forma exata, até um script de diagnóstico confirmar contra a conta real. */
+  async getCategories(
+    params: { keyword?: string; locale?: string; categoryVersion?: 'v1' | 'v2'; listingPlatform?: string } = {},
+  ): Promise<Record<string, unknown>> {
+    const query: Record<string, string> = {};
+    if (params.keyword) query.keyword = params.keyword;
+    if (params.locale) query.locale = params.locale;
+    if (params.categoryVersion) query.category_version = params.categoryVersion;
+    if (params.listingPlatform) query.listing_platform = params.listingPlatform;
+    return this.request('GET', TIKTOK_PATHS.categories, { query });
+  }
+
+  /** "Get Category Rules" — NÃO CONFIRMADO ainda (mesma ressalva de `getCategories`). */
+  async getCategoryRules(categoryId: string, categoryVersion?: 'v1' | 'v2'): Promise<Record<string, unknown>> {
+    return this.request('GET', TIKTOK_PATHS.categoryRules(categoryId), {
+      query: categoryVersion ? { category_version: categoryVersion } : undefined,
+    });
+  }
+
+  /** "Get Attributes" — CONFIRMADO via documentação oficial (exemplo de resposta reproduzido
+   * literalmente). NÃO CONFIRMADO ainda contra uma chamada real nesta conta. */
+  async getCategoryAttributes(categoryId: string, categoryVersion?: 'v1' | 'v2'): Promise<TikTokCategoryAttribute[]> {
+    const data = await this.request<{ attributes?: Array<Record<string, unknown>> }>(
+      'GET',
+      TIKTOK_PATHS.categoryAttributes(categoryId),
+      { query: categoryVersion ? { category_version: categoryVersion } : undefined },
+    );
+    return (data.attributes ?? []).map((a) => ({
+      id: String(a.id),
+      name: String(a.name),
+      type: String(a.type),
+      // ACHADO REAL da doc: a própria TikTok escreve "is_requried" (erro de digitação deles, não
+      // nosso) no JSON de verdade — aceita as duas grafias, nunca confia só na correta.
+      isRequired: Boolean(a.is_requried ?? a.is_required),
+      isCustomizable: Boolean(a.is_customizable),
+      values: Array.isArray(a.values)
+        ? (a.values as Array<Record<string, unknown>>).map((v) => ({ id: String(v.id), name: String(v.name) }))
+        : undefined,
+    }));
+  }
+
+  /** "Get Warehouse List" — NÃO CONFIRMADO ainda (mesma ressalva de `getCategories`). Escopo
+   * `seller.logistics`, diferente do resto (`seller.product.*`) — confirmar que o app tem essa
+   * permissão antes de assumir que funciona. */
+  async getWarehouses(): Promise<Record<string, unknown>> {
+    return this.request('GET', TIKTOK_PATHS.warehouses);
+  }
+
+  /** "Create Product" — NÃO CONFIRMADO ainda contra uma chamada real (payload documentado, mas
+   * nunca exercitado nesta conta). Ver `TikTokCreateProductInput` pras ressalvas de tipo. */
+  async createProduct(payload: TikTokCreateProductInput): Promise<Record<string, unknown>> {
+    return this.request('POST', TIKTOK_PATHS.products, { body: payload });
+  }
+
+  /** "Partial Edit Product" — método POST (não PUT/PATCH, apesar do nome — confirmado na doc
+   * oficial). NÃO CONFIRMADO ainda contra uma chamada real. Parcial só no nível de campo de
+   * topo — um objeto aninhado (ex. um item de `skus[]`) precisa vir COMPLETO, senão os campos
+   * omitidos dele são zerados (ver comentário em `TIKTOK_PATHS.productPartialEdit`). */
+  async partialEditProduct(productId: string, payload: Partial<TikTokCreateProductInput>): Promise<Record<string, unknown>> {
+    return this.request('POST', TIKTOK_PATHS.productPartialEdit(productId), { body: payload });
+  }
+
+  /** Fetch multipart compartilhado por `uploadProductFile`/`uploadImage` — nunca define
+   * `content-type` manualmente (o `fetch` gera o boundary sozinho a partir do `FormData`).
+   * ACHADO (não confirmado por uma chamada real): a assinatura de requests multipart da TikTok
+   * Shop trata o corpo como string vazia na fórmula do HMAC — documentado assim pela TikTok para
+   * outros endpoints de upload de arquivo da Open API. */
+  private async requestMultipart<T>(path: string, form: FormData): Promise<T> {
     const timestamp = Math.floor(Date.now() / 1000).toString();
     const query: Record<string, string> = {
       app_key: this.config.appKey,
@@ -83,10 +179,6 @@ export class TikTokClient {
     const sign = signApiRequest({ path, query, body: '', appSecret: this.config.appSecret });
     const searchParams = new URLSearchParams({ ...query, sign, access_token: this.config.accessToken });
     const url = `${TIKTOK_HOSTS.api}${path}?${searchParams.toString()}`;
-
-    const form = new FormData();
-    form.append('data', new Blob([params.buffer]), params.filename);
-    form.append('name', params.filename);
 
     let response: Response;
     try {
@@ -102,7 +194,7 @@ export class TikTokClient {
       );
     }
 
-    return this.handleResponse(response);
+    return this.handleResponse<T>(response);
   }
 
   private async handleResponse<T>(response: Response): Promise<T> {

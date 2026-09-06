@@ -13,6 +13,11 @@ export const TIKTOK_HOSTS = {
 } as const;
 
 const API_VERSION = '202309';
+// CONFIRMADO via documentação oficial navegada diretamente (partner.tiktokshop.com/docv2) —
+// "Partial Edit Product" só existe na geração `202509` da API (mais nova que a usada pelo resto
+// da integração); "Create Product"/"Get Categories"/"Get Attributes"/"Get Warehouse List"/"Upload
+// Image" continuam na `202309`. Nunca assumir que todo endpoint de produto usa a mesma versão.
+const PARTIAL_EDIT_API_VERSION = '202509';
 
 export const TIKTOK_PATHS = {
   /** Confirmado (docs/integrations/tiktok.md, item 2/6/7). */
@@ -69,6 +74,42 @@ export const TIKTOK_PATHS = {
    * aqui. Ainda não testado contra a conta real desta empresa — é a melhor candidata a fonte do
    * saldo "a receber" de curto prazo, mas só usar de verdade depois de ver o payload real. */
   financePayments: `/finance/${API_VERSION}/payments`,
+  /** "Get Categories" — CONFIRMADO via documentação oficial (partner.tiktokshop.com/docv2/page/
+   * get-categories-202309). Query: `locale`/`keyword`/`category_version` (`v2` = árvore de 7
+   * níveis, obrigatório em US/EU/SEA; `v1` = 3 níveis, default nas demais regiões, inclusive BR —
+   * nunca assumir qual sem confirmar contra a conta real)/`listing_platform`. */
+  categories: `/product/${API_VERSION}/categories`,
+  /** "Get Category Rules" — CONFIRMADO (get-category-rules-202309): requisitos extras da
+   * categoria (certificações, size chart, dimensões obrigatórias, se aceita pré-venda, etc.). */
+  categoryRules: (categoryId: string) => `/product/${API_VERSION}/categories/${categoryId}/rules`,
+  /** "Get Attributes" — CONFIRMADO (get-attributes-202309): equivalente ao `getCategoryAttributes`
+   * do Mercado Livre (attribute id/value_id), mas com `is_customizable` (aceita valor customizado
+   * além do catálogo fechado) e `requirement_conditions` (atributo que só existe dependendo do
+   * valor de outro). */
+  categoryAttributes: (categoryId: string) => `/product/${API_VERSION}/categories/${categoryId}/attributes`,
+  /** "Get Warehouse List" — CONFIRMADO (get-warehouse-list-202309). ATENÇÃO: base path
+   * `/logistics/`, não `/product/` como todo o resto — escopo de app diferente
+   * (`seller.logistics`, não `seller.product.*`). `warehouse_id` é obrigatório em cada SKU do
+   * Create Product. */
+  warehouses: `/logistics/${API_VERSION}/warehouses`,
+  /** "Upload Product Image" — CONFIRMADO (upload-product-image-202309), multipart/form-data
+   * (`data` + `use_case`). ACHADO REAL da doc: "You will not be able to use any image URLs that
+   * are not hosted by TikTok Shop" — nunca manda a URL do nosso R2 direto, sempre faz upload
+   * aqui primeiro e usa o `uri` (não a `url` completa) devolvido. */
+  imagesUpload: `/product/${API_VERSION}/images/upload`,
+  /** "Create Product" — CONFIRMADO (create-product-202309). `save_mode: "AS_DRAFT"` cria sem
+   * publicar de verdade; default é `"LISTING"` (publica). */
+  products: `/product/${API_VERSION}/products`,
+  /** "Partial Edit Product" — CONFIRMADO (partial-edit-product-202509). Método POST (não PUT/
+   * PATCH, apesar do nome) — versão `202509`, não `202309` (ver `PARTIAL_EDIT_API_VERSION`
+   * acima). Parcial só no nível de campo de topo (`description`, `title`, etc. isolados não
+   * afetam o resto); um objeto aninhado (ex. um SKU dentro de `skus[]`) precisa vir COMPLETO,
+   * senão os campos omitidos dele são zerados. Não inclui `category_id` — trocar categoria exige
+   * o Edit Product completo (PUT, geração mais antiga) ou uma "Category Upgrade Task" separada,
+   * nenhum dos dois confirmado/implementado aqui ainda. */
+  productPartialEdit: (productId: string) => `/product/${PARTIAL_EDIT_API_VERSION}/products/${productId}/partial_edit`,
+  /** "Upload Product File" — vídeo/PDF de produto. Ver `TikTokClient.uploadProductFile`. */
+  filesUpload: `/product/${API_VERSION}/files/upload`,
 } as const;
 
 export interface TikTokCredentials {
