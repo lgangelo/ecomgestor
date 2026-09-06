@@ -68,7 +68,8 @@
     "check-tiktok-categories": "npm run check-tiktok-categories --workspace=@ecommerce-manager/api --",
     "check-tiktok-category-attributes": "npm run check-tiktok-category-attributes --workspace=@ecommerce-manager/api --",
     "check-tiktok-warehouses": "npm run check-tiktok-warehouses --workspace=@ecommerce-manager/api --",
-    "check-tiktok-upload-image": "npm run check-tiktok-upload-image --workspace=@ecommerce-manager/api --"
+    "check-tiktok-upload-image": "npm run check-tiktok-upload-image --workspace=@ecommerce-manager/api --",
+    "retry-all-mercadolivre-description-failures": "npm run retry-all-mercadolivre-description-failures --workspace=@ecommerce-manager/api --"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",

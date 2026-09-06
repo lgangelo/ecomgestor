@@ -92,6 +92,12 @@ const COLOR_NAME_SYNONYMS: Record<string, string> = {
   caramelo: 'marrom-claro',
   off: 'bege',
   'off-white': 'bege',
+  // Confirmados em produção no reset/republicação completa (06/09/2026): essas 3 cores foram as
+  // únicas que falharam de ~74 produtos, corrigidas manualmente uma a uma — mapeadas aqui pra
+  // nunca precisar de novo.
+  'azul-ceu': 'azul-celeste',
+  mostarda: 'ocre',
+  rose: 'rosa',
 };
 
 /** Único lugar que decide qual `value_id` de COLOR usar pra uma cor cadastrada — tenta o nome

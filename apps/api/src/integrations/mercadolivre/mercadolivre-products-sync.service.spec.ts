@@ -378,6 +378,42 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
   );
 
   it(
+    'ACHADO REAL (confirmado no reset/republicação completa em produção): casa "Azul céu", "Mostarda" e ' +
+      '"Rose" via sinônimo, sem precisar corrigir manualmente de novo',
+    async () => {
+      const client = makeClient();
+      client.getCategoryAttributes = jest.fn().mockResolvedValue([
+        { id: 'BRAND', values: [{ id: 'brand-generic', name: 'Generic' }] },
+        {
+          id: 'COLOR',
+          values: [
+            { id: 'color-azul-celeste', name: 'Azul-celeste' },
+            { id: 'color-ocre', name: 'Ocre' },
+            { id: 'color-rosa', name: 'Rosa' },
+          ],
+        },
+      ]);
+      const azulCeu = makeVariant({ id: 'v-azul-ceu', sku: 'SKU-AZUL-CEU', color: 'Azul céu' });
+      client.createItem.mockResolvedValueOnce({ id: 'MLB-BASE', status: 'active' });
+      const { service: serviceAzulCeu } = makeService({ products: [makeProductRow([azulCeu])], client });
+      await serviceAzulCeu.publishEligible(COMPANY_ID);
+      expect(client.updateItem).toHaveBeenCalledWith('MLB-BASE', { attributes: [{ id: 'COLOR', value_id: 'color-azul-celeste' }] });
+
+      const mostarda = makeVariant({ id: 'v-mostarda-2', sku: 'SKU-MOSTARDA-2', color: 'Mostarda' });
+      client.createItem.mockResolvedValueOnce({ id: 'MLB-BASE-2', status: 'active' });
+      const { service: serviceMostarda } = makeService({ products: [makeProductRow([mostarda], { id: 'product-2', baseSku: 'BASE-2' })], client });
+      await serviceMostarda.publishEligible(COMPANY_ID);
+      expect(client.updateItem).toHaveBeenCalledWith('MLB-BASE-2', { attributes: [{ id: 'COLOR', value_id: 'color-ocre' }] });
+
+      const rose = makeVariant({ id: 'v-rose', sku: 'SKU-ROSE', color: 'Rose' });
+      client.createItem.mockResolvedValueOnce({ id: 'MLB-BASE-3', status: 'active' });
+      const { service: serviceRose } = makeService({ products: [makeProductRow([rose], { id: 'product-3', baseSku: 'BASE-3' })], client });
+      await serviceRose.publishEligible(COMPANY_ID);
+      expect(client.updateItem).toHaveBeenCalledWith('MLB-BASE-3', { attributes: [{ id: 'COLOR', value_id: 'color-rosa' }] });
+    },
+  );
+
+  it(
     'ACHADO REAL (pedido do usuário): quando o item base nasce sem a cor marcada (cor sem correspondência ' +
       'no catálogo, ex.: "Mostarda"), registra a falha como SyncJob pra aparecer na tela de Jobs/Falhas',
     async () => {
