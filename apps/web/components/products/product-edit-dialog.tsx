@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useCategories } from '@/hooks/use-categories';
+import { toast } from '@/components/ui/use-toast';
 import {
   MAX_PRODUCT_IMAGES,
   resolveProductImageUrl,
@@ -140,6 +141,32 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
     setForm((f) => ({ ...f, imageUrl: url }));
   }
 
+  const [isAddingImages, setIsAddingImages] = React.useState(false);
+
+  // Pedido do usuário: no celular, escolher fotos da galeria do sistema deixava selecionar só 1
+  // por vez (o <input> não tinha `multiple`). Aceita várias de uma vez, mas respeita o limite de
+  // MAX_PRODUCT_IMAGES — envia uma a uma (a API só aceita 1 arquivo por chamada) e avisa se
+  // sobrou alguma foto escolhida além da vaga disponível.
+  async function handleAddImages(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const remainingSlots = MAX_PRODUCT_IMAGES - product.images.length;
+    const toUpload = Array.from(files).slice(0, remainingSlots);
+    setIsAddingImages(true);
+    try {
+      for (const file of toUpload) {
+        await addImage.mutateAsync(file);
+      }
+      if (files.length > toUpload.length) {
+        toast({
+          title: `Só ${toUpload.length} de ${files.length} foto(s) foram adicionadas — limite de ${MAX_PRODUCT_IMAGES} fotos na galeria.`,
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      setIsAddingImages(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger as any}</DialogTrigger>
@@ -242,16 +269,17 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
                 <Label>Galeria de fotos ({product.images.length}/{MAX_PRODUCT_IMAGES})</Label>
                 {product.images.length < MAX_PRODUCT_IMAGES && (
                   <label className="cursor-pointer text-sm font-medium text-primary hover:underline">
-                    {addImage.isPending ? 'Enviando...' : '+ Adicionar foto'}
+                    {isAddingImages ? 'Enviando...' : '+ Adicionar foto'}
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
+                      multiple
                       className="hidden"
-                      disabled={addImage.isPending}
+                      disabled={isAddingImages}
                       onChange={(e) => {
-                        const file = e.target.files?.[0];
+                        const { files } = e.target;
                         e.target.value = '';
-                        if (file) addImage.mutate(file);
+                        void handleAddImages(files);
                       }}
                     />
                   </label>
