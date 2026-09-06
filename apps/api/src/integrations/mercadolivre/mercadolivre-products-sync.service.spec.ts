@@ -117,9 +117,11 @@ function makeService(opts: {
     client,
     mappingUpsert,
     mappingUpdate,
+    mappingFindUnique,
     productFindMany,
     mappingFindMany,
     logger,
+    syncJobFindFirst,
     syncJobCreate,
     syncJobUpdate,
     syncJobDeleteMany,
@@ -449,6 +451,60 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
 
     expect(result).toEqual({ published: 1, failed: 1, skipped: 0 });
   });
+});
+
+describe('MercadoLivreProductsSyncService.retryDescriptionPublish', () => {
+  it(
+    'ACHADO REAL (pedido do usuário: "ao tentar novamente, nada acontece, nem erro"): lança o erro real ' +
+      'quando a descrição falha de novo na mesma tentativa manual, em vez de responder como sucesso',
+    async () => {
+      const client = makeClient();
+      client.setItemDescription = jest.fn().mockRejectedValue(new Error('descrição rejeitada de novo'));
+      const { service, variantFindFirst, mappingFindUnique, syncJobFindFirst } = makeService({ products: [], client });
+      variantFindFirst.mockResolvedValue({ id: 'v-1', sku: 'SKU-1', product: { description: 'Descrição' } });
+      mappingFindUnique.mockResolvedValue({ externalProductId: 'MLB-1' });
+      syncJobFindFirst.mockResolvedValue({ id: 'job-1', status: 'FAILED', error: 'descrição rejeitada de novo' });
+
+      await expect(service.retryDescriptionPublish(COMPANY_ID, 'v-1')).rejects.toThrow('descrição rejeitada de novo');
+    },
+  );
+
+  it('resolve normalmente quando a nova tentativa de descrição dá certo', async () => {
+    const client = makeClient();
+    const { service, variantFindFirst, mappingFindUnique } = makeService({ products: [], client });
+    variantFindFirst.mockResolvedValue({ id: 'v-1', sku: 'SKU-1', product: { description: 'Descrição' } });
+    mappingFindUnique.mockResolvedValue({ externalProductId: 'MLB-1' });
+
+    await expect(service.retryDescriptionPublish(COMPANY_ID, 'v-1')).resolves.toBeUndefined();
+    expect(client.setItemDescription).toHaveBeenCalledWith('MLB-1', 'Descrição');
+  });
+});
+
+describe('MercadoLivreProductsSyncService.retryColorPublish', () => {
+  it(
+    'ACHADO REAL (pedido do usuário: "ao tentar novamente, nada acontece, nem erro"): lança o erro real ' +
+      'quando a cor do item BASE continua sem correspondência no catálogo na mesma tentativa manual',
+    async () => {
+      const client = makeClient();
+      client.getItem.mockResolvedValue({ category_id: 'MLB123' });
+      const { service, variantFindFirst, mappingFindUnique, syncJobFindFirst } = makeService({ products: [], client });
+      variantFindFirst.mockResolvedValue({
+        id: 'v-1',
+        sku: 'SKU-1',
+        color: 'Mostarda',
+        size: null,
+        status: 'ACTIVE',
+        suggestedPrice: 100,
+        imageUrl: null,
+        inventory: null,
+        product: { id: 'product-1', name: 'Bolsa Teste', description: null, status: 'ACTIVE', baseSku: 'BASE-1', imageUrl: null, images: [] },
+      });
+      mappingFindUnique.mockResolvedValue({ externalProductId: 'MLB-1' });
+      syncJobFindFirst.mockResolvedValue({ id: 'job-1', status: 'FAILED', error: 'Cor "Mostarda" não encontrada' });
+
+      await expect(service.retryColorPublish(COMPANY_ID, 'v-1')).rejects.toThrow('Cor "Mostarda" não encontrada');
+    },
+  );
 });
 
 describe('MercadoLivreProductsSyncService.syncPublished', () => {

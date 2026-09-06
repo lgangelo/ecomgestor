@@ -117,8 +117,15 @@ export function useRetryMercadoLivreJob() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (jobId: string) => apiFetch(`/integrations/mercadolivre/jobs/${jobId}/retry`, { method: 'POST' }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mercadolivre', 'jobs'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mercadolivre', 'jobs'] });
+      toast({ title: 'Reprocessado com sucesso.' });
+    },
     onError: (error) => {
+      // ACHADO REAL (pedido do usuário: "ao tentar novamente, nada acontece, nem erro"): antes, uma
+      // nova tentativa que falhasse de novo respondia como sucesso (nada aqui, silêncio total) —
+      // corrigido no backend (retryColorPublish/retryDescriptionPublish agora lançam o erro real
+      // quando a falha continua registrada), então este toast agora aparece de verdade.
       toast({ title: error instanceof ApiError ? error.message : 'Não foi possível reprocessar o job.' });
     },
   });

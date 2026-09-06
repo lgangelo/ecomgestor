@@ -58,9 +58,7 @@ function stripHtmlForPlainText(text: string): string {
  * x "Cáqui" (com acento) — cadastrados na nossa plataforma, mas grafados ligeiramente diferente
  * do catálogo — falhavam mesmo sendo a MESMA cor. Ignora acento e trata espaço/hífen como
  * equivalentes só para esta comparação (nunca pra decidir o que enviar — o valor enviado
- * continua sendo sempre o `value_id` exato do catálogo). Nomes genuinamente diferentes (ex.:
- * "Prata" x "Prateado", "Borgonha" x "Bordô") continuam sem casar, e é o certo: essas exigem
- * decisão manual de qual cor do catálogo corresponde. */
+ * continua sendo sempre o `value_id` exato do catálogo). */
 function normalizeColorName(name: string): string {
   return name
     .normalize('NFD')
@@ -68,6 +66,42 @@ function normalizeColorName(name: string): string {
     .toLowerCase()
     .trim()
     .replace(/[\s-]+/g, '-');
+}
+
+/** ACHADO REAL (pedido do usuário): "Prata"/"Borgonha"/"Café"/"Coffee"/"Marrom-café"/"Caramelo"/
+ * "Off"/"Off white" são cores genuinamente cadastradas com um NOME diferente do catálogo real do
+ * Mercado Livre (não é diferença de acento/hífen, é palavra diferente pro mesmo tom) — apareceram
+ * repetidas vezes na tela de Falhas. Em vez de renomear cada produto um por um, decisão do
+ * usuário: mapear pro valor mais próximo do catálogo aqui, resolvendo de vez qualquer produto
+ * futuro cadastrado com um desses nomes. Chave já normalizada por `normalizeColorName`; valor é o
+ * nome (também normalizado) que deve existir no catálogo real da categoria. */
+const COLOR_NAME_SYNONYMS: Record<string, string> = {
+  prata: 'prateado',
+  borgonha: 'bordo',
+  cafe: 'chocolate',
+  coffee: 'chocolate',
+  'marrom-cafe': 'chocolate',
+  caramelo: 'marrom-claro',
+  off: 'bege',
+  'off-white': 'bege',
+};
+
+/** Único lugar que decide qual `value_id` de COLOR usar pra uma cor cadastrada — tenta o nome
+ * normalizado direto contra o catálogo real da categoria; se não achar, tenta o sinônimo mapeado
+ * em `COLOR_NAME_SYNONYMS`. Usado tanto pelo item base (`tagBaseItemColor`) quanto pelas cores
+ * adicionais (`publishAdditionalColorItem`) — nunca duas implementações divergentes da mesma
+ * regra. */
+function resolveColorValueId(
+  attrs: Array<{ id: string; values?: Array<{ id: string; name: string }> }>,
+  colorName: string,
+): string | undefined {
+  const values = attrs.find((a) => a.id === 'COLOR')?.values ?? [];
+  const normalized = normalizeColorName(colorName);
+  const direct = values.find((v) => normalizeColorName(v.name) === normalized)?.id;
+  if (direct) return direct;
+  const synonym = COLOR_NAME_SYNONYMS[normalized];
+  if (!synonym) return undefined;
+  return values.find((v) => normalizeColorName(v.name) === synonym)?.id;
 }
 
 interface ProductForSync {
@@ -456,9 +490,7 @@ export class MercadoLivreProductsSyncService {
     if (!variant.color) return;
     try {
       const attrs = await client.getCategoryAttributes(categoryId);
-      const colorValueId = attrs
-        .find((a) => a.id === 'COLOR')
-        ?.values?.find((v) => normalizeColorName(v.name) === normalizeColorName(variant.color!))?.id;
+      const colorValueId = resolveColorValueId(attrs, variant.color!);
       if (!colorValueId) {
         const message = `Cor "${variant.color}" não encontrada na lista de valores de COLOR da categoria ${categoryId} — o item base ficou sem a etiqueta de cor, o que impede o Mercado Livre de agrupá-lo com as outras cores.`;
         this.logger.warn('mercadolivre_base_color_not_found', { operation: 'tag_base_item_color', itemId, categoryId, color: variant.color });
@@ -521,8 +553,7 @@ export class MercadoLivreProductsSyncService {
     base: { categoryId: string; familyName: string; listingTypeId: string },
   ): Promise<void> {
     const attrs = await client.getCategoryAttributes(base.categoryId);
-    const colorAttribute = attrs.find((a) => a.id === 'COLOR');
-    const colorValueId = colorAttribute?.values?.find((v) => normalizeColorName(v.name) === normalizeColorName(variant.color ?? ''))?.id;
+    const colorValueId = resolveColorValueId(attrs, variant.color ?? '');
     if (!colorValueId) {
       throw new Error(`Cor "${variant.color}" não encontrada na lista de valores da categoria ${base.categoryId}.`);
     }
@@ -651,6 +682,24 @@ export class MercadoLivreProductsSyncService {
     });
   }
 
+  /** ACHADO REAL (pedido do usuário: "ao tentar novamente, nada acontece, nem erro"): `tagBaseItemColor`
+   * e `trySetDescription` nunca lançam exceção quando falham — é assim de propósito, pra nunca
+   * abortar um lote inteiro de publicação automática por causa de UMA cor/descrição problemática.
+   * Só que isso faz o botão manual "Tentar novamente" (que chama exatamente essas funções) sempre
+   * responder como sucesso pro frontend, mesmo quando a nova tentativa falhou de novo com o MESMO
+   * erro — sem toast de erro, sem nada visível, a falha simplesmente continua na tela igual antes.
+   * Chamado só pelos dois métodos de retry MANUAL (nunca pelo fluxo automático em lote): confere
+   * se a falha ainda está registrada logo depois da tentativa, e lança o erro real de volta pro
+   * chamador (a tela de Jobs/Falhas já tem um toast de erro genérico pronto pra mostrar isso). */
+  private async throwIfStillFailing(integrationId: string, type: string, variantId: string): Promise<void> {
+    const stillFailing = await this.prisma.client.syncJob.findFirst({
+      where: { integrationId, type, relatedExternalId: variantId, status: 'FAILED' },
+    });
+    if (stillFailing) {
+      throw new Error(stillFailing.error ?? 'A tentativa falhou novamente.');
+    }
+  }
+
   /** Reprocessa manualmente a descrição de UMA variante que falhou (tela de Jobs/Falhas) — usa a
    * descrição ATUAL do produto (se o usuário editou o texto, é essa versão nova que é tentada) e
    * exige que o item já exista no Mercado Livre (só entra aqui quem já tem vínculo — a falha só
@@ -681,6 +730,7 @@ export class MercadoLivreProductsSyncService {
       { id: dbVariant.id, sku: dbVariant.sku },
       dbVariant.product.description,
     );
+    await this.throwIfStillFailing(integration.id, MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_DESCRIPTION, variantId);
   }
 
   /** Reprocessa manualmente UMA variante que falhou (chamado pela tela de Jobs/Falhas, botão
@@ -737,6 +787,7 @@ export class MercadoLivreProductsSyncService {
       // Caso 1: item já existe, só faltou (ou falhou) marcar a cor do item base.
       const item = await client.getItem(ownMapping.externalProductId);
       await this.tagBaseItemColor(client, integrationId, ownMapping.externalProductId, item.category_id as string, variant);
+      await this.throwIfStillFailing(integrationId, MERCADO_LIVRE_JOBS.PUBLISH_PRODUCT_COLOR, variantId);
       return;
     }
 
