@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@ecommerce-manager/database';
+import { IntegrationProvider, OrderStatus, Prisma } from '@ecommerce-manager/database';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { csvEscape } from '../common/csv.util';
 import { endOfDayExclusive } from '../common/date/day-range.util';
@@ -76,14 +76,23 @@ export class ReportsService {
    * tela onde o usuário resolve. Nunca inclui um item com contagem zero (evita ruído — seção 42).
    */
   private async computeAttention(companyId: string): Promise<AttentionItem[]> {
-    const [inventories, fiscalPending, unmappedOrdersCount, tiktokSyncFailedCount] = await Promise.all([
+    const [inventories, fiscalPending, unmappedOrdersCount, tiktokSyncFailedCount, mercadoLivreSyncFailedCount] = await Promise.all([
       this.prisma.client.inventory.findMany({
         where: { companyId },
         select: { onHand: true, reserved: true, variant: { select: { minStock: true } } },
       }),
       this.fiscalService.getPending(companyId),
       this.prisma.client.order.count({ where: { companyId, integrationSyncStatus: 'REQUIRES_MAPPING' } }),
-      this.prisma.client.syncJob.count({ where: { status: 'FAILED', integration: { companyId } } }),
+      // ACHADO REAL corrigido: contava TODO `SyncJob` FAILED da empresa e rotulava como "TikTok"
+      // sem checar o provider da integração dona — funcionava só por coincidência, enquanto todo
+      // SyncJob existente era mesmo do TikTok (até o Mercado Livre passar a registrar falhas de
+      // publicação de produto também). Agora conta cada provider separadamente.
+      this.prisma.client.syncJob.count({
+        where: { status: 'FAILED', integration: { companyId, provider: IntegrationProvider.TIKTOK_SHOP } },
+      }),
+      this.prisma.client.syncJob.count({
+        where: { status: 'FAILED', integration: { companyId, provider: IntegrationProvider.MERCADO_LIVRE } },
+      }),
     ]);
 
     // Mesmo critério de "abaixo do mínimo" do AlertsPanel — não dá para filtrar por uma
@@ -99,6 +108,12 @@ export class ReportsService {
       { key: 'low_stock', label: 'produtos com estoque baixo', count: belowMinimumCount, link: '/produtos/estoque' },
       { key: 'fiscal_pending', label: 'documentos fiscais pendentes', count: fiscalPendingCount, link: '/fiscal' },
       { key: 'tiktok_sync_failed', label: 'falha(s) de sincronização TikTok', count: tiktokSyncFailedCount, link: '/integracoes/tiktok' },
+      {
+        key: 'mercadolivre_sync_failed',
+        label: 'falha(s) de sincronização Mercado Livre',
+        count: mercadoLivreSyncFailedCount,
+        link: '/integracoes/mercado-livre',
+      },
       {
         key: 'tiktok_unmapped',
         label: 'produtos TikTok sem vínculo',

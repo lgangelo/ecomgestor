@@ -32,6 +32,7 @@ interface FakePrismaConfig {
   integrations: Array<{ status: string; lastSyncAt: Date | null }>;
   unmappedOrdersCount: number;
   syncJobFailedCount: number;
+  mercadoLivreSyncJobFailedCount?: number;
 }
 
 function makeFakePrisma(config: FakePrismaConfig): PrismaService {
@@ -80,7 +81,12 @@ function makeFakePrisma(config: FakePrismaConfig): PrismaService {
       marketplaceFee: { groupBy: async () => [] },
       inventory: { findMany: async () => config.inventories },
       integration: { findMany: async () => config.integrations },
-      syncJob: { count: async () => config.syncJobFailedCount },
+      syncJob: {
+        count: async ({ where }: { where: { integration?: { provider?: string } } }) =>
+          where.integration?.provider === 'MERCADO_LIVRE'
+            ? (config.mercadoLivreSyncJobFailedCount ?? 0)
+            : config.syncJobFailedCount,
+      },
     },
   } as unknown as PrismaService;
 }
@@ -186,6 +192,31 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     const instagram = salesByChannel.find((c) => c.channelName === 'Instagram');
     expect(instagram).toMatchObject({ averageTicket: 100, profit: 50, share: 25 });
   });
+
+  it(
+    'ACHADO REAL corrigido: falhas de sincronização do TikTok e do Mercado Livre contam separado — ' +
+      'antes, qualquer SyncJob FAILED da empresa (de qualquer canal) virava "falha de sincronização TikTok"',
+    async () => {
+      const prisma = makeFakePrisma({
+        orders: [],
+        returnsAmount: 0,
+        inventories: [],
+        integrations: [],
+        unmappedOrdersCount: 0,
+        syncJobFailedCount: 3, // TikTok
+        mercadoLivreSyncJobFailedCount: 29, // Mercado Livre — nunca deveria aparecer como TikTok
+      });
+      const fiscal = makeFakeFiscalService({ salesWithoutInvoice: [], returnsWithoutDocument: [] });
+      const service = new ReportsService(prisma, fiscal);
+
+      const result = await service.getDashboard('company-1', { dateFrom: '2026-08-01', dateTo: '2026-08-31' });
+      const attention = (result as { attention: Array<{ key: string; count: number }> }).attention;
+      const byKey = new Map(attention.map((a) => [a.key, a.count]));
+
+      expect(byKey.get('tiktok_sync_failed')).toBe(3);
+      expect(byKey.get('mercadolivre_sync_failed')).toBe(29);
+    },
+  );
 
   it('precisa da sua atenção: só lista itens com contagem > 0', async () => {
     const prisma = makeFakePrisma({
