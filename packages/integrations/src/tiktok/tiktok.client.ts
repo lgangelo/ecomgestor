@@ -127,15 +127,16 @@ export class TikTokClient {
   }
 
   /** "Get Attributes" — CONFIRMADO via documentação oficial (exemplo de resposta reproduzido
-   * literalmente). ACHADO REAL contra a conta de produção: esse endpoint rejeita `shop_cipher`
-   * ("Unexpected identifier. The 'shop_cipher' query parameter is not required for this
-   * request.") — é taxonomia/catálogo global, não específico da loja. `skipShopCipher: true`
-   * omite o parâmetro só nessa chamada. */
+   * literalmente). CONFIRMADO contra a conta de produção (via `code` numérico do envelope de
+   * erro, não só o texto — ver `TikTokApiError.code`): este endpoint EXIGE `shop_cipher`, igual a
+   * maioria dos outros — uma tentativa anterior de omitir (baseada só no texto de um erro
+   * diferente) piorou o resultado ("Missing identifier... shop_cipher query parameter is
+   * required"). Nunca mande `skipShopCipher` aqui. */
   async getCategoryAttributes(categoryId: string, categoryVersion?: 'v1' | 'v2'): Promise<TikTokCategoryAttribute[]> {
     const data = await this.request<{ attributes?: Array<Record<string, unknown>> }>(
       'GET',
       TIKTOK_PATHS.categoryAttributes(categoryId),
-      { query: categoryVersion ? { category_version: categoryVersion } : undefined, skipShopCipher: true },
+      { query: categoryVersion ? { category_version: categoryVersion } : undefined },
     );
     return (data.attributes ?? []).map((a) => ({
       id: String(a.id),
@@ -233,6 +234,10 @@ export class TikTokClient {
       json && typeof json === 'object' && 'message' in json
         ? String((json as Record<string, unknown>).message)
         : `Erro HTTP ${status} da API TikTok Shop`;
+    const code =
+      json && typeof json === 'object' && 'code' in json && typeof (json as Record<string, unknown>).code === 'number'
+        ? ((json as Record<string, unknown>).code as number)
+        : undefined;
 
     let category: TikTokErrorCategory = 'PERMANENT';
     if (status === 401 || status === 403) category = 'AUTH';
@@ -247,6 +252,6 @@ export class TikTokClient {
     // específico, só evita classificar como PERMANENT algo que claramente fala de token.
     else if (/token/i.test(message)) category = 'AUTH';
 
-    return new TikTokApiError(message, category, status);
+    return new TikTokApiError(message, category, status, undefined, code);
   }
 }

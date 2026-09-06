@@ -98,6 +98,9 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('Erro:', err.message ?? err);
+  // `code` (achado real: o mesmo texto de erro da TikTok já apareceu com dois significados
+  // opostos) é a única forma confiável de saber qual validação disparou de verdade — sempre
+  // imprime quando disponível (erro vindo de `TikTokApiError`), nunca só confia no texto.
+  console.error('Erro:', err.message ?? err, err.code !== undefined ? `(código TikTok: ${err.code})` : '');
   process.exitCode = 1;
 });
