@@ -120,6 +120,23 @@ Paginação (`page_size`/`page_token`) vai na query string; filtros (janela de t
 no corpo JSON da requisição, mesmo que vazio (`{}`). `orders`/`{id}` (detalhe de um pedido) e os
 endpoints de finance (`statements`, `.../statement_transactions`) continuam GET.
 
+**Achado real, ainda sem explicação definitiva (`Get Attributes`, publicação de produto)**: com
+`shop_cipher` presente (conforme a doc oficial, que marca o parâmetro como `Required` pra este
+endpoint), a API responde "Unexpected identifier. The 'shop_cipher' query parameter is not
+required for this request." (código `36009004`, NÃO documentado na tabela de erros do próprio
+endpoint — só `36009003`, "Internal error", aparece lá); sem `shop_cipher`, responde o erro
+documentado `106013` ("Missing identifier... required"). Ou seja: o MESMO endpoint, pra MESMA
+conta, reclama dos dois lados — contradiz tanto a doc oficial quanto o comportamento de todo o
+resto da integração (busca de produto/pedido/estoque usa o mesmo `shop_cipher`, mesma função de
+assinatura, sem problema nenhum). Hipóteses ainda não confirmadas: (a) o valor salvo de
+`shop_cipher` ficou desatualizado depois de obtido uma única vez no connect/reconnect (nunca é
+buscado de novo automaticamente — ver `check-tiktok-shop-cipher.ts`, script criado pra comparar o
+valor salvo contra um buscado na hora via `Get Authorized Shops`); (b) comportamento genuíno da
+plataforma pra este endpoint específico, numa loja local (não cross-border) — nesse caso o caminho
+é abrir chamado no suporte da TikTok citando o código `36009004`. **Nunca reverter a chamada pra
+omitir `shop_cipher` de novo sem antes confirmar isso** — uma tentativa anterior de omitir (baseada
+só no texto do erro, sem o código) piorou o resultado.
+
 ## 3. Host da API (produção)
 
 Confirmado: `https://open-api.tiktokglobalshop.com` é o host usado para as chamadas de API de
