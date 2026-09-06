@@ -71,6 +71,7 @@
     "sync-tiktok-status": "node dist/cli/sync-tiktok-status.js",
     "check-mercadolivre-fiscal-information": "node dist/cli/check-mercadolivre-fiscal-information.js",
     "send-mercadolivre-fiscal-information": "node dist/cli/send-mercadolivre-fiscal-information.js",
+    "check-mercadolivre-item-id": "node dist/cli/check-mercadolivre-item-id.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
