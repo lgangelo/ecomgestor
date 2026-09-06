@@ -232,9 +232,15 @@ export class TikTokProductsPublishService {
       );
     }
 
+    // ACHADO REAL em investigação: erro de shop_cipher aparece em algum ponto deste método sem
+    // stack trace útil (CLI só imprime err.message) — breadcrumb temporário pra localizar com
+    // certeza qual chamada é (getCategoryAttributes vs upload de imagem), em vez de adivinhar de
+    // novo. Remover depois de confirmado.
+    this.logger.log('tiktok_publish_debug_step', { step: 'antes_resolve_warehouse', productId: product.id });
     if (!caches.warehouseId) caches.warehouseId = await this.resolveWarehouseId(connector);
     const warehouseId = caches.warehouseId;
 
+    this.logger.log('tiktok_publish_debug_step', { step: 'antes_get_category_attributes', productId: product.id, categoryId: categoryMapping.externalCategoryId });
     let attrs = caches.attrsByCategory.get(categoryMapping.externalCategoryId);
     if (!attrs) {
       attrs = await connector.getCategoryAttributes(
@@ -243,6 +249,7 @@ export class TikTokProductsPublishService {
       );
       caches.attrsByCategory.set(categoryMapping.externalCategoryId, attrs);
     }
+    this.logger.log('tiktok_publish_debug_step', { step: 'depois_get_category_attributes', productId: product.id });
     const { color: colorAttr, size: sizeAttr } = this.resolveVariationAttributes(attrs);
 
     const mainImageUrls = [product.imageUrl, ...product.images.map((i) => i.url)].filter(
@@ -250,8 +257,10 @@ export class TikTokProductsPublishService {
     );
     const mainImages: Array<{ uri: string }> = [];
     for (const url of Array.from(new Set(mainImageUrls))) {
+      this.logger.log('tiktok_publish_debug_step', { step: 'antes_upload_main_image', productId: product.id, url });
       const buffer = await this.fetchImageBuffer(url);
       const uploaded = await connector.uploadImage(buffer, url.split('/').pop() ?? 'capa.jpg', 'MAIN_IMAGE');
+      this.logger.log('tiktok_publish_debug_step', { step: 'depois_upload_main_image', productId: product.id, url });
       mainImages.push({ uri: uploaded.uri });
     }
 
@@ -268,8 +277,10 @@ export class TikTokProductsPublishService {
       }
       if (colorValue) {
         if (variant.color && variant.imageUrl && !skuImageByColor.has(variant.color) && /^https?:\/\//.test(variant.imageUrl)) {
+          this.logger.log('tiktok_publish_debug_step', { step: 'antes_upload_attribute_image', productId: product.id, color: variant.color });
           const buffer = await this.fetchImageBuffer(variant.imageUrl);
           const uploaded = await connector.uploadImage(buffer, variant.imageUrl.split('/').pop() ?? 'cor.jpg', 'ATTRIBUTE_IMAGE');
+          this.logger.log('tiktok_publish_debug_step', { step: 'depois_upload_attribute_image', productId: product.id, color: variant.color });
           skuImageByColor.set(variant.color, { uri: uploaded.uri });
         }
         sales_attributes.push({ ...colorValue, ...(variant.color && skuImageByColor.has(variant.color) ? { sku_img: skuImageByColor.get(variant.color) } : {}) });
