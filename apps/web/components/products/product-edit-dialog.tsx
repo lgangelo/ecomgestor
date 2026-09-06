@@ -56,6 +56,7 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
     categoryId: product.category?.id ?? '',
     imageUrl: product.imageUrl ?? '',
     status: product.status,
+    externalMaterial: product.externalMaterial ?? '',
   });
 
   React.useEffect(() => {
@@ -68,6 +69,7 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
         categoryId: product.category?.id ?? '',
         imageUrl: product.imageUrl ?? '',
         status: product.status,
+        externalMaterial: product.externalMaterial ?? '',
       });
     }
   }, [open, product]);
@@ -84,6 +86,7 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
       categoryId: form.categoryId || undefined,
       imageUrl: form.imageUrl || undefined,
       status: form.status,
+      externalMaterial: form.externalMaterial || undefined,
     });
     if (imageFile) {
       await uploadImage.mutateAsync(imageFile);
@@ -206,6 +209,21 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
                   <SelectItem value="DRAFT">Rascunho</SelectItem>
                   <SelectItem value="ACTIVE">Ativo</SelectItem>
                   <SelectItem value="INACTIVE">Inativo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Material externo</Label>
+              <Select
+                value={form.externalMaterial}
+                onValueChange={(v) => setForm((f) => ({ ...f, externalMaterial: v as typeof form.externalMaterial }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Não informado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="COURO">Couro</SelectItem>
+                  <SelectItem value="PLASTICO">Plástico</SelectItem>
                 </SelectContent>
               </Select>
             </div>

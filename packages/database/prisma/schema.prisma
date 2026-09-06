@@ -326,6 +326,15 @@ enum ProductStatus {
   DRAFT
 }
 
+/// DECISÃO DO USUÁRIO (ficha técnica do Mercado Livre, achado via GET /item/{id}/performance
+/// real: atributo EXTERNAL_MATERIAL pendente conta pra pontuação de qualidade) — só os 2 valores
+/// que a categoria Bolsas aceita de verdade (confirmado via getCategoryAttributes), nunca um
+/// texto livre que poderia não bater com o catálogo real.
+enum ProductExternalMaterial {
+  COURO
+  PLASTICO
+}
+
 model Product {
   id          String        @id @default(uuid())
   companyId   String        @map("company_id")
@@ -340,6 +349,9 @@ model Product {
   /// pra "Shorts"/vídeo de produto no TikTok Shop e Shopee (Mercado Livre não tem API de escrita
   /// pra isso, só upload manual pelo site deles — ver docs/integrations/mercado-livre.md).
   videoUrl    String?       @map("video_url")
+  /// Ficha técnica (achado real via /performance) — mapeia direto pro atributo EXTERNAL_MATERIAL
+  /// do Mercado Livre; nulo = não preenchido, nunca enviado (nunca assume um valor padrão).
+  externalMaterial ProductExternalMaterial? @map("external_material")
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ChannelMappingSyncStatus } from '@ecommerce-manager/database';
+import { ChannelMappingSyncStatus, ProductExternalMaterial } from '@ecommerce-manager/database';
 import { MercadoLivreApiError, MercadoLivreCreateItemInput, MercadoLivreCreatedItem } from '@ecommerce-manager/integrations';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
@@ -19,6 +19,14 @@ const BRAND_FALLBACK_NAME = 'Generic';
 // tenham esse atributo (ex.: Bolsas); categorias sem GENDER (ex.: cama/mesa/banho) simplesmente
 // não recebem esse atributo, sem erro.
 const GENDER_VALUE_NAME = 'Feminino';
+// DECISÃO DO USUÁRIO (confirmado via /item/performance real — atributo EXTERNAL_MATERIAL também
+// pendente na ficha técnica): mapeia o enum cadastrado no produto pro nome exato aceito pela
+// categoria (confirmado via getCategoryAttributes: só "Couro"/"Plástico" existem pra Bolsas).
+// Nulo (nunca cadastrado) simplesmente não envia o atributo — nunca assume um valor padrão.
+const EXTERNAL_MATERIAL_VALUE_NAMES: Record<ProductExternalMaterial, string> = {
+  COURO: 'Couro',
+  PLASTICO: 'Plástico',
+};
 // DECISÃO DO USUÁRIO: trocado de "gold_special" (Clássico) pra "gold_pro" — confirmado via
 // GET /sites/MLB/listing_types que o nome de exibição "Premium" corresponde ao id `gold_pro`
 // (NUNCA `gold_premium`, que na verdade é a exibição "Diamante" — nomes de exibição e ids da API
@@ -111,6 +119,7 @@ interface ProductForSync {
   status: string;
   baseSku: string;
   imageUrl: string | null;
+  externalMaterial: string | null;
   images: Array<{ url: string; position: number }>;
   variants: Array<{
     id: string;
@@ -204,6 +213,7 @@ export class MercadoLivreProductsSyncService {
       status: product.status,
       baseSku: product.baseSku,
       imageUrl: product.imageUrl,
+      externalMaterial: product.externalMaterial,
       images: product.images.map((i) => ({ url: i.url, position: i.position })),
       variants: product.variants.map((variant) => ({
         id: variant.id,
@@ -391,6 +401,18 @@ export class MercadoLivreProductsSyncService {
     return attrs.find((a) => a.id === 'GENDER')?.values?.find((v) => v.name.toLowerCase() === GENDER_VALUE_NAME.toLowerCase())?.id;
   }
 
+  /** Mesma ideia de `resolveGenderValueId` (opcional e tolerante) pro atributo EXTERNAL_MATERIAL —
+   * `material` só chega aqui quando o produto já tem o campo cadastrado (chamador confere antes). */
+  private async resolveExternalMaterialValueId(
+    client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
+    categoryId: string,
+    material: ProductExternalMaterial,
+  ): Promise<string | undefined> {
+    const attrs = await client.getCategoryAttributes(categoryId);
+    const valueName = EXTERNAL_MATERIAL_VALUE_NAMES[material];
+    return attrs.find((a) => a.id === 'EXTERNAL_MATERIAL')?.values?.find((v) => v.name.toLowerCase() === valueName.toLowerCase())?.id;
+  }
+
   /** Monta o título/family_name do anúncio — inclui o tamanho quando o grupo tem um (ver
    * comentário em `publishEligible` sobre por que tamanho vira uma família SEPARADA, nunca uma
    * variação dentro da mesma família de cor), sempre respeitando o limite de 60 caracteres. */
@@ -415,6 +437,9 @@ export class MercadoLivreProductsSyncService {
     const { categoryId, listingTypeId } = await this.resolveCategoryAndListingType(client, title);
     const brandValueId = await this.resolveBrandValueId(client, categoryId);
     const genderValueId = await this.resolveGenderValueId(client, categoryId);
+    const externalMaterialValueId = product.externalMaterial
+      ? await this.resolveExternalMaterialValueId(client, categoryId, product.externalMaterial as ProductExternalMaterial)
+      : undefined;
 
     const payload: MercadoLivreCreateItemInput = {
       category_id: categoryId,
@@ -431,6 +456,7 @@ export class MercadoLivreProductsSyncService {
         { id: 'SELLER_SKU', value_name: variant.sku },
         { id: 'MODEL', value_name: product.baseSku },
         ...(genderValueId ? [{ id: 'GENDER', value_id: genderValueId }] : []),
+        ...(externalMaterialValueId ? [{ id: 'EXTERNAL_MATERIAL', value_id: externalMaterialValueId }] : []),
       ],
     };
 
@@ -559,6 +585,11 @@ export class MercadoLivreProductsSyncService {
     }
     const brandValueId = await this.resolveBrandValueId(client, base.categoryId);
     const genderValueId = attrs.find((a) => a.id === 'GENDER')?.values?.find((v) => v.name.toLowerCase() === GENDER_VALUE_NAME.toLowerCase())?.id;
+    const externalMaterialValueId = product.externalMaterial
+      ? attrs
+          .find((a) => a.id === 'EXTERNAL_MATERIAL')
+          ?.values?.find((v) => v.name.toLowerCase() === EXTERNAL_MATERIAL_VALUE_NAMES[product.externalMaterial as ProductExternalMaterial].toLowerCase())?.id
+      : undefined;
 
     const payload: MercadoLivreCreateItemInput = {
       category_id: base.categoryId,
@@ -578,6 +609,7 @@ export class MercadoLivreProductsSyncService {
         { id: 'MODEL', value_name: product.baseSku },
         { id: 'COLOR', value_id: colorValueId },
         ...(genderValueId ? [{ id: 'GENDER', value_id: genderValueId }] : []),
+        ...(externalMaterialValueId ? [{ id: 'EXTERNAL_MATERIAL', value_id: externalMaterialValueId }] : []),
       ],
     };
 
@@ -773,6 +805,7 @@ export class MercadoLivreProductsSyncService {
       status: dbVariant.product.status,
       baseSku: dbVariant.product.baseSku,
       imageUrl: dbVariant.product.imageUrl,
+      externalMaterial: dbVariant.product.externalMaterial,
       images: dbVariant.product.images.map((i) => ({ url: i.url, position: i.position })),
       variants: [variant],
     };
@@ -870,6 +903,7 @@ export class MercadoLivreProductsSyncService {
           status: p.status,
           baseSku: p.baseSku,
           imageUrl: p.imageUrl,
+          externalMaterial: p.externalMaterial,
           images: p.images.map((i) => ({ url: i.url, position: i.position })),
           variants: [],
         };

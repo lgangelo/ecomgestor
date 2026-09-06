@@ -37,6 +37,7 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactElement }) 
     description: '',
     categoryId: '',
     status: 'DRAFT',
+    externalMaterial: '' as '' | 'COURO' | 'PLASTICO',
   });
 
   async function handleSubmit(e: React.FormEvent) {
@@ -48,6 +49,7 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactElement }) 
       description: form.description || undefined,
       categoryId: form.categoryId || undefined,
       status: form.status,
+      externalMaterial: form.externalMaterial || undefined,
     });
     // Só dá pra anexar a foto depois que o produto já existe (precisa do id), por isso é uma
     // chamada separada em vez de ir junto no corpo de `createProduct`.
@@ -59,7 +61,7 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactElement }) 
     }
     setOpen(false);
     setImageFile(null);
-    setForm({ name: '', baseSku: '', brand: '', description: '', categoryId: '', status: 'DRAFT' });
+    setForm({ name: '', baseSku: '', brand: '', description: '', categoryId: '', status: 'DRAFT', externalMaterial: '' });
   }
 
   async function handleGenerateCopy() {
@@ -135,6 +137,21 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactElement }) 
                   <SelectItem value="DRAFT">Rascunho</SelectItem>
                   <SelectItem value="ACTIVE">Ativo</SelectItem>
                   <SelectItem value="INACTIVE">Inativo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Material externo</Label>
+              <Select
+                value={form.externalMaterial}
+                onValueChange={(v) => setForm((f) => ({ ...f, externalMaterial: v as typeof form.externalMaterial }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Não informado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="COURO">Couro</SelectItem>
+                  <SelectItem value="PLASTICO">Plástico</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -189,6 +189,7 @@ export class ProductsService {
       baseSku: product.baseSku,
       imageUrl: product.imageUrl,
       videoUrl: product.videoUrl,
+      externalMaterial: product.externalMaterial,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
       category: product.category ? { id: product.category.id, name: product.category.name } : null,
@@ -251,6 +252,7 @@ export class ProductsService {
           brand: dto.brand ?? null,
           baseSku: dto.baseSku,
           imageUrl: dto.imageUrl ?? null,
+          externalMaterial: dto.externalMaterial ?? null,
           ...(dto.status ? { status: dto.status } : {}),
         },
       });
@@ -288,6 +290,7 @@ export class ProductsService {
             ...(dto.baseSku !== undefined ? { baseSku: dto.baseSku } : {}),
             ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl } : {}),
             ...(dto.status !== undefined ? { status: dto.status } : {}),
+            ...(dto.externalMaterial !== undefined ? { externalMaterial: dto.externalMaterial } : {}),
           },
         });
 

@@ -63,6 +63,7 @@ export interface ProductDetail {
   baseSku: string;
   imageUrl: string | null;
   videoUrl: string | null;
+  externalMaterial: 'COURO' | 'PLASTICO' | null;
   category: { id: string; name: string } | null;
   images: ProductImageDetail[];
   variants: ProductVariantDetail[];
@@ -115,6 +116,7 @@ export function useCreateProduct() {
       baseSku: string;
       imageUrl?: string;
       status?: string;
+      externalMaterial?: 'COURO' | 'PLASTICO';
     }) => apiFetch<ProductDetail>('/products', { method: 'POST', body: data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });

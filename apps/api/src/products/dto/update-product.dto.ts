@@ -1,4 +1,4 @@
-import { ProductStatus } from '@ecommerce-manager/database';
+import { ProductExternalMaterial, ProductStatus } from '@ecommerce-manager/database';
 import { IsEnum, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class UpdateProductDto {
@@ -34,4 +34,8 @@ export class UpdateProductDto {
   @IsOptional()
   @IsEnum(ProductStatus)
   status?: ProductStatus;
+
+  @IsOptional()
+  @IsEnum(ProductExternalMaterial)
+  externalMaterial?: ProductExternalMaterial;
 }

@@ -48,6 +48,7 @@ function makeProductRow(variants: ReturnType<typeof makeVariant>[], overrides: P
     status: overrides.status ?? 'ACTIVE',
     baseSku: overrides.baseSku ?? 'BASE-1',
     imageUrl: overrides.imageUrl ?? 'https://cdn.example.com/capa.jpg',
+    externalMaterial: overrides.externalMaterial ?? null,
     images: overrides.images ?? [],
     variants,
   };
@@ -183,6 +184,38 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
       expect(attributes.find((a) => a.id === 'GENDER')).toBeUndefined();
     },
   );
+
+  it(
+    'PEDIDO DO USUÁRIO (ficha técnica, confirmado via /item/performance real): preenche EXTERNAL_MATERIAL ' +
+      'quando o produto tem o material cadastrado',
+    async () => {
+      const variant = makeVariant();
+      const client = makeClient();
+      client.getCategoryAttributes = jest.fn().mockResolvedValue([
+        { id: 'BRAND', values: [{ id: 'brand-generic', name: 'Generic' }] },
+        { id: 'COLOR', values: [{ id: 'color-azul', name: 'Azul' }] },
+        { id: 'EXTERNAL_MATERIAL', values: [{ id: 'material-couro', name: 'Couro' }, { id: 'material-plastico', name: 'Plástico' }] },
+      ]);
+      const product = makeProductRow([variant], { externalMaterial: 'COURO' });
+      const { service } = makeService({ products: [product], client });
+
+      await service.publishEligible(COMPANY_ID);
+
+      expect(client.createItem.mock.calls[0][0]).toMatchObject({
+        attributes: expect.arrayContaining([{ id: 'EXTERNAL_MATERIAL', value_id: 'material-couro' }]),
+      });
+    },
+  );
+
+  it('nunca envia EXTERNAL_MATERIAL quando o produto não tem o material cadastrado', async () => {
+    const variant = makeVariant();
+    const { service, client } = makeService({ products: [makeProductRow([variant])] });
+
+    await service.publishEligible(COMPANY_ID);
+
+    const attributes = client.createItem.mock.calls[0][0].attributes as Array<{ id: string }>;
+    expect(attributes.find((a) => a.id === 'EXTERNAL_MATERIAL')).toBeUndefined();
+  });
 
   it(
     'ACHADO REAL (produto SKU LG032-2, erro item.description.type.invalid): remove tags HTML da ' +
