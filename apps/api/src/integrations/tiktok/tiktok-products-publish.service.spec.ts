@@ -49,7 +49,7 @@ function makeConnector() {
 function makeService(opts: {
   products: ReturnType<typeof makeProductRow>[];
   connector?: ReturnType<typeof makeConnector>;
-  categoryMapping?: { externalCategoryId: string; externalCategoryVersion: string | null } | null;
+  categoryMapping?: { externalCategoryId: string; externalCategoryVersion: string | null; cachedAttributes?: unknown } | null;
   defaultWarehouseId?: string | null;
 }) {
   const connector = opts.connector ?? makeConnector();
@@ -137,6 +137,31 @@ describe('TikTokProductsPublishService.buildProductPayload', () => {
 
     await expect(service.buildProductPayload(COMPANY_ID, 'product-1')).rejects.toThrow(/sem mapeamento pra TikTok Shop/i);
   });
+
+  it(
+    'ACHADO REAL (Get Attributes respondeu diferente pra chamadas idênticas byte a byte): usa o ' +
+      'cache confirmado (cachedAttributes) sem chamar getCategoryAttributes ao vivo',
+    async () => {
+      const variant = makeVariant({ color: 'Azul' });
+      const connector = makeConnector();
+      const { service } = makeService({
+        products: [makeProductRow([variant])],
+        connector,
+        categoryMapping: {
+          externalCategoryId: 'tt-cat-1',
+          externalCategoryVersion: null,
+          cachedAttributes: [
+            { id: '100', name: 'Cor', type: 'SALES_PROPERTY', isRequired: false, isCustomizable: false, values: [{ id: 'v-azul', name: 'Azul' }] },
+          ],
+        },
+      });
+
+      const payload = await service.buildProductPayload(COMPANY_ID, 'product-1');
+
+      expect(connector.getCategoryAttributes).not.toHaveBeenCalled();
+      expect(payload.skus[0].sales_attributes).toEqual([{ id: '100', value_id: 'v-azul' }]);
+    },
+  );
 
   it('DECISÃO DO USUÁRIO: usa value_name livre (sem precisar bater com o catálogo) quando o atributo é customizável', async () => {
     const variant = makeVariant({ color: 'Azul-petróleo bem específico' });

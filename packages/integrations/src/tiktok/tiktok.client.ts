@@ -41,15 +41,6 @@ export class TikTokClient {
     const searchParams = new URLSearchParams({ ...query, sign, access_token: this.config.accessToken });
     const url = `${TIKTOK_HOSTS.api}${path}?${searchParams.toString()}`;
 
-    // ACHADO REAL em investigação: a MESMA chamada (mesmo path, mesmo categoryId, mesmo
-    // shop_cipher confirmado válido) funciona isolada mas falha dentro do fluxo de publicação de
-    // produto — breadcrumb temporário pra comparar a URL byte a byte entre as duas execuções.
-    // Nunca loga `sign`/`access_token` (segredo). Remover depois de confirmado.
-    if (path.includes('/attributes')) {
-      // eslint-disable-next-line no-console
-      console.log('[tiktok-debug-request]', JSON.stringify({ method, path, query }));
-    }
-
     let response: Response;
     try {
       response = await fetch(url, {

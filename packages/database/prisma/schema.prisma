@@ -347,6 +347,14 @@ model CategoryChannelMapping {
   /// nas demais regiões, inclusive BR — não confirmado ainda pra esta conta). Nulo pros canais
   /// que não têm esse conceito (ex.: Mercado Livre).
   externalCategoryVersion String?     @map("external_category_version")
+  /// TikTok Shop: cache do resultado de "Get Attributes" pra essa categoria, confirmado uma vez
+  /// contra a conta real (via `cache-tiktok-category-attributes.ts`) — pedido do usuário depois de
+  /// um erro intermitente e inexplicado nessa chamada (mesma categoria, mesma query byte a byte,
+  /// resultado diferente entre chamadas): já que os atributos de uma categoria raramente mudam e
+  /// os já confirmados pra "Bolsas" são todos OPCIONAIS (nenhum `isRequired`), evita depender de
+  /// uma chamada ao vivo instável a cada publicação. Nulo = ainda não confirmado, cai pra chamada
+  /// ao vivo (mesmo padrão do `TIKTOK_DEFAULT_WAREHOUSE_ID`). Nulo pros canais sem esse conceito.
+  cachedAttributes        Json?       @map("cached_attributes")
   createdAt               DateTime    @default(now()) @map("created_at") @db.Timestamptz
   updatedAt               DateTime    @updatedAt @map("updated_at") @db.Timestamptz
 

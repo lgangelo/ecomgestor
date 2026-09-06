@@ -237,10 +237,17 @@ export class TikTokProductsPublishService {
 
     let attrs = caches.attrsByCategory.get(categoryMapping.externalCategoryId);
     if (!attrs) {
-      attrs = await connector.getCategoryAttributes(
-        categoryMapping.externalCategoryId,
-        categoryMapping.externalCategoryVersion as 'v1' | 'v2' | undefined,
-      );
+      // ACHADO REAL: "Get Attributes" respondeu diferente pra chamadas IDÊNTICAS byte a byte
+      // (mesma categoria, mesmo shop_cipher, mesma query) — confirmado intermitente/instável do
+      // lado da TikTok, não um bug no nosso request. Usa o cache confirmado uma vez (ver
+      // `cache-tiktok-category-attributes.ts`) sempre que existir, só cai pra chamada ao vivo
+      // quando ainda não foi confirmado pra essa categoria (mesmo padrão do warehouse_id fixo).
+      attrs = categoryMapping.cachedAttributes
+        ? (categoryMapping.cachedAttributes as unknown as TikTokCategoryAttribute[])
+        : await connector.getCategoryAttributes(
+            categoryMapping.externalCategoryId,
+            categoryMapping.externalCategoryVersion as 'v1' | 'v2' | undefined,
+          );
       caches.attrsByCategory.set(categoryMapping.externalCategoryId, attrs);
     }
     const { color: colorAttr, size: sizeAttr } = this.resolveVariationAttributes(attrs);

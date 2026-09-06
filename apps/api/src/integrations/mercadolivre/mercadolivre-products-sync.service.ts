@@ -208,13 +208,19 @@ export class MercadoLivreProductsSyncService {
     return Math.round(base * (1 + markup / 100) * 100) / 100;
   }
 
+  /** Deriva o hash direto de `this.pictures(...)` (nunca reconstrói a lista de fotos separado) —
+   * pedido do usuário, depois do bug de ordem capa/galeria/variação corrigido em `pictures()`:
+   * sem isso, o hash de produtos JÁ publicados continuaria batendo com o valor salvo antes da
+   * correção (as fotos de origem não mudaram, só a lógica que monta a lista), e `syncPublished`
+   * nunca reenviaria a ordem certa pros anúncios existentes — só produtos novos ganhariam a
+   * correção. Ao trocar a fórmula do hash, todo produto já publicado passa a bater "mudou" no
+   * próximo ciclo (o hash salvo antes nunca vai bater com o novo formato), reenviando as fotos
+   * certas em lote, sem precisar de um script avulso de backfill. */
   private snapshotHash(product: ProductForSync, variant: ProductForSync['variants'][number]): string {
-    const gallery = product.images.slice().sort((a, b) => a.position - b.position).map((i) => i.url);
     const snapshot = {
       price: this.publishedPrice(variant.suggestedPrice),
       description: product.description ?? '',
-      coverUrl: variant.imageUrl ?? product.imageUrl ?? '',
-      gallery,
+      pictures: this.pictures(product, variant).map((p) => p.source),
       productStatus: product.status,
       variantStatus: variant.status,
     };
