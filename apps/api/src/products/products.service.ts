@@ -38,6 +38,17 @@ const MIRROR_EXTERNAL_IMAGE_TIMEOUT_MS = 10_000;
 // Limite de fotos na galeria adicional do produto (nunca conta a foto de capa, `Product.imageUrl`,
 // que é independente) — pedido explícito do usuário.
 const MAX_PRODUCT_IMAGES = 5;
+// 1 vídeo por produto (pedido do usuário, pra usar em TikTok Shop/Shopee) — teto alinhado ao
+// maior limite confirmado entre os dois canais (TikTok Shop aceita até 100MB; Shopee só até
+// 30MB, mas quem valida o teto de cada canal é a própria sincronização daquele canal, nunca
+// aqui — aqui só guardamos o arquivo original, sem recomprimir/transcodificar, ao contrário de
+// foto: não há uma lib de vídeo equivalente ao `sharp` disponível nesta stack).
+const MAX_VIDEO_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+const VIDEO_MIME_TO_EXT: Record<string, string> = {
+  'video/mp4': '.mp4',
+  'video/quicktime': '.mov',
+  'video/webm': '.webm',
+};
 
 /** Nome de arquivo baseado no SKU (`K908-1.jpg`, nunca um UUID aleatório) — pedido explícito do
  * usuário, pra dar pra identificar visualmente de qual produto/variante é cada foto no bucket e
@@ -177,6 +188,7 @@ export class ProductsService {
       status: product.status,
       baseSku: product.baseSku,
       imageUrl: product.imageUrl,
+      videoUrl: product.videoUrl,
       createdAt: product.createdAt,
       updatedAt: product.updatedAt,
       category: product.category ? { id: product.category.id, name: product.category.name } : null,
@@ -738,6 +750,70 @@ export class ProductsService {
     return this.prisma.client.product.update({ where: { id }, data: { imageUrl } });
   }
 
+  private validateVideoFile(file: UploadedImageFile) {
+    if (!file) throw new BadRequestException('Nenhum arquivo enviado');
+    if (!VIDEO_MIME_TO_EXT[file.mimetype]) {
+      throw new BadRequestException('Formato de vídeo não suportado — envie um arquivo MP4, MOV ou WEBM.');
+    }
+    if (file.size > MAX_VIDEO_SIZE_BYTES) {
+      throw new BadRequestException(`Vídeo excede o tamanho máximo de ${MAX_VIDEO_SIZE_BYTES / 1024 / 1024}MB`);
+    }
+  }
+
+  /** Mesmo esquema de armazenamento de `saveImageFile` (R2 público quando configurado, senão disco
+   * local), mas sem nenhum processamento do arquivo — guarda o vídeo original como veio, validando
+   * só formato/tamanho antes. */
+  private async saveVideoFile(companyId: string, file: UploadedImageFile, slug?: string): Promise<string> {
+    this.validateVideoFile(file);
+    const filename = `${(slug && sanitizeSlug(slug)) || randomUUID()}${VIDEO_MIME_TO_EXT[file.mimetype]}`;
+    const r2Config = this.config.get<{ enabled: boolean; imagesBucket: string; imagesPublicBaseUrl: string }>('r2')!;
+    if (r2Config.enabled) {
+      const key = `videos/${companyId}/${filename}`;
+      await this.r2.putObject(r2Config.imagesBucket, key, file.buffer, file.mimetype);
+      return `${r2Config.imagesPublicBaseUrl}/${key}`;
+    }
+    const dir = join(this.config.get<string>('productVideoStorageDir')!, companyId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, filename), file.buffer);
+    return `/products/videos/${companyId}/${filename}`;
+  }
+
+  /** Mesma filosofia best-effort de `deleteImageIfAny`. */
+  private async deleteVideoIfAny(companyId: string, previousVideoUrl: string | null) {
+    if (!previousVideoUrl) return;
+    const r2Config = this.config.get<{ imagesBucket: string; imagesPublicBaseUrl: string }>('r2')!;
+    if (r2Config.imagesPublicBaseUrl && previousVideoUrl.startsWith(`${r2Config.imagesPublicBaseUrl}/`)) {
+      const key = previousVideoUrl.slice(`${r2Config.imagesPublicBaseUrl}/`.length);
+      try {
+        await this.r2.deleteObject(r2Config.imagesBucket, key);
+      } catch {
+        // Best-effort — nunca bloqueia a troca por causa de uma falha ao apagar o anterior.
+      }
+      return;
+    }
+    const prefix = `/products/videos/${companyId}/`;
+    if (!previousVideoUrl.startsWith(prefix)) return;
+    const filename = previousVideoUrl.slice(prefix.length);
+    try {
+      await unlink(join(this.config.get<string>('productVideoStorageDir')!, companyId, filename));
+    } catch {
+      // Best-effort — o arquivo já pode não existir. Nunca bloqueia a troca.
+    }
+  }
+
+  async uploadProductVideo(id: string, companyId: string, file: UploadedImageFile) {
+    const existing = await this.findProductOrThrow(id, companyId);
+    const videoUrl = await this.saveVideoFile(companyId, file, existing.baseSku);
+    await this.deleteVideoIfAny(companyId, existing.videoUrl);
+    return this.prisma.client.product.update({ where: { id }, data: { videoUrl } });
+  }
+
+  async removeProductVideo(id: string, companyId: string) {
+    const existing = await this.findProductOrThrow(id, companyId);
+    await this.deleteVideoIfAny(companyId, existing.videoUrl);
+    return this.prisma.client.product.update({ where: { id }, data: { videoUrl: null } });
+  }
+
   async uploadVariantImage(variantId: string, companyId: string, file: UploadedImageFile) {
     const existing = await this.getVariantOrThrow(variantId, companyId);
     const imageUrl = await this.saveImageFile(companyId, file, existing.sku);
@@ -790,6 +866,10 @@ export class ProductsService {
    * `companyId` bate com a empresa do usuário autenticado. */
   resolveImageFilePath(companyId: string, filename: string): string {
     return join(this.config.get<string>('productImageStorageDir')!, companyId, filename);
+  }
+
+  resolveVideoFilePath(companyId: string, filename: string): string {
+    return join(this.config.get<string>('productVideoStorageDir')!, companyId, filename);
   }
 
   /**

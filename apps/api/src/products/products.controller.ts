@@ -36,6 +36,10 @@ import { BulkUpdateProductStatusDto } from './dto/bulk-update-product-status.dto
 // Nome gerado por `ProductsService.saveImageFile` (`randomUUID() + extensão`) — nunca aceita
 // nada fora desse formato no path da requisição (trava tentativa de path traversal, ex.: `../..`).
 const IMAGE_FILENAME_PATTERN = /^[0-9a-f-]+\.(jpg|png|webp)$/;
+// Mesma trava de path traversal, pro nome gerado por `ProductsService.saveVideoFile`
+// (`sanitizeSlug(baseSku)` ou `randomUUID()` + extensão — por isso aceita letras maiúsculas/
+// underscore também, ao contrário do padrão de foto acima).
+const VIDEO_FILENAME_PATTERN = /^[0-9a-zA-Z_-]+\.(mp4|mov|webm)$/;
 
 @Controller('products')
 export class ProductsController {
@@ -121,6 +125,58 @@ export class ProductsController {
     const path = resolvePath(this.productsService.resolveImageFilePath(companyId, filename));
     if (!existsSync(path)) throw new NotFoundException('Imagem não encontrada');
     res.sendFile(path);
+  }
+
+  /** Mesma ideia de `getImage`, pro vídeo do produto. */
+  @Get('videos/:companyId/:filename')
+  @RequirePermissions(PERMISSIONS.PRODUCT_READ)
+  getVideo(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('companyId') companyId: string,
+    @Param('filename') filename: string,
+    @Res() res: Response,
+  ) {
+    if (companyId !== user.companyId) throw new NotFoundException('Vídeo não encontrado');
+    if (!VIDEO_FILENAME_PATTERN.test(filename)) throw new BadRequestException('Nome de arquivo inválido');
+
+    const path = resolvePath(this.productsService.resolveVideoFilePath(companyId, filename));
+    if (!existsSync(path)) throw new NotFoundException('Vídeo não encontrado');
+    res.sendFile(path);
+  }
+
+  @Post(':id/video')
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadVideo(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @UploadedFile() file: UploadedImageFile,
+  ) {
+    const updated = await this.productsService.uploadProductVideo(id, user.companyId, file);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'UPDATE',
+      entity: 'product',
+      entityId: updated.id,
+      newValue: { videoUrl: updated.videoUrl },
+    });
+    return updated;
+  }
+
+  @Delete(':id/video')
+  @HttpCode(204)
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  async removeVideo(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    await this.productsService.removeProductVideo(id, user.companyId);
+    await this.auditService.log({
+      companyId: user.companyId,
+      userId: user.userId,
+      action: 'UPDATE',
+      entity: 'product',
+      entityId: id,
+      newValue: { videoUrl: null },
+    });
   }
 
   @Post(':id/image')

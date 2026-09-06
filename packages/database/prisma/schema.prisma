@@ -336,6 +336,10 @@ model Product {
   status      ProductStatus @default(DRAFT)
   baseSku     String        @map("base_sku")
   imageUrl    String?       @map("image_url")
+  /// 1 vídeo por produto (pedido do usuário) — sem galeria, ao contrário de `ProductImage`. Usado
+  /// pra "Shorts"/vídeo de produto no TikTok Shop e Shopee (Mercado Livre não tem API de escrita
+  /// pra isso, só upload manual pelo site deles — ver docs/integrations/mercado-livre.md).
+  videoUrl    String?       @map("video_url")
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
 

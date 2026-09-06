@@ -62,6 +62,7 @@ export interface ProductDetail {
   status: 'ACTIVE' | 'INACTIVE' | 'DRAFT';
   baseSku: string;
   imageUrl: string | null;
+  videoUrl: string | null;
   category: { id: string; name: string } | null;
   images: ProductImageDetail[];
   variants: ProductVariantDetail[];
@@ -229,6 +230,38 @@ export function useUploadProductImage(productId: string) {
       queryClient.invalidateQueries({ queryKey: ['products'] });
     },
     onError: onErrorToast('Não foi possível enviar a foto'),
+  });
+}
+
+/** Upload do vídeo do produto (1 por produto, sempre substitui o anterior) — usado pra "Shorts"/
+ * vídeo de produto no TikTok Shop e Shopee (Mercado Livre não tem API de escrita pra isso). */
+export function useUploadProductVideo(productId: string) {
+  const queryClient = useQueryClient();
+  const onErrorToast = useErrorToast();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return apiFetch<ProductDetail>(`/products/${productId}/video`, { method: 'POST', body: form });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products', productId] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    onError: onErrorToast('Não foi possível enviar o vídeo'),
+  });
+}
+
+export function useRemoveProductVideo(productId: string) {
+  const queryClient = useQueryClient();
+  const onErrorToast = useErrorToast();
+  return useMutation({
+    mutationFn: () => apiFetch<void>(`/products/${productId}/video`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products', productId] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    },
+    onError: onErrorToast('Não foi possível remover o vídeo'),
   });
 }
 

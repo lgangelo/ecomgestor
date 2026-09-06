@@ -10,6 +10,7 @@ export interface AppConfig {
   cookieSecure: boolean;
   fiscalXmlStorageDir: string;
   productImageStorageDir: string;
+  productVideoStorageDir: string;
   /** Seção 19 da Fase 4 — REFERENCE_ONLY (default) nunca grava o XML em disco, só a referência
    * fiscal; PERSIST é o comportamento legado (Fase 2), mantido só por compatibilidade. */
   xmlStorageMode: 'REFERENCE_ONLY' | 'PERSIST';
@@ -106,6 +107,7 @@ export default (): AppConfig => ({
   // Em produção (Docker) deve apontar para um volume persistente — ver docker-compose.yml.
   fiscalXmlStorageDir: process.env.FISCAL_XML_STORAGE_DIR ?? './storage/fiscal-xml',
   productImageStorageDir: process.env.PRODUCT_IMAGE_STORAGE_DIR ?? './storage/product-images',
+  productVideoStorageDir: process.env.PRODUCT_VIDEO_STORAGE_DIR ?? './storage/product-videos',
   xmlStorageMode: process.env.XML_STORAGE_MODE === 'PERSIST' ? 'PERSIST' : 'REFERENCE_ONLY',
   // Chave de derivação para criptografar credenciais de integração em repouso (seção 5 da
   // Fase 3). Nunca reutiliza os segredos de JWT — comprometer um não deve comprometer o outro.

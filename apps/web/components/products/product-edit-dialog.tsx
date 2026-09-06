@@ -22,13 +22,16 @@ import {
   resolveProductImageUrl,
   useAddProductImage,
   useRemoveProductImage,
+  useRemoveProductVideo,
   useSetProductCoverImage,
   useUpdateProduct,
   useUploadProductImage,
+  useUploadProductVideo,
   type ProductDetail,
 } from '@/hooks/use-products';
 import { useGenerateProductCopy } from '@/hooks/use-ai-copy';
 import { ImageUploadField } from './image-upload-field';
+import { VideoUploadField } from './video-upload-field';
 
 export function ProductEditDialog({ product, trigger }: { product: ProductDetail; trigger: React.ReactElement }) {
   const [open, setOpen] = React.useState(false);
@@ -38,9 +41,12 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
   const addImage = useAddProductImage(product.id);
   const removeImage = useRemoveProductImage(product.id);
   const setCoverImage = useSetProductCoverImage(product.id);
+  const uploadVideo = useUploadProductVideo(product.id);
+  const removeVideo = useRemoveProductVideo(product.id);
   const [removingImageId, setRemovingImageId] = React.useState<string | null>(null);
   const generateCopy = useGenerateProductCopy();
   const [imageFile, setImageFile] = React.useState<File | null>(null);
+  const [videoFile, setVideoFile] = React.useState<File | null>(null);
 
   const [form, setForm] = React.useState({
     name: product.name,
@@ -82,6 +88,10 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
     if (imageFile) {
       await uploadImage.mutateAsync(imageFile);
       setImageFile(null);
+    }
+    if (videoFile) {
+      await uploadVideo.mutateAsync(videoFile);
+      setVideoFile(null);
     }
     setOpen(false);
   }
@@ -270,6 +280,24 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
                     );
                   })}
                 </div>
+              )}
+            </div>
+            <div className="col-span-2 space-y-1.5">
+              <VideoUploadField
+                id="edit-videoFile"
+                label="Vídeo do produto"
+                existingUrl={resolveProductImageUrl(product.videoUrl)}
+                onFileSelect={setVideoFile}
+              />
+              {product.videoUrl && !videoFile && (
+                <button
+                  type="button"
+                  className="text-xs text-destructive hover:underline"
+                  disabled={removeVideo.isPending}
+                  onClick={() => removeVideo.mutate()}
+                >
+                  {removeVideo.isPending ? 'Removendo...' : 'Remover vídeo'}
+                </button>
               )}
             </div>
             <div className="col-span-2 space-y-1.5">

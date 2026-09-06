@@ -19,8 +19,18 @@ function makeConfig(storageDir: string): ConfigService {
   } as unknown as ConfigService;
 }
 
+function makeVideoConfig(storageDir: string): ConfigService {
+  return {
+    get: (key: string) => (key === 'productVideoStorageDir' ? storageDir : key === 'r2' ? DISABLED_R2_CONFIG : undefined),
+  } as unknown as ConfigService;
+}
+
 function fakeImageFile(name = 'photo.jpg') {
   return { originalname: name, mimetype: 'image/jpeg', size: 1024, buffer: Buffer.from('fake-image-bytes') };
+}
+
+function fakeVideoFile(name = 'video.mp4') {
+  return { originalname: name, mimetype: 'video/mp4', size: 1024, buffer: Buffer.from('fake-video-bytes') };
 }
 
 describe('ProductsService — upload de foto do produto/variação', () => {
@@ -148,6 +158,86 @@ describe('ProductsService — upload de foto do produto/variação', () => {
 
     // Não deve lançar erro tentando apagar um arquivo que nunca existiu no nosso disco.
     await expect(service.uploadProductImage('product-1', COMPANY_ID, fakeImageFile())).resolves.toBeDefined();
+  });
+});
+
+describe('ProductsService — upload de vídeo do produto', () => {
+  let storageDir: string;
+
+  beforeEach(async () => {
+    storageDir = await mkdtemp(join(tmpdir(), 'product-videos-test-'));
+  });
+
+  afterEach(async () => {
+    await rm(storageDir, { recursive: true, force: true });
+  });
+
+  it('salva o vídeo com o nome do SKU do produto, sem nenhum processamento do arquivo', async () => {
+    const productUpdate = jest.fn().mockImplementation(({ data }) => ({ id: 'product-1', ...data }));
+    const prisma = {
+      client: {
+        product: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'product-1', companyId: COMPANY_ID, baseSku: 'K908', videoUrl: null }),
+          update: productUpdate,
+        },
+      },
+    };
+    const service = new ProductsService(prisma as unknown as PrismaService, makeVideoConfig(storageDir), fakeR2Service);
+
+    const updated = await service.uploadProductVideo('product-1', COMPANY_ID, fakeVideoFile());
+
+    expect(updated.videoUrl).toBe(`/products/videos/${COMPANY_ID}/K908.mp4`);
+    const files = await readdir(join(storageDir, COMPANY_ID));
+    expect(files).toEqual(['K908.mp4']);
+    const saved = await readFile(join(storageDir, COMPANY_ID, 'K908.mp4'));
+    expect(saved.toString()).toBe('fake-video-bytes');
+  });
+
+  it('rejeita um formato de arquivo não suportado (ex.: PDF)', async () => {
+    const prisma = {
+      client: { product: { findFirst: jest.fn().mockResolvedValue({ id: 'product-1', companyId: COMPANY_ID, baseSku: 'K908', videoUrl: null }) } },
+    };
+    const service = new ProductsService(prisma as unknown as PrismaService, makeVideoConfig(storageDir), fakeR2Service);
+
+    await expect(
+      service.uploadProductVideo('product-1', COMPANY_ID, { ...fakeVideoFile(), mimetype: 'application/pdf' }),
+    ).rejects.toThrow(/formato de vídeo não suportado/i);
+  });
+
+  it('rejeita vídeo maior que o teto de 100MB', async () => {
+    const prisma = {
+      client: { product: { findFirst: jest.fn().mockResolvedValue({ id: 'product-1', companyId: COMPANY_ID, baseSku: 'K908', videoUrl: null }) } },
+    };
+    const service = new ProductsService(prisma as unknown as PrismaService, makeVideoConfig(storageDir), fakeR2Service);
+
+    await expect(
+      service.uploadProductVideo('product-1', COMPANY_ID, { ...fakeVideoFile(), size: 101 * 1024 * 1024 }),
+    ).rejects.toThrow(/excede o tamanho máximo/i);
+  });
+
+  it('remove o vídeo salvo (apaga o arquivo e limpa videoUrl)', async () => {
+    const productUpdate = jest.fn().mockImplementation(({ data }) => ({ id: 'product-1', ...data }));
+    const prisma = {
+      client: {
+        product: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'product-1',
+            companyId: COMPANY_ID,
+            baseSku: 'K908',
+            videoUrl: `/products/videos/${COMPANY_ID}/K908.mp4`,
+          }),
+          update: productUpdate,
+        },
+      },
+    };
+    const service = new ProductsService(prisma as unknown as PrismaService, makeVideoConfig(storageDir), fakeR2Service);
+    await service.uploadProductVideo('product-1', COMPANY_ID, fakeVideoFile());
+
+    const updated = await service.removeProductVideo('product-1', COMPANY_ID);
+
+    expect(updated.videoUrl).toBeNull();
+    const files = await readdir(join(storageDir, COMPANY_ID));
+    expect(files).toEqual([]);
   });
 });
 
@@ -288,5 +378,24 @@ describe('ProductsService — upload de foto quando o R2 está configurado (Clou
     await service.uploadProductImage('product-1', COMPANY_ID, fakeImageFile());
 
     expect(deleteObject).toHaveBeenCalledWith('ecomgestor', `imagens/${COMPANY_ID}/antiga.jpg`);
+  });
+
+  it('vídeo: grava no bucket público do R2 sob o prefixo "videos/" (nunca "imagens/") e devolve a URL pública completa', async () => {
+    const prisma = {
+      client: {
+        product: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'product-1', companyId: COMPANY_ID, baseSku: 'K908', videoUrl: null }),
+          update: jest.fn().mockImplementation(({ data }) => ({ id: 'product-1', ...data })),
+        },
+      },
+    };
+    const putObject = jest.fn().mockResolvedValue(undefined);
+    const r2 = { putObject, deleteObject: jest.fn() } as unknown as R2StorageService;
+    const service = new ProductsService(prisma as unknown as PrismaService, makeR2Config(), r2);
+
+    const updated = await service.uploadProductVideo('product-1', COMPANY_ID, fakeVideoFile());
+
+    expect(putObject).toHaveBeenCalledWith('ecomgestor', `videos/${COMPANY_ID}/K908.mp4`, expect.any(Buffer), 'video/mp4');
+    expect(updated.videoUrl).toBe(`https://bucket.btechsecurity.com.br/videos/${COMPANY_ID}/K908.mp4`);
   });
 });
