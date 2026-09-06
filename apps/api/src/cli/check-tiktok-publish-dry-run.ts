@@ -39,24 +39,47 @@ async function main() {
       })
     ).map((c) => c.categoryId);
 
+    // ACHADO REAL: o catálogo tinha produtos importados da TikTok Shop ANTES desta mudança de
+    // direção (produto nasce só na nossa plataforma agora) — esses já têm `ChannelProductMapping`
+    // pro canal TikTok de antes, então TODAS as variantes já contam como "já publicadas" e nunca
+    // são elegíveis pro dry-run. Filtra esses fora da lista, pra só mostrar produto realmente
+    // testável (nunca teve nenhuma variante vinculada ao TikTok ainda).
+    const channel = await prisma.salesChannel.findFirst({ where: { companyId: company.id, type: ChannelType.TIKTOK_SHOP } });
+    const alreadyMappedVariantIds = channel
+      ? new Set(
+          (
+            await prisma.channelProductMapping.findMany({
+              where: { channelId: channel.id, variantId: { not: null } },
+              select: { variantId: true },
+            })
+          ).map((m) => m.variantId),
+        )
+      : new Set<string | null>();
+
     const candidates = await prisma.product.findMany({
       where: { companyId: company.id, status: 'ACTIVE', categoryId: { in: mappedCategoryIds } },
-      include: { category: { select: { name: true } }, variants: { select: { status: true } } },
-      take: 20,
+      include: { category: { select: { name: true } }, variants: { select: { id: true, status: true } } },
+      take: 50,
       orderBy: { createdAt: 'desc' },
     });
     await prisma.$disconnect();
 
     console.log(`Uso: npm run check-tiktok-publish-dry-run -- <productId>\n`);
-    if (candidates.length === 0) {
-      console.log('Nenhum produto ACTIVE com categoria já mapeada pra TikTok Shop encontrado — rode set-category-channel-mapping primeiro.');
+    const testable = candidates
+      .map((p) => ({ ...p, eligibleCount: p.variants.filter((v) => v.status === 'ACTIVE' && !alreadyMappedVariantIds.has(v.id)).length }))
+      .filter((p) => p.eligibleCount > 0)
+      .slice(0, 20);
+
+    if (testable.length === 0) {
+      console.log(
+        'Nenhum produto ACTIVE com categoria mapeada E ainda sem vínculo TikTok Shop encontrado — o catálogo existente provavelmente já veio da importação antiga. Cadastre um produto de teste novo pra testar o dry-run.',
+      );
       return;
     }
-    console.log(`${candidates.length} produto(s) ACTIVE candidato(s) (categoria já mapeada):`);
+    console.log(`${testable.length} produto(s) ACTIVE candidato(s) (categoria mapeada, ainda sem vínculo TikTok Shop):`);
     console.log('----------------------------------------------------');
-    for (const p of candidates) {
-      const activeVariants = p.variants.filter((v) => v.status === 'ACTIVE').length;
-      console.log(`  ${p.baseSku} — ${p.name} — categoria: ${p.category?.name ?? '—'} — ${activeVariants} variante(s) ACTIVE (${p.id})`);
+    for (const p of testable) {
+      console.log(`  ${p.baseSku} — ${p.name} — categoria: ${p.category?.name ?? '—'} — ${p.eligibleCount} variante(s) elegível(is) (${p.id})`);
     }
     return;
   }
