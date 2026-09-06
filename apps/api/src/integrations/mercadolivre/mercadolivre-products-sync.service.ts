@@ -227,19 +227,20 @@ export class MercadoLivreProductsSyncService {
     return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
   }
 
-  /** ACHADO REAL (pedido do usuário): capa e galeria adicional são do PRODUTO — a foto da
-   * VARIAÇÃO serve só pra identificar visualmente qual cor corresponde àquele anúncio, nunca deve
-   * substituir a capa/galeria do produto. Bug anterior: a foto da variação virava a capa sempre
-   * que existia, e a capa de verdade do produto (`product.imageUrl`) ficava de fora da lista por
-   * completo. Ordem agora: capa do produto primeiro (cai pra foto da variação só quando o produto
-   * não tem capa própria ainda), depois a galeria do produto, depois a foto da variação por
-   * último (nunca duplicada se já apareceu antes). */
+  /** ACHADO REAL (pedido do usuário, ajustado depois de quebrar a identificação visual das
+   * cores): o Mercado Livre usa a PRIMEIRA foto de cada item como a miniatura de identificação
+   * daquela variação na tela "Variações e fotos" — colocar a capa do produto em primeiro (ajuste
+   * anterior) fazia todas as cores mostrarem a mesma miniatura, já que a capa é igual pra todo
+   * item do mesmo produto. Ordem corrigida: foto da PRÓPRIA variação primeiro (identifica a cor
+   * visualmente, cai pra capa do produto só quando a variação não tem foto própria), depois capa
+   * e galeria do produto (garantem que elas nunca somem da lista de fotos do anúncio, bug
+   * original que motivou o ajuste anterior) — nunca duplicada se já apareceu antes. */
   private pictures(product: ProductForSync, variant: ProductForSync['variants'][number]): Array<{ source: string }> {
     const productCover = product.imageUrl && /^https?:\/\//.test(product.imageUrl) ? product.imageUrl : undefined;
     const variantPhoto = variant.imageUrl && /^https?:\/\//.test(variant.imageUrl) ? variant.imageUrl : undefined;
     const gallery = product.images.slice().sort((a, b) => a.position - b.position).map((i) => i.url);
 
-    const urls = [productCover ?? variantPhoto, ...gallery, variantPhoto].filter(
+    const urls = [variantPhoto ?? productCover, productCover, ...gallery].filter(
       (url): url is string => Boolean(url) && /^https?:\/\//.test(url as string),
     );
     // Nunca manda a mesma URL duas vezes (a capa pode já estar na galeria, ou coincidir com a

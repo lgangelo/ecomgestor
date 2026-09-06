@@ -152,8 +152,8 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
   });
 
   it(
-    'ACHADO REAL (pedido do usuário): capa e galeria do PRODUTO vêm primeiro, a foto da ' +
-      'variação só entra depois (nunca substitui a capa do produto)',
+    'ACHADO REAL (o Mercado Livre usa a 1ª foto de cada item como miniatura da variação): a foto ' +
+      'da PRÓPRIA variação vem primeiro, capa e galeria do produto entram depois (nunca somem)',
     async () => {
       const variant = makeVariant({ imageUrl: 'https://cdn.example.com/variacao-azul.jpg' });
       const { service, client } = makeService({
@@ -172,10 +172,10 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
 
       expect(client.createItem.mock.calls[0][0]).toMatchObject({
         pictures: [
+          { source: 'https://cdn.example.com/variacao-azul.jpg' },
           { source: 'https://cdn.example.com/capa.jpg' },
           { source: 'https://cdn.example.com/galeria-1.jpg' },
           { source: 'https://cdn.example.com/galeria-2.jpg' },
-          { source: 'https://cdn.example.com/variacao-azul.jpg' },
         ],
       });
     },
@@ -206,6 +206,26 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
       expect(client.createItem.mock.calls[0][0]).toMatchObject({
         pictures: [{ source: 'https://cdn.example.com/variacao-azul.jpg' }],
       });
+    },
+  );
+
+  it(
+    'ACHADO REAL (relatado pelo usuário: "tá importando a mesma foto pra todas as variações"): ' +
+      'cada cor mostra a PRÓPRIA foto como miniatura, nunca a mesma capa repetida em todas',
+    async () => {
+      // "Azul"/"Vermelho" são as duas cores do catálogo já mockadas em `makeClient()`.
+      const azul = makeVariant({ id: 'variant-azul', sku: 'SKU-AZUL', color: 'Azul', imageUrl: 'https://cdn.example.com/azul.jpg', inventory: { onHand: 5, reserved: 0 } });
+      const vermelho = makeVariant({ id: 'variant-vermelho', sku: 'SKU-VERMELHO', color: 'Vermelho', imageUrl: 'https://cdn.example.com/vermelho.jpg', inventory: { onHand: 5, reserved: 0 } });
+      const { service, client } = makeService({
+        products: [makeProductRow([azul, vermelho], { imageUrl: 'https://cdn.example.com/capa.jpg' })],
+      });
+
+      await service.publishEligible(COMPANY_ID);
+
+      // Item base (cor "Azul", primeira variante) e item da cor adicional ("Vermelho") — cada um
+      // precisa ter a PRÓPRIA foto em primeiro, nunca as duas mostrando a mesma capa.
+      expect(client.createItem.mock.calls[0][0].pictures[0]).toEqual({ source: 'https://cdn.example.com/azul.jpg' });
+      expect(client.createItem.mock.calls[1][0].pictures[0]).toEqual({ source: 'https://cdn.example.com/vermelho.jpg' });
     },
   );
 
