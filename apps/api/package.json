@@ -57,6 +57,10 @@
     "check-tiktok-product-detail-raw": "node dist/cli/check-tiktok-product-detail-raw.js",
     "check-tiktok-missing-variant-photos": "node dist/cli/check-tiktok-missing-variant-photos.js",
     "check-tiktok-upload-product-file": "node dist/cli/check-tiktok-upload-product-file.js",
+    "check-tiktok-categories": "node dist/cli/check-tiktok-categories.js",
+    "check-tiktok-category-attributes": "node dist/cli/check-tiktok-category-attributes.js",
+    "check-tiktok-warehouses": "node dist/cli/check-tiktok-warehouses.js",
+    "check-tiktok-upload-image": "node dist/cli/check-tiktok-upload-image.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
