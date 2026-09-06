@@ -5,8 +5,13 @@
  * descrição bruta via JSON.stringify (escapa qualquer caractere de controle/HTML/emoji de forma
  * visível), e também simula a limpeza que `trySetDescription` já aplica hoje
  * (`stripHtmlForPlainText`, em mercadolivre-products-sync.service.ts) — mostra se ainda sobra
- * alguma tag depois de limpar, pra confirmar com certeza se o problema é a mesma causa já
- * corrigida (deploy pendente) ou uma causa NOVA que a limpeza atual não cobre.
+ * alguma tag/emoji/seletor de variação depois de limpar, pra confirmar com certeza se o problema
+ * é a mesma causa já corrigida (deploy pendente) ou uma causa NOVA que a limpeza atual não cobre.
+ *
+ * IMPORTANTE: a função abaixo é uma CÓPIA da de `mercadolivre-products-sync.service.ts` (esse
+ * arquivo compila fora do Nest, sem acesso ao módulo) — sempre que a de lá mudar, atualizar aqui
+ * também, senão este diagnóstico mostra um resultado desatualizado (já aconteceu uma vez: esta
+ * cópia ficou sem a remoção de emoji por uma rodada inteira, escondendo a causa real).
  *
  * Uso:
  *   npm run check-product-description --workspace=@ecommerce-manager/api -- "pedaço do nome do produto"
@@ -16,8 +21,7 @@ import { PrismaClient } from '@ecommerce-manager/database';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Cópia fiel de `stripHtmlForPlainText` (mercadolivre-products-sync.service.ts) — só pra
-// diagnóstico, nunca importada de lá (esse arquivo compila fora do Nest, sem acesso ao módulo).
+// Cópia fiel de `stripHtmlForPlainText` (mercadolivre-products-sync.service.ts) — ver aviso acima.
 function stripHtmlForPlainText(text: string): string {
   return text
     .replace(/<\/(p|div|li)>/gi, '\n')
@@ -29,6 +33,10 @@ function stripHtmlForPlainText(text: string): string {
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/[\p{Extended_Pictographic}\p{Variation_Selector}]/gu, '')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]{2,}/g, ' ').trim())
+    .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -75,8 +83,11 @@ async function main() {
       console.log(`    ${JSON.stringify(product.description)}`);
 
       const stripped = stripHtmlForPlainText(product.description);
-      const tagsLeft = /<[^>]+>/.test(stripped);
-      console.log(`  Depois de stripHtmlForPlainText (${tagsLeft ? 'AINDA SOBRA TAG — bug não coberto pela limpeza atual' : 'nenhuma tag restante'}):`);
+      const problems: string[] = [];
+      if (/<[^>]+>/.test(stripped)) problems.push('AINDA SOBRA TAG');
+      if (/\p{Extended_Pictographic}/u.test(stripped)) problems.push('AINDA SOBRA EMOJI');
+      if (/\p{Variation_Selector}/u.test(stripped)) problems.push('AINDA SOBRA SELETOR DE VARIAÇÃO (invisível)');
+      console.log(`  Depois de stripHtmlForPlainText (${problems.length ? problems.join(' + ') + ' — bug não coberto pela limpeza atual' : 'limpo'}):`);
       console.log(`    ${JSON.stringify(stripped)}`);
     }
   } finally {

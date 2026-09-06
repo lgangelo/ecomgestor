@@ -61,7 +61,15 @@ const MAX_PRODUCTS_PER_CYCLE = 50;
  * aceitam sem problema — nunca usar esta função pra descrição de outro canal). `\p{Extended_
  * Pictographic}` (Unicode property escape, cobre emoji de qualquer faixa, inclusive os de par
  * substituto/"surrogate pair" como 🎨) é a forma correta e completa de remover isso em JS, sem
- * manter uma lista de faixas Unicode na mão. */
+ * manter uma lista de faixas Unicode na mão.
+ *
+ * ACHADO REAL (3ª rodada, mesmo método — algumas variantes continuavam falhando mesmo sem emoji
+ * visível nenhum): emoji como "⚠️"/"🛍️" são na verdade DOIS caracteres — o emoji base (removido
+ * por `\p{Extended_Pictographic}`) seguido de um SELETOR DE VARIAÇÃO invisível (U+FE0F, pede
+ * "renderize isso como emoji colorido") que sobrava sozinho, sem o emoji base, e continuava
+ * batendo na mesma validação — invisível em qualquer impressão/log, por isso passou despercebido
+ * na 2ª rodada. `\p{Variation_Selector}` cobre essa e as demais variantes de seletor de variação
+ * Unicode, nunca precisa listar U+FE0F/U+FE00 etc. na mão. */
 function stripHtmlForPlainText(text: string): string {
   return text
     .replace(/<\/(p|div|li)>/gi, '\n')
@@ -73,7 +81,7 @@ function stripHtmlForPlainText(text: string): string {
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
-    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[\p{Extended_Pictographic}\p{Variation_Selector}]/gu, '')
     .split('\n')
     .map((line) => line.replace(/[ \t]{2,}/g, ' ').trim())
     .join('\n')

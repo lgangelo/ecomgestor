@@ -284,6 +284,23 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
   );
 
   it(
+    'ACHADO REAL (3ª rodada, mesmo produto ainda falhava mesmo sem emoji visível): remove o SELETOR DE ' +
+      'VARIAÇÃO invisível (U+FE0F) que sobra depois de emoji tipo "⚠️"/"🛍️" — o emoji base some, mas o ' +
+      'seletor sozinho continuava batendo na mesma validação, invisível em qualquer log/print',
+    async () => {
+      const variant = makeVariant();
+      const product = makeProductRow([variant], {
+        description: '<p><span>⚠️ Peça única</span></p><p><span>Garanta a sua antes que alguém leve. 🛍️</span></p>',
+      });
+      const { service, client } = makeService({ products: [product] });
+
+      await service.publishEligible(COMPANY_ID);
+
+      expect(client.setItemDescription).toHaveBeenCalledWith('MLB-NEW-1', 'Peça única\nGaranta a sua antes que alguém leve.');
+    },
+  );
+
+  it(
     'ACHADO REAL corrigido: quando setItemDescription falha, o vínculo já foi salvo (item já existe no ' +
       'Mercado Livre) — antes, essa falha abortava antes de gravar o vínculo, e o próximo ciclo criava ' +
       'um anúncio DUPLICADO do mesmo produto pra sempre (confirmado em produção: 157 anúncios duplicados)',
