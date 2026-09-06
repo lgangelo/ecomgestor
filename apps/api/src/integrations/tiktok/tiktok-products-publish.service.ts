@@ -232,11 +232,14 @@ export class TikTokProductsPublishService {
       );
     }
 
+    this.logger.log('tiktok_publish_debug_step', { step: 'antes_resolve_warehouse' });
     if (!caches.warehouseId) caches.warehouseId = await this.resolveWarehouseId(connector);
     const warehouseId = caches.warehouseId;
+    this.logger.log('tiktok_publish_debug_step', { step: 'depois_resolve_warehouse', warehouseId });
 
     let attrs = caches.attrsByCategory.get(categoryMapping.externalCategoryId);
     if (!attrs) {
+      this.logger.log('tiktok_publish_debug_step', { step: 'antes_attrs_lookup', temCache: Boolean(categoryMapping.cachedAttributes) });
       // ACHADO REAL: "Get Attributes" respondeu diferente pra chamadas IDÊNTICAS byte a byte
       // (mesma categoria, mesmo shop_cipher, mesma query) — confirmado intermitente/instável do
       // lado da TikTok, não um bug no nosso request. Usa o cache confirmado uma vez (ver
@@ -250,6 +253,7 @@ export class TikTokProductsPublishService {
           );
       caches.attrsByCategory.set(categoryMapping.externalCategoryId, attrs);
     }
+    this.logger.log('tiktok_publish_debug_step', { step: 'depois_attrs_lookup', totalAttrs: attrs.length });
     const { color: colorAttr, size: sizeAttr } = this.resolveVariationAttributes(attrs);
 
     const mainImageUrls = [product.imageUrl, ...product.images.map((i) => i.url)].filter(
@@ -257,8 +261,14 @@ export class TikTokProductsPublishService {
     );
     const mainImages: Array<{ uri: string }> = [];
     for (const url of Array.from(new Set(mainImageUrls))) {
+      // ACHADO REAL em investigação: cachear getCategoryAttributes NÃO resolveu o erro de
+      // shop_cipher — prova que a chamada de verdade nunca foi essa. Breadcrumb temporário pra
+      // confirmar se é este upload (única chamada que existe no fluxo completo e nunca no teste
+      // isolado de atributos). Remover depois de confirmado.
+      this.logger.log('tiktok_publish_debug_step', { step: 'antes_upload_main_image', url });
       const buffer = await this.fetchImageBuffer(url);
       const uploaded = await connector.uploadImage(buffer, url.split('/').pop() ?? 'capa.jpg', 'MAIN_IMAGE');
+      this.logger.log('tiktok_publish_debug_step', { step: 'depois_upload_main_image', url });
       mainImages.push({ uri: uploaded.uri });
     }
 
