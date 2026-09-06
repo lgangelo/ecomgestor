@@ -119,13 +119,20 @@ export class TikTokProductsPublishService {
     return Buffer.from(arrayBuffer);
   }
 
-  /** Formato de resposta do "Get Warehouse List" NÃO CONFIRMADO (a doc oficial não mostrou um
-   * exemplo completo) — tenta os formatos mais prováveis dado o resto da API (array direto, ou
-   * sob uma chave `warehouses`/`warehouse_list`), e cada item com `warehouse_id` ou `id`. Se nada
-   * bater, falha alto e claro (nunca inventa um id) — rode `check-tiktok-warehouses` real e
-   * ajuste este método com o formato de verdade. NÃO CONFIRMADO ainda qual devolver quando há
-   * mais de um armazém — hoje pega sempre o primeiro da lista. */
+  /** ACHADO REAL: "Get Warehouse List" exige o escopo `seller.logistics`, que o app não tem
+   * ("Access denied" confirmado contra a conta real) — enquanto o escopo não é liberado no
+   * Partner Center, usa o `warehouse_id` real que o usuário informou direto (visível no painel
+   * do vendedor), configurado via `TIKTOK_DEFAULT_WAREHOUSE_ID`. Só tenta a API quando esse valor
+   * não está configurado (útil se/quando o escopo for liberado, sem precisar de outro deploy) —
+   * formato de resposta NÃO CONFIRMADO nesse caso (a doc oficial não mostrou um exemplo completo),
+   * então tenta os formatos mais prováveis (array direto, ou sob uma chave `warehouses`/
+   * `warehouse_list`), cada item com `warehouse_id` ou `id`. Se nada bater, falha alto e claro
+   * (nunca inventa um id). NÃO CONFIRMADO ainda qual devolver quando há mais de um armazém — hoje
+   * pega sempre o primeiro da lista quando cai nesse caminho. */
   private async resolveWarehouseId(connector: Awaited<ReturnType<TikTokConnectorFactory['forCompany']>>['connector']): Promise<string> {
+    const configured = this.configService.get<string | null>('tiktok.defaultWarehouseId', { infer: true });
+    if (configured) return configured;
+
     const raw = (await connector.getWarehouses()) as Record<string, unknown>;
     const list = Array.isArray(raw)
       ? (raw as unknown[])

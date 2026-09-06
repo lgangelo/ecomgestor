@@ -33,6 +33,13 @@ export interface AppConfig {
      * Só ligar depois de rodar os scripts de diagnóstico (check-tiktok-*) contra a conta real e
      * confirmar os formatos de resposta. */
     productsSyncEnabled: boolean;
+    /** ACHADO REAL: "Get Warehouse List" exige o escopo `seller.logistics`, que o app não tem
+     * (erro "Access denied" confirmado contra a conta real) — precisa ser adicionado no Partner
+     * Center e a integração reconectada antes de a API funcionar. Enquanto isso, o usuário
+     * informou o `warehouse_id` real diretamente (visível no painel do vendedor) — quando
+     * configurado, este valor é usado direto, sem chamar a API bloqueada. Nulo = tenta
+     * `getWarehouses()` (útil se/quando o escopo for liberado, sem precisar de outro deploy). */
+    defaultWarehouseId: string | null;
   };
   shopee: {
     enabled: boolean;
@@ -139,6 +146,7 @@ export default (): AppConfig => ({
     // Default FALSE de propósito (ao contrário do Mercado Livre) — nada da publicação de produto
     // foi confirmado ainda contra uma chamada real nesta conta.
     productsSyncEnabled: process.env.TIKTOK_PRODUCTS_SYNC_ENABLED === 'true',
+    defaultWarehouseId: process.env.TIKTOK_DEFAULT_WAREHOUSE_ID ?? null,
   },
   shopee: {
     enabled: Boolean(process.env.SHOPEE_PARTNER_ID && process.env.SHOPEE_PARTNER_KEY),
