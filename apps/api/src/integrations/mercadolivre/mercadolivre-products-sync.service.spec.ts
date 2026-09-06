@@ -146,6 +146,21 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
   });
 
   it(
+    'ACHADO REAL (produto SKU LG032-2, erro item.description.type.invalid): remove tags HTML da ' +
+      'descrição antes de mandar pro Mercado Livre, que exige texto plano — descrição salva no cadastro ' +
+      'como "<p>Bolsa quadrada feminina</p>" vira texto puro',
+    async () => {
+      const variant = makeVariant();
+      const product = makeProductRow([variant], { description: '<p>Bolsa quadrada feminina</p>' });
+      const { service, client } = makeService({ products: [product] });
+
+      await service.publishEligible(COMPANY_ID);
+
+      expect(client.setItemDescription).toHaveBeenCalledWith('MLB-NEW-1', 'Bolsa quadrada feminina');
+    },
+  );
+
+  it(
     'ACHADO REAL corrigido: quando setItemDescription falha, o vínculo já foi salvo (item já existe no ' +
       'Mercado Livre) — antes, essa falha abortava antes de gravar o vínculo, e o próximo ciclo criava ' +
       'um anúncio DUPLICADO do mesmo produto pra sempre (confirmado em produção: 157 anúncios duplicados)',

@@ -22,6 +22,27 @@ const PREFERRED_LISTING_TYPE_ID = 'gold_special';
 // docs/integrations/mercado-livre.md).
 const MAX_PRODUCTS_PER_CYCLE = 50;
 
+/** ACHADO REAL (produto SKU LG032-2, erro `item.description.type.invalid`): a descrição salva no
+ * cadastro pode conter tags HTML (ex.: `<p>...</p>`) mesmo o formulário sendo um textarea puro —
+ * origem exata não confirmada (poderia ser um cadastro antigo, colado de outro sistema), mas o
+ * Mercado Livre exige texto plano em qualquer caso, diferente dos outros canais. Remove as tags
+ * só nesta fronteira (o valor original no banco não é alterado), convertendo quebras de bloco
+ * (`<p>`, `<br>`, `<div>`, `<li>`) em quebra de linha real pra não colar as frases. */
+function stripHtmlForPlainText(text: string): string {
+  return text
+    .replace(/<\/(p|div|li)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 interface ProductForSync {
   id: string;
   name: string;
@@ -365,8 +386,10 @@ export class MercadoLivreProductsSyncService {
     description: string | null,
   ): Promise<void> {
     if (!description) return;
+    const plainText = stripHtmlForPlainText(description);
+    if (!plainText) return;
     try {
-      await client.setItemDescription(itemId, description);
+      await client.setItemDescription(itemId, plainText);
       await this.clearDescriptionFailure(integrationId, variant.id);
     } catch (error) {
       const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
