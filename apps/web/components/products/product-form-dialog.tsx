@@ -37,7 +37,7 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactElement }) 
     description: '',
     categoryId: '',
     status: 'DRAFT',
-    externalMaterial: '' as '' | 'COURO' | 'PLASTICO',
+    externalMaterial: '' as '' | 'COURO' | 'PLASTICO' | 'COURVIM' | 'PALHA',
   });
 
   async function handleSubmit(e: React.FormEvent) {
@@ -152,6 +152,8 @@ export function ProductFormDialog({ trigger }: { trigger: React.ReactElement }) 
                 <SelectContent>
                   <SelectItem value="COURO">Couro</SelectItem>
                   <SelectItem value="PLASTICO">Plástico</SelectItem>
+                  <SelectItem value="COURVIM">Courvim (sintético)</SelectItem>
+                  <SelectItem value="PALHA">Palha</SelectItem>
                 </SelectContent>
               </Select>
             </div>

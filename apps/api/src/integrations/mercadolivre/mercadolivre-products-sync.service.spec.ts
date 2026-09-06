@@ -218,6 +218,40 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
   });
 
   it(
+    'DECISÃO DO USUÁRIO: mapeia COURVIM pra "Couro" (couro sintético, o mais próximo real do catálogo) — ' +
+      'PALHA fica sem enviar o atributo, já que o Mercado Livre não tem correspondente pra esse material',
+    async () => {
+      const client = makeClient();
+      client.getCategoryAttributes = jest.fn().mockResolvedValue([
+        { id: 'BRAND', values: [{ id: 'brand-generic', name: 'Generic' }] },
+        { id: 'COLOR', values: [{ id: 'color-azul', name: 'Azul' }] },
+        { id: 'EXTERNAL_MATERIAL', values: [{ id: 'material-couro', name: 'Couro' }, { id: 'material-plastico', name: 'Plástico' }] },
+      ]);
+
+      const courvim = makeVariant({ id: 'v-courvim' });
+      client.createItem.mockResolvedValueOnce({ id: 'MLB-COURVIM', status: 'active' });
+      const { service: serviceCourvim } = makeService({
+        products: [makeProductRow([courvim], { externalMaterial: 'COURVIM' })],
+        client,
+      });
+      await serviceCourvim.publishEligible(COMPANY_ID);
+      expect(client.createItem.mock.calls[0][0]).toMatchObject({
+        attributes: expect.arrayContaining([{ id: 'EXTERNAL_MATERIAL', value_id: 'material-couro' }]),
+      });
+
+      const palha = makeVariant({ id: 'v-palha' });
+      client.createItem.mockResolvedValueOnce({ id: 'MLB-PALHA', status: 'active' });
+      const { service: servicePalha } = makeService({
+        products: [makeProductRow([palha], { id: 'product-2', baseSku: 'BASE-2', externalMaterial: 'PALHA' })],
+        client,
+      });
+      await servicePalha.publishEligible(COMPANY_ID);
+      const palhaAttributes = client.createItem.mock.calls[1][0].attributes as Array<{ id: string }>;
+      expect(palhaAttributes.find((a) => a.id === 'EXTERNAL_MATERIAL')).toBeUndefined();
+    },
+  );
+
+  it(
     'ACHADO REAL (produto SKU LG032-2, erro item.description.type.invalid): remove tags HTML da ' +
       'descrição antes de mandar pro Mercado Livre, que exige texto plano — descrição salva no cadastro ' +
       'como "<p>Bolsa quadrada feminina</p>" vira texto puro',

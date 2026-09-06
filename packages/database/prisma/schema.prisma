@@ -52,6 +52,7 @@ model Company {
   products           Product[]
   categories         Category[]
   categoryFiscalProfiles CategoryFiscalProfile[]
+  categoryChannelMappings CategoryChannelMapping[]
   suppliers          Supplier[]
   stockEntries       StockEntry[]
   inventories        Inventory[]
@@ -272,11 +273,12 @@ model Category {
   parentId  String?  @map("parent_id")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  company       Company                 @relation(fields: [companyId], references: [id])
-  parent        Category?               @relation("CategoryToCategory", fields: [parentId], references: [id])
-  children      Category[]              @relation("CategoryToCategory")
+  company       Company                  @relation(fields: [companyId], references: [id])
+  parent        Category?                @relation("CategoryToCategory", fields: [parentId], references: [id])
+  children      Category[]               @relation("CategoryToCategory")
   products      Product[]
   fiscalProfiles CategoryFiscalProfile[]
+  channelMappings CategoryChannelMapping[]
 
   @@unique([companyId, name])
   @@map("categories")
@@ -326,13 +328,49 @@ enum ProductStatus {
   DRAFT
 }
 
+/// Mapeamento categoria local → categoria REAL do canal externo — pedido do usuário: produtos
+/// nascem só na nossa plataforma e são publicados automaticamente nos canais (TikTok Shop,
+/// Mercado Livre, Shopee), mas a TikTok Shop (ao contrário do Mercado Livre, que tem uma API de
+/// "prever categoria pelo título" — `predictCategory`) não tem uma forma automática confirmada de
+/// descobrir a categoria certa a partir do nome do produto. Precisa ser escolhida manualmente
+/// (rodando `check-tiktok-categories.ts` contra a conta real) e configurada aqui, uma vez por
+/// categoria local — mesmo padrão de `CategoryFiscalProfile` (categoria + canal, nunca por
+/// produto). Produto de categoria sem mapeamento configurado simplesmente não é publicado (falha
+/// visível, nunca adivinha uma categoria errada).
+model CategoryChannelMapping {
+  id                      String      @id @default(uuid())
+  companyId               String      @map("company_id")
+  categoryId              String      @map("category_id")
+  channelType             ChannelType @map("channel_type")
+  externalCategoryId      String      @map("external_category_id")
+  /// TikTok Shop: `v2` (árvore de 7 níveis, obrigatório em US/EU/SEA) ou `v1` (3 níveis, default
+  /// nas demais regiões, inclusive BR — não confirmado ainda pra esta conta). Nulo pros canais
+  /// que não têm esse conceito (ex.: Mercado Livre).
+  externalCategoryVersion String?     @map("external_category_version")
+  createdAt               DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt               DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+
+  company  Company  @relation(fields: [companyId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([categoryId, channelType])
+  @@map("category_channel_mappings")
+}
+
 /// DECISÃO DO USUÁRIO (ficha técnica do Mercado Livre, achado via GET /item/{id}/performance
 /// real: atributo EXTERNAL_MATERIAL pendente conta pra pontuação de qualidade) — só os 2 valores
 /// que a categoria Bolsas aceita de verdade (confirmado via getCategoryAttributes), nunca um
 /// texto livre que poderia não bater com o catálogo real.
+/// DECISÃO DO USUÁRIO: além de Couro/Plástico (os 2 únicos valores que o Mercado Livre aceita de
+/// verdade nesse atributo — confirmado via getCategoryAttributes), adicionados Courvim (couro
+/// sintético) e Palha, que não têm correspondente confirmado no catálogo do Mercado Livre — só
+/// organizam o cadastro internamente; ver mapeamento em EXTERNAL_MATERIAL_VALUE_NAMES
+/// (mercadolivre-products-sync.service.ts) pra saber o que é de fato enviado pra cada canal.
 enum ProductExternalMaterial {
   COURO
   PLASTICO
+  COURVIM
+  PALHA
 }
 
 model Product {

@@ -23,9 +23,15 @@ const GENDER_VALUE_NAME = 'Feminino';
 // pendente na ficha técnica): mapeia o enum cadastrado no produto pro nome exato aceito pela
 // categoria (confirmado via getCategoryAttributes: só "Couro"/"Plástico" existem pra Bolsas).
 // Nulo (nunca cadastrado) simplesmente não envia o atributo — nunca assume um valor padrão.
-const EXTERNAL_MATERIAL_VALUE_NAMES: Record<ProductExternalMaterial, string> = {
+// DECISÃO DO USUÁRIO: adicionados COURVIM e PALHA pra organizar o cadastro internamente, mesmo
+// sem correspondente confirmado no catálogo do Mercado Livre — COURVIM mapeia pra "Couro" (é
+// couro sintético, o mais próximo real); PALHA fica de fora do Record de propósito (`Partial`),
+// então simplesmente não envia o atributo pra esse material, igual um produto sem material
+// cadastrado — nunca inventa um valor que o catálogo não tem.
+const EXTERNAL_MATERIAL_VALUE_NAMES: Partial<Record<ProductExternalMaterial, string>> = {
   COURO: 'Couro',
   PLASTICO: 'Plástico',
+  COURVIM: 'Couro',
 };
 // DECISÃO DO USUÁRIO: trocado de "gold_special" (Clássico) pra "gold_pro" — confirmado via
 // GET /sites/MLB/listing_types que o nome de exibição "Premium" corresponde ao id `gold_pro`
@@ -428,8 +434,9 @@ export class MercadoLivreProductsSyncService {
     categoryId: string,
     material: ProductExternalMaterial,
   ): Promise<string | undefined> {
-    const attrs = await client.getCategoryAttributes(categoryId);
     const valueName = EXTERNAL_MATERIAL_VALUE_NAMES[material];
+    if (!valueName) return undefined;
+    const attrs = await client.getCategoryAttributes(categoryId);
     return attrs.find((a) => a.id === 'EXTERNAL_MATERIAL')?.values?.find((v) => v.name.toLowerCase() === valueName.toLowerCase())?.id;
   }
 
@@ -605,10 +612,11 @@ export class MercadoLivreProductsSyncService {
     }
     const brandValueId = await this.resolveBrandValueId(client, base.categoryId);
     const genderValueId = attrs.find((a) => a.id === 'GENDER')?.values?.find((v) => v.name.toLowerCase() === GENDER_VALUE_NAME.toLowerCase())?.id;
-    const externalMaterialValueId = product.externalMaterial
-      ? attrs
-          .find((a) => a.id === 'EXTERNAL_MATERIAL')
-          ?.values?.find((v) => v.name.toLowerCase() === EXTERNAL_MATERIAL_VALUE_NAMES[product.externalMaterial as ProductExternalMaterial].toLowerCase())?.id
+    const externalMaterialName = product.externalMaterial
+      ? EXTERNAL_MATERIAL_VALUE_NAMES[product.externalMaterial as ProductExternalMaterial]
+      : undefined;
+    const externalMaterialValueId = externalMaterialName
+      ? attrs.find((a) => a.id === 'EXTERNAL_MATERIAL')?.values?.find((v) => v.name.toLowerCase() === externalMaterialName.toLowerCase())?.id
       : undefined;
 
     const payload: MercadoLivreCreateItemInput = {

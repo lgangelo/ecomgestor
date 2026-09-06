@@ -224,6 +224,8 @@ export function ProductEditDialog({ product, trigger }: { product: ProductDetail
                 <SelectContent>
                   <SelectItem value="COURO">Couro</SelectItem>
                   <SelectItem value="PLASTICO">Plástico</SelectItem>
+                  <SelectItem value="COURVIM">Courvim (sintético)</SelectItem>
+                  <SelectItem value="PALHA">Palha</SelectItem>
                 </SelectContent>
               </Select>
             </div>

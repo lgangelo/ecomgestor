@@ -63,7 +63,7 @@ export interface ProductDetail {
   baseSku: string;
   imageUrl: string | null;
   videoUrl: string | null;
-  externalMaterial: 'COURO' | 'PLASTICO' | null;
+  externalMaterial: 'COURO' | 'PLASTICO' | 'COURVIM' | 'PALHA' | null;
   category: { id: string; name: string } | null;
   images: ProductImageDetail[];
   variants: ProductVariantDetail[];
@@ -116,7 +116,7 @@ export function useCreateProduct() {
       baseSku: string;
       imageUrl?: string;
       status?: string;
-      externalMaterial?: 'COURO' | 'PLASTICO';
+      externalMaterial?: 'COURO' | 'PLASTICO' | 'COURVIM' | 'PALHA';
     }) => apiFetch<ProductDetail>('/products', { method: 'POST', body: data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
