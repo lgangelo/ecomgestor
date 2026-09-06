@@ -75,25 +75,35 @@ export class ReportsService {
    * Seção 63 — "Precisa da sua atenção": sinais operacionais acionáveis, cada um com link para a
    * tela onde o usuário resolve. Nunca inclui um item com contagem zero (evita ruído — seção 42).
    */
+  /** Pedido do usuário: "tela de tarefas operacionais" — reaproveita exatamente esta lista (só
+   * exposta antes dentro do dashboard) via `getAttention`, agora também como página dedicada. */
+  async getAttention(companyId: string): Promise<AttentionItem[]> {
+    return this.computeAttention(companyId);
+  }
+
   private async computeAttention(companyId: string): Promise<AttentionItem[]> {
-    const [inventories, fiscalPending, unmappedOrdersCount, tiktokSyncFailedCount, mercadoLivreSyncFailedCount] = await Promise.all([
-      this.prisma.client.inventory.findMany({
-        where: { companyId },
-        select: { onHand: true, reserved: true, variant: { select: { minStock: true } } },
-      }),
-      this.fiscalService.getPending(companyId),
-      this.prisma.client.order.count({ where: { companyId, integrationSyncStatus: 'REQUIRES_MAPPING' } }),
-      // ACHADO REAL corrigido: contava TODO `SyncJob` FAILED da empresa e rotulava como "TikTok"
-      // sem checar o provider da integração dona — funcionava só por coincidência, enquanto todo
-      // SyncJob existente era mesmo do TikTok (até o Mercado Livre passar a registrar falhas de
-      // publicação de produto também). Agora conta cada provider separadamente.
-      this.prisma.client.syncJob.count({
-        where: { status: 'FAILED', integration: { companyId, provider: IntegrationProvider.TIKTOK_SHOP } },
-      }),
-      this.prisma.client.syncJob.count({
-        where: { status: 'FAILED', integration: { companyId, provider: IntegrationProvider.MERCADO_LIVRE } },
-      }),
-    ]);
+    const [inventories, fiscalPending, unmappedOrdersCount, tiktokSyncFailedCount, mercadoLivreSyncFailedCount, productsWithoutPhotoCount] =
+      await Promise.all([
+        this.prisma.client.inventory.findMany({
+          where: { companyId },
+          select: { onHand: true, reserved: true, variant: { select: { minStock: true } } },
+        }),
+        this.fiscalService.getPending(companyId),
+        this.prisma.client.order.count({ where: { companyId, integrationSyncStatus: 'REQUIRES_MAPPING' } }),
+        // ACHADO REAL corrigido: contava TODO `SyncJob` FAILED da empresa e rotulava como "TikTok"
+        // sem checar o provider da integração dona — funcionava só por coincidência, enquanto todo
+        // SyncJob existente era mesmo do TikTok (até o Mercado Livre passar a registrar falhas de
+        // publicação de produto também). Agora conta cada provider separadamente.
+        this.prisma.client.syncJob.count({
+          where: { status: 'FAILED', integration: { companyId, provider: IntegrationProvider.TIKTOK_SHOP } },
+        }),
+        this.prisma.client.syncJob.count({
+          where: { status: 'FAILED', integration: { companyId, provider: IntegrationProvider.MERCADO_LIVRE } },
+        }),
+        // Pedido do usuário (tela de tarefas operacionais): produto ATIVO sem nenhuma foto de
+        // capa — nunca conta INACTIVE/DRAFT, que não estão realmente à venda.
+        this.prisma.client.product.count({ where: { companyId, status: 'ACTIVE', imageUrl: null } }),
+      ]);
 
     // Mesmo critério de "abaixo do mínimo" do AlertsPanel — não dá para filtrar por uma
     // expressão (onHand - reserved) diretamente no Prisma, então compara em memória.
@@ -120,6 +130,7 @@ export class ReportsService {
         count: unmappedOrdersCount,
         link: '/vendas/pedidos?syncStatus=REQUIRES_MAPPING',
       },
+      { key: 'products_without_photo', label: 'produtos sem foto', count: productsWithoutPhotoCount, link: '/produtos' },
     ];
 
     return items.filter((item) => item.count > 0);

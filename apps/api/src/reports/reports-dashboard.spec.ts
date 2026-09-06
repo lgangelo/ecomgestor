@@ -33,6 +33,7 @@ interface FakePrismaConfig {
   unmappedOrdersCount: number;
   syncJobFailedCount: number;
   mercadoLivreSyncJobFailedCount?: number;
+  productsWithoutPhotoCount?: number;
 }
 
 function makeFakePrisma(config: FakePrismaConfig): PrismaService {
@@ -81,6 +82,7 @@ function makeFakePrisma(config: FakePrismaConfig): PrismaService {
       marketplaceFee: { groupBy: async () => [] },
       inventory: { findMany: async () => config.inventories },
       integration: { findMany: async () => config.integrations },
+      product: { count: async () => config.productsWithoutPhotoCount ?? 0 },
       syncJob: {
         count: async ({ where }: { where: { integration?: { provider?: string } } }) =>
           where.integration?.provider === 'MERCADO_LIVRE'
@@ -229,6 +231,7 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
       integrations: [],
       unmappedOrdersCount: 3,
       syncJobFailedCount: 0,
+      productsWithoutPhotoCount: 7,
     });
     const fiscal = makeFakeFiscalService({ salesWithoutInvoice: [{ id: '1' }, { id: '2' }], returnsWithoutDocument: [] });
     const service = new ReportsService(prisma, fiscal);
@@ -240,7 +243,27 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     expect(byKey.get('low_stock')).toBe(1);
     expect(byKey.get('fiscal_pending')).toBe(2);
     expect(byKey.get('tiktok_unmapped')).toBe(3);
+    // Pedido do usuário (tela de tarefas operacionais): produtos ativos sem foto de capa.
+    expect(byKey.get('products_without_photo')).toBe(7);
     expect(byKey.has('tiktok_sync_failed')).toBe(false); // count 0 nunca aparece (seção 63)
+  });
+
+  it('getAttention expõe a mesma lista de "precisa da sua atenção" como página dedicada (tela de tarefas operacionais)', async () => {
+    const prisma = makeFakePrisma({
+      orders: [],
+      returnsAmount: 0,
+      inventories: [],
+      integrations: [],
+      unmappedOrdersCount: 0,
+      syncJobFailedCount: 0,
+      productsWithoutPhotoCount: 5,
+    });
+    const fiscal = makeFakeFiscalService({ salesWithoutInvoice: [], returnsWithoutDocument: [] });
+    const service = new ReportsService(prisma, fiscal);
+
+    const attention = await service.getAttention('company-1');
+
+    expect(attention.find((a) => a.key === 'products_without_photo')?.count).toBe(5);
   });
 
   it('gráfico principal e canais reconciliam com o card de receita líquida (mesma base: nunca soma order.total)', async () => {

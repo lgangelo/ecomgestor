@@ -20,6 +20,15 @@ export class ReportsController {
     return this.reportsService.getDashboard(user.companyId, query);
   }
 
+  /** Pedido do usuário: "tela de tarefas operacionais" — a mesma lista de "Precisa da sua
+   * atenção" do dashboard, exposta sem precisar carregar todo o resto do dashboard (cards/
+   * gráficos/canais), pra uma página dedicada e mais fácil de acessar. */
+  @Get('attention')
+  @RequirePermissions(PERMISSIONS.REPORT_READ)
+  getAttention(@CurrentUser() user: AuthenticatedUser) {
+    return this.reportsService.getAttention(user.companyId);
+  }
+
   @Get('sales-export')
   @RequirePermissions(PERMISSIONS.REPORT_READ)
   async exportSales(

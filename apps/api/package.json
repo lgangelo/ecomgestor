@@ -21,6 +21,7 @@
     "list-orders-for-month": "node dist/cli/list-orders-for-month.js",
     "check-product-variants": "node dist/cli/check-product-variants.js",
     "check-product-images": "node dist/cli/check-product-images.js",
+    "check-product-description": "node dist/cli/check-product-description.js",
     "check-tiktok-product-detail": "node dist/cli/check-tiktok-product-detail.js",
     "check-tiktok-order-detail": "node dist/cli/check-tiktok-order-detail.js",
     "manually-link-order-item": "node dist/cli/manually-link-order-item.js",

@@ -73,3 +73,14 @@ export function useDashboard(filters: DashboardFilters) {
     queryFn: () => apiFetch<DashboardResponse>(`/reports/dashboard${query}`),
   });
 }
+
+/** Pedido do usuário: "tela de tarefas operacionais" — mesma lista de "Precisa da sua atenção",
+ * numa página dedicada, sem depender de carregar todo o dashboard. Atualiza sozinha de tempos em
+ * tempos, já que o usuário costuma deixar essa tela aberta enquanto resolve as pendências. */
+export function useAttention() {
+  return useQuery({
+    queryKey: ['reports', 'attention'],
+    queryFn: () => apiFetch<AttentionItem[]>('/reports/attention'),
+    refetchInterval: 60_000,
+  });
+}

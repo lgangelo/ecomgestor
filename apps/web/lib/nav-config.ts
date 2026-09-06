@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard,
+  ListChecks,
   ShoppingCart,
   Package,
   Wallet,
@@ -26,6 +27,7 @@ export interface NavGroup {
 
 export const NAV_GROUPS: NavGroup[] = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/', permission: 'report.read' },
+  { label: 'Tarefas operacionais', icon: ListChecks, href: '/tarefas', permission: 'report.read' },
   {
     label: 'Vendas',
     icon: ShoppingCart,
