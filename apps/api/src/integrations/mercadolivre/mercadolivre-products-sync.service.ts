@@ -43,6 +43,23 @@ function stripHtmlForPlainText(text: string): string {
     .trim();
 }
 
+/** ACHADO REAL (pedido do usuário): a comparação de cor contra o catálogo do Mercado Livre era só
+ * `toLowerCase()`, então "Marrom claro" (espaço) x "Marrom-claro" (hífen) ou "Caqui" (sem acento)
+ * x "Cáqui" (com acento) — cadastrados na nossa plataforma, mas grafados ligeiramente diferente
+ * do catálogo — falhavam mesmo sendo a MESMA cor. Ignora acento e trata espaço/hífen como
+ * equivalentes só para esta comparação (nunca pra decidir o que enviar — o valor enviado
+ * continua sendo sempre o `value_id` exato do catálogo). Nomes genuinamente diferentes (ex.:
+ * "Prata" x "Prateado", "Borgonha" x "Bordô") continuam sem casar, e é o certo: essas exigem
+ * decisão manual de qual cor do catálogo corresponde. */
+function normalizeColorName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, '-');
+}
+
 interface ProductForSync {
   id: string;
   name: string;
@@ -418,7 +435,7 @@ export class MercadoLivreProductsSyncService {
       const attrs = await client.getCategoryAttributes(categoryId);
       const colorValueId = attrs
         .find((a) => a.id === 'COLOR')
-        ?.values?.find((v) => v.name.toLowerCase() === variant.color!.toLowerCase())?.id;
+        ?.values?.find((v) => normalizeColorName(v.name) === normalizeColorName(variant.color!))?.id;
       if (!colorValueId) {
         const message = `Cor "${variant.color}" não encontrada na lista de valores de COLOR da categoria ${categoryId} — o item base ficou sem a etiqueta de cor, o que impede o Mercado Livre de agrupá-lo com as outras cores.`;
         this.logger.warn('mercadolivre_base_color_not_found', { operation: 'tag_base_item_color', itemId, categoryId, color: variant.color });
@@ -482,7 +499,7 @@ export class MercadoLivreProductsSyncService {
   ): Promise<void> {
     const attrs = await client.getCategoryAttributes(base.categoryId);
     const colorAttribute = attrs.find((a) => a.id === 'COLOR');
-    const colorValueId = colorAttribute?.values?.find((v) => v.name.toLowerCase() === (variant.color ?? '').toLowerCase())?.id;
+    const colorValueId = colorAttribute?.values?.find((v) => normalizeColorName(v.name) === normalizeColorName(variant.color ?? ''))?.id;
     if (!colorValueId) {
       throw new Error(`Cor "${variant.color}" não encontrada na lista de valores da categoria ${base.categoryId}.`);
     }

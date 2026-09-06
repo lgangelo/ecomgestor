@@ -265,6 +265,26 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
   });
 
   it(
+    'ACHADO REAL (pedido do usuário): casa a cor mesmo com diferença de acento ou hífen/espaço contra o ' +
+      'catálogo (ex.: "Marrom claro" cadastrado com espaço casa com "Marrom-claro" do Mercado Livre, que usa ' +
+      'hífen) — antes exigia bater exatamente, letra por letra',
+    async () => {
+      const marromClaro = makeVariant({ id: 'v-marrom-claro', sku: 'SKU-MARROM-CLARO', color: 'Marrom claro' });
+      const client = makeClient();
+      client.getCategoryAttributes = jest.fn().mockResolvedValue([
+        { id: 'BRAND', values: [{ id: 'brand-generic', name: 'Generic' }] },
+        { id: 'COLOR', values: [{ id: 'color-marrom-claro', name: 'Marrom-claro' }] },
+      ]);
+      client.createItem.mockResolvedValueOnce({ id: 'MLB-BASE', status: 'active' });
+      const { service } = makeService({ products: [makeProductRow([marromClaro])], client });
+
+      await service.publishEligible(COMPANY_ID);
+
+      expect(client.updateItem).toHaveBeenCalledWith('MLB-BASE', { attributes: [{ id: 'COLOR', value_id: 'color-marrom-claro' }] });
+    },
+  );
+
+  it(
     'ACHADO REAL (pedido do usuário): quando o item base nasce sem a cor marcada (cor sem correspondência ' +
       'no catálogo, ex.: "Mostarda"), registra a falha como SyncJob pra aparecer na tela de Jobs/Falhas',
     async () => {
