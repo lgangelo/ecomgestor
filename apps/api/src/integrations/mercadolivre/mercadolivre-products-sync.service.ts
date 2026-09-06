@@ -1051,7 +1051,10 @@ export class MercadoLivreProductsSyncService {
   /** Para vínculos já confirmados: recalcula o snapshot (preço, descrição, fotos, status) e só
    * envia ao Mercado Livre o que mudou desde o último push (comparação por hash — nunca só
    * `updatedAt`, porque alterar a galeria de fotos hoje não toca `Product.updatedAt`). */
-  async syncPublished(companyId: string): Promise<{ updated: number; failed: number; unchanged: number }> {
+  async syncPublished(
+    companyId: string,
+    options: { force?: boolean } = {},
+  ): Promise<{ updated: number; failed: number; unchanged: number }> {
     const integration = await this.credentialsService.requireIntegration(companyId);
     if (!integration.channelId) return { updated: 0, failed: 0, unchanged: 0 };
     const channelId = integration.channelId;
@@ -1063,7 +1066,9 @@ export class MercadoLivreProductsSyncService {
         externalProductId: { not: null },
         syncStatus: { in: [ChannelMappingSyncStatus.CONFIRMED, ChannelMappingSyncStatus.AUTO_MATCHED] },
       },
-      take: MAX_PRODUCTS_PER_CYCLE,
+      // Modo forçado (`options.force`) processa o catálogo publicado inteiro numa só chamada —
+      // sem o limite por ciclo, usado só pra reprocessar tudo manualmente uma vez.
+      ...(options.force ? {} : { take: MAX_PRODUCTS_PER_CYCLE }),
     });
     if (mappings.length === 0) return { updated: 0, failed: 0, unchanged: 0 };
 
@@ -1141,7 +1146,7 @@ export class MercadoLivreProductsSyncService {
       const fiscalPayload = this.buildFiscalInformationPayload(product, variant, fiscalProfile);
 
       const hash = this.snapshotHash(product, variant, fiscalPayload);
-      if (hash === mapping.lastPushedSnapshotHash) {
+      if (!options.force && hash === mapping.lastPushedSnapshotHash) {
         unchanged++;
         continue;
       }

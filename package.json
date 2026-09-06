@@ -79,7 +79,8 @@
     "sync-tiktok-status": "npm run sync-tiktok-status --workspace=@ecommerce-manager/api --",
     "check-mercadolivre-fiscal-information": "npm run check-mercadolivre-fiscal-information --workspace=@ecommerce-manager/api --",
     "send-mercadolivre-fiscal-information": "npm run send-mercadolivre-fiscal-information --workspace=@ecommerce-manager/api --",
-    "check-mercadolivre-item-id": "npm run check-mercadolivre-item-id --workspace=@ecommerce-manager/api --"
+    "check-mercadolivre-item-id": "npm run check-mercadolivre-item-id --workspace=@ecommerce-manager/api --",
+    "force-resync-mercadolivre-published": "npm run force-resync-mercadolivre-published --workspace=@ecommerce-manager/api --"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.18.0",
