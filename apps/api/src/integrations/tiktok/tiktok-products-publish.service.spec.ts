@@ -139,8 +139,8 @@ describe('TikTokProductsPublishService.buildProductPayload', () => {
   });
 
   it(
-    'ACHADO REAL (Get Attributes respondeu diferente pra chamadas idênticas byte a byte): usa o ' +
-      'cache confirmado (cachedAttributes) sem chamar getCategoryAttributes ao vivo',
+    'usa o cache confirmado (cachedAttributes) sem chamar getCategoryAttributes ao vivo — evita ' +
+      'uma chamada por publicação pra uma categoria já confirmada',
     async () => {
       const variant = makeVariant({ color: 'Azul' });
       const connector = makeConnector();
@@ -202,4 +202,32 @@ describe('TikTokProductsPublishService.buildProductPayload', () => {
     expect(connector.uploadImage).toHaveBeenCalledWith(expect.any(Buffer), 'capa.jpg', 'MAIN_IMAGE');
     expect(payload.main_images).toEqual([{ uri: 'tos-fake-uri' }]);
   });
+
+  it(
+    'ACHADO REAL (payload de teste real): nunca repete a mesma foto em main_images quando URLs ' +
+      'locais diferentes (capa + galeria) voltam do upload com o mesmo uri da TikTok (dedup do ' +
+      'lado deles pelo conteúdo do arquivo)',
+    async () => {
+      const variant = makeVariant();
+      const connector = makeConnector();
+      // Mock padrão já devolve o MESMO uri fixo pra toda chamada — simula duas fotos com URL de
+      // origem diferente, mesmo conteúdo, que a TikTok devolve com o uri idêntico.
+      const { service } = makeService({
+        products: [
+          makeProductRow([variant], {
+            imageUrl: 'https://cdn.example.com/capa.jpg',
+            images: [{ url: 'https://cdn.example.com/capa-duplicada.jpg', position: 1 }],
+          }),
+        ],
+        connector,
+      });
+
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) }) as unknown as typeof fetch;
+
+      const payload = await service.buildProductPayload(COMPANY_ID, 'product-1');
+
+      expect(connector.uploadImage).toHaveBeenCalledTimes(2);
+      expect(payload.main_images).toEqual([{ uri: 'tos-fake-uri' }]);
+    },
+  );
 });

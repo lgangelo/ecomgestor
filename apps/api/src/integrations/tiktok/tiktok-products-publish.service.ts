@@ -254,10 +254,18 @@ export class TikTokProductsPublishService {
     const mainImageUrls = [product.imageUrl, ...product.images.map((i) => i.url)].filter(
       (url): url is string => url != null && /^https?:\/\//.test(url),
     );
+    // ACHADO REAL (payload de teste real): duas fotos com URLs locais DIFERENTES (ex.: a capa
+    // salva separado de uma foto idêntica também presente na galeria) voltaram do upload com o
+    // MESMO `uri` da TikTok — o dedup por string de URL (acima) não pega esse caso, já que as
+    // origens são distintas; a TikTok parece deduplicar pelo conteúdo do arquivo do lado dela.
+    // Sem isso, a mesma foto ocuparia duas vagas da galeria (`main_images` aceita só 9) à toa.
+    const seenUris = new Set<string>();
     const mainImages: Array<{ uri: string }> = [];
     for (const url of Array.from(new Set(mainImageUrls))) {
       const buffer = await this.fetchImageBuffer(url);
       const uploaded = await connector.uploadImage(buffer, url.split('/').pop() ?? 'capa.jpg', 'MAIN_IMAGE');
+      if (seenUris.has(uploaded.uri)) continue;
+      seenUris.add(uploaded.uri);
       mainImages.push({ uri: uploaded.uri });
     }
 
