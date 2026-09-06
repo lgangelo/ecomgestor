@@ -105,7 +105,7 @@ export function DashboardView() {
 
           <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
             <RevenueByPeriodChart data={data.charts.revenueByPeriod} />
-            <AttentionSection items={data.attention} />
+            <AttentionSection items={data.attention.filter((item) => item.count > 0)} />
             <SalesByChannelChart data={data.charts.salesByChannel} />
             <ProductsRankingTable data={data.charts.products} />
           </div>

@@ -4,7 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { AttentionItem } from '@/hooks/use-reports';
 
 /** Seção 63 da Fase 4 — "Precisa da sua atenção": cada item é clicável e leva direto para a tela
- * onde o usuário resolve. Só aparece quando há algo para resolver (a API já filtra count = 0). */
+ * onde o usuário resolve. Só aparece quando há algo para resolver — a API agora devolve TODOS os
+ * itens (inclusive os OK, pra tela de Tarefas Operacionais), então quem filtra `count > 0` aqui é
+ * o `dashboard-view.tsx`, pra este widget compacto continuar só ocupando espaço quando necessário. */
 export function AttentionSection({ items }: { items: AttentionItem[] }) {
   if (items.length === 0) {
     return (

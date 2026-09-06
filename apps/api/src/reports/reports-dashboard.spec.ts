@@ -34,6 +34,10 @@ interface FakePrismaConfig {
   syncJobFailedCount: number;
   mercadoLivreSyncJobFailedCount?: number;
   productsWithoutPhotoCount?: number;
+  productsWithoutVideoCount?: number;
+  /** Quantidade de fotos na GALERIA (nunca a capa) de cada produto ativo COM capa — um produto
+   * com capa + 1 foto de galeria = 2 fotos no total, ainda abaixo do mínimo de 3. */
+  productsGalleryImageCounts?: number[];
 }
 
 function makeFakePrisma(config: FakePrismaConfig): PrismaService {
@@ -82,7 +86,11 @@ function makeFakePrisma(config: FakePrismaConfig): PrismaService {
       marketplaceFee: { groupBy: async () => [] },
       inventory: { findMany: async () => config.inventories },
       integration: { findMany: async () => config.integrations },
-      product: { count: async () => config.productsWithoutPhotoCount ?? 0 },
+      product: {
+        count: async ({ where }: { where: { imageUrl?: unknown; videoUrl?: unknown } }) =>
+          'videoUrl' in where ? (config.productsWithoutVideoCount ?? 0) : (config.productsWithoutPhotoCount ?? 0),
+        findMany: async () => (config.productsGalleryImageCounts ?? []).map((images) => ({ _count: { images } })),
+      },
       syncJob: {
         count: async ({ where }: { where: { integration?: { provider?: string } } }) =>
           where.integration?.provider === 'MERCADO_LIVRE'
@@ -220,33 +228,40 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     },
   );
 
-  it('precisa da sua atenção: só lista itens com contagem > 0', async () => {
-    const prisma = makeFakePrisma({
-      orders: [],
-      returnsAmount: 0,
-      inventories: [
-        { onHand: 1, reserved: 0, variant: { sku: 'SKU-1', minStock: 5, product: { name: 'Baixo estoque' } } },
-        { onHand: 10, reserved: 0, variant: { sku: 'SKU-2', minStock: 2, product: { name: 'Estoque ok' } } },
-      ],
-      integrations: [],
-      unmappedOrdersCount: 3,
-      syncJobFailedCount: 0,
-      productsWithoutPhotoCount: 7,
-    });
-    const fiscal = makeFakeFiscalService({ salesWithoutInvoice: [{ id: '1' }, { id: '2' }], returnsWithoutDocument: [] });
-    const service = new ReportsService(prisma, fiscal);
+  it(
+    'PEDIDO DO USUÁRIO: computeAttention devolve TODOS os itens, inclusive count 0 (a tela de Tarefas ' +
+      'Operacionais mostra os checks em dia também, não só as pendências) — quem filtra count > 0 agora ' +
+      'é o widget compacto do dashboard principal, no frontend',
+    async () => {
+      const prisma = makeFakePrisma({
+        orders: [],
+        returnsAmount: 0,
+        inventories: [
+          { onHand: 1, reserved: 0, variant: { sku: 'SKU-1', minStock: 5, product: { name: 'Baixo estoque' } } },
+          { onHand: 10, reserved: 0, variant: { sku: 'SKU-2', minStock: 2, product: { name: 'Estoque ok' } } },
+        ],
+        integrations: [],
+        unmappedOrdersCount: 3,
+        syncJobFailedCount: 0,
+        productsWithoutPhotoCount: 7,
+      });
+      const fiscal = makeFakeFiscalService({ salesWithoutInvoice: [{ id: '1' }, { id: '2' }], returnsWithoutDocument: [] });
+      const service = new ReportsService(prisma, fiscal);
 
-    const result = await service.getDashboard('company-1', { dateFrom: '2026-08-01', dateTo: '2026-08-31' });
-    const attention = (result as { attention: Array<{ key: string; count: number }> }).attention;
-    const byKey = new Map(attention.map((a) => [a.key, a.count]));
+      const result = await service.getDashboard('company-1', { dateFrom: '2026-08-01', dateTo: '2026-08-31' });
+      const attention = (result as { attention: Array<{ key: string; count: number }> }).attention;
+      const byKey = new Map(attention.map((a) => [a.key, a.count]));
 
-    expect(byKey.get('low_stock')).toBe(1);
-    expect(byKey.get('fiscal_pending')).toBe(2);
-    expect(byKey.get('tiktok_unmapped')).toBe(3);
-    // Pedido do usuário (tela de tarefas operacionais): produtos ativos sem foto de capa.
-    expect(byKey.get('products_without_photo')).toBe(7);
-    expect(byKey.has('tiktok_sync_failed')).toBe(false); // count 0 nunca aparece (seção 63)
-  });
+      expect(byKey.get('low_stock')).toBe(1);
+      expect(byKey.get('fiscal_pending')).toBe(2);
+      expect(byKey.get('tiktok_unmapped')).toBe(3);
+      // Pedido do usuário (tela de tarefas operacionais): produtos ativos sem foto de capa.
+      expect(byKey.get('products_without_photo')).toBe(7);
+      // count 0 continua aparecendo agora (estado "OK" na tela de Tarefas Operacionais).
+      expect(byKey.get('tiktok_sync_failed')).toBe(0);
+      expect(byKey.has('tiktok_sync_failed')).toBe(true);
+    },
+  );
 
   it('getAttention expõe a mesma lista de "precisa da sua atenção" como página dedicada (tela de tarefas operacionais)', async () => {
     const prisma = makeFakePrisma({
@@ -264,6 +279,48 @@ describe('ReportsService.getDashboard (Fase 4, item C)', () => {
     const attention = await service.getAttention('company-1');
 
     expect(attention.find((a) => a.key === 'products_without_photo')?.count).toBe(5);
+  });
+
+  it(
+    'ACHADO REAL (GET /item/{id}/performance real, "UP_PICTURES"): conta separado quem tem foto mas ainda ' +
+      'não chegou nas 3 recomendadas — nunca conta de novo quem já está em "sem foto nenhuma"',
+    async () => {
+      const prisma = makeFakePrisma({
+        orders: [],
+        returnsAmount: 0,
+        inventories: [],
+        integrations: [],
+        unmappedOrdersCount: 0,
+        syncJobFailedCount: 0,
+        // 3 produtos ativos COM capa: galeria com 0, 1 e 2 fotos — logo 1 (capa) + galeria: 1, 2, 3.
+        // Só os dois primeiros (1 e 2 fotos no total) ficam abaixo do mínimo de 3.
+        productsGalleryImageCounts: [0, 1, 2],
+      });
+      const fiscal = makeFakeFiscalService({ salesWithoutInvoice: [], returnsWithoutDocument: [] });
+      const service = new ReportsService(prisma, fiscal);
+
+      const attention = await service.getAttention('company-1');
+
+      expect(attention.find((a) => a.key === 'products_few_photos')?.count).toBe(2);
+    },
+  );
+
+  it('PEDIDO DO USUÁRIO: aponta produtos ativos sem vídeo como oportunidade de qualidade (não falha)', async () => {
+    const prisma = makeFakePrisma({
+      orders: [],
+      returnsAmount: 0,
+      inventories: [],
+      integrations: [],
+      unmappedOrdersCount: 0,
+      syncJobFailedCount: 0,
+      productsWithoutVideoCount: 12,
+    });
+    const fiscal = makeFakeFiscalService({ salesWithoutInvoice: [], returnsWithoutDocument: [] });
+    const service = new ReportsService(prisma, fiscal);
+
+    const attention = await service.getAttention('company-1');
+
+    expect(attention.find((a) => a.key === 'products_without_video')?.count).toBe(12);
   });
 
   it('gráfico principal e canais reconciliam com o card de receita líquida (mesma base: nunca soma order.total)', async () => {

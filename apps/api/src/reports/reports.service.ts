@@ -26,7 +26,11 @@ interface PeriodOrder {
   fiscalDocuments: Array<{ id: string }>;
 }
 
-/** Item de "Precisa da sua atenção" (seção 63 da Fase 4) — só aparece quando count > 0. */
+/** Item de "Precisa da sua atenção" (seção 63 da Fase 4). Pedido do usuário: a tela de Tarefas
+ * Operacionais (`/tarefas`) mostra TODOS os itens, inclusive os que estão em dia (`count === 0`,
+ * sinalizados com um estado visual "OK" em vez de esconder — confirma que o check rodou, não só
+ * silêncio). O widget compacto do dashboard principal continua filtrando `count > 0` no
+ * frontend (`dashboard-view.tsx`), pra não ocupar espaço à toa ali — só a tela dedicada mudou. */
 export interface AttentionItem {
   key: string;
   label: string;
@@ -82,28 +86,47 @@ export class ReportsService {
   }
 
   private async computeAttention(companyId: string): Promise<AttentionItem[]> {
-    const [inventories, fiscalPending, unmappedOrdersCount, tiktokSyncFailedCount, mercadoLivreSyncFailedCount, productsWithoutPhotoCount] =
-      await Promise.all([
-        this.prisma.client.inventory.findMany({
-          where: { companyId },
-          select: { onHand: true, reserved: true, variant: { select: { minStock: true } } },
-        }),
-        this.fiscalService.getPending(companyId),
-        this.prisma.client.order.count({ where: { companyId, integrationSyncStatus: 'REQUIRES_MAPPING' } }),
-        // ACHADO REAL corrigido: contava TODO `SyncJob` FAILED da empresa e rotulava como "TikTok"
-        // sem checar o provider da integração dona — funcionava só por coincidência, enquanto todo
-        // SyncJob existente era mesmo do TikTok (até o Mercado Livre passar a registrar falhas de
-        // publicação de produto também). Agora conta cada provider separadamente.
-        this.prisma.client.syncJob.count({
-          where: { status: 'FAILED', integration: { companyId, provider: IntegrationProvider.TIKTOK_SHOP } },
-        }),
-        this.prisma.client.syncJob.count({
-          where: { status: 'FAILED', integration: { companyId, provider: IntegrationProvider.MERCADO_LIVRE } },
-        }),
-        // Pedido do usuário (tela de tarefas operacionais): produto ATIVO sem nenhuma foto de
-        // capa — nunca conta INACTIVE/DRAFT, que não estão realmente à venda.
-        this.prisma.client.product.count({ where: { companyId, status: 'ACTIVE', imageUrl: null } }),
-      ]);
+    const [
+      inventories,
+      fiscalPending,
+      unmappedOrdersCount,
+      tiktokSyncFailedCount,
+      mercadoLivreSyncFailedCount,
+      productsWithoutPhotoCount,
+      productsForPhotoCount,
+      productsWithoutVideoCount,
+    ] = await Promise.all([
+      this.prisma.client.inventory.findMany({
+        where: { companyId },
+        select: { onHand: true, reserved: true, variant: { select: { minStock: true } } },
+      }),
+      this.fiscalService.getPending(companyId),
+      this.prisma.client.order.count({ where: { companyId, integrationSyncStatus: 'REQUIRES_MAPPING' } }),
+      // ACHADO REAL corrigido: contava TODO `SyncJob` FAILED da empresa e rotulava como "TikTok"
+      // sem checar o provider da integração dona — funcionava só por coincidência, enquanto todo
+      // SyncJob existente era mesmo do TikTok (até o Mercado Livre passar a registrar falhas de
+      // publicação de produto também). Agora conta cada provider separadamente.
+      this.prisma.client.syncJob.count({
+        where: { status: 'FAILED', integration: { companyId, provider: IntegrationProvider.TIKTOK_SHOP } },
+      }),
+      this.prisma.client.syncJob.count({
+        where: { status: 'FAILED', integration: { companyId, provider: IntegrationProvider.MERCADO_LIVRE } },
+      }),
+      // Pedido do usuário (tela de tarefas operacionais): produto ATIVO sem nenhuma foto de
+      // capa — nunca conta INACTIVE/DRAFT, que não estão realmente à venda.
+      this.prisma.client.product.count({ where: { companyId, status: 'ACTIVE', imageUrl: null } }),
+      // ACHADO REAL (GET /item/{id}/performance real, achado "UP_PICTURES"): o Mercado Livre pede
+      // pelo menos 3 fotos por anúncio pra pontuação de qualidade — conta separado de
+      // `products_without_photo` (que já cobre 0 fotos) pra nunca contar o mesmo produto duas
+      // vezes: aqui só quem já tem PELO MENOS 1 foto mas ainda não chegou em 3.
+      this.prisma.client.product.findMany({
+        where: { companyId, status: 'ACTIVE', imageUrl: { not: null } },
+        select: { _count: { select: { images: true } } },
+      }),
+      // Pedido do usuário: agora que dá pra salvar vídeo do produto, aparece como oportunidade de
+      // qualidade (não é uma falha — o vídeo é opcional em todos os canais).
+      this.prisma.client.product.count({ where: { companyId, status: 'ACTIVE', videoUrl: null } }),
+    ]);
 
     // Mesmo critério de "abaixo do mínimo" do AlertsPanel — não dá para filtrar por uma
     // expressão (onHand - reserved) diretamente no Prisma, então compara em memória.
@@ -113,6 +136,10 @@ export class ReportsService {
     // sempre mostravam no máximo 50 mesmo quando o total real era maior. `salesWithoutInvoiceCount`/
     // `returnsWithoutDocumentCount` são contagens de verdade (sem limite).
     const fiscalPendingCount = fiscalPending.salesWithoutInvoiceCount + fiscalPending.returnsWithoutDocumentCount;
+
+    // Capa (1, já garantida pelo `where: imageUrl not null` acima) + galeria — nunca conta quem
+    // ainda não chegou em 3.
+    const fewPhotosCount = productsForPhotoCount.filter((p) => 1 + p._count.images < 3).length;
 
     const items: AttentionItem[] = [
       { key: 'low_stock', label: 'produtos com estoque baixo', count: belowMinimumCount, link: '/produtos/estoque' },
@@ -131,9 +158,11 @@ export class ReportsService {
         link: '/vendas/pedidos?syncStatus=REQUIRES_MAPPING',
       },
       { key: 'products_without_photo', label: 'produtos sem foto', count: productsWithoutPhotoCount, link: '/produtos' },
+      { key: 'products_few_photos', label: 'produtos com menos de 3 fotos', count: fewPhotosCount, link: '/produtos' },
+      { key: 'products_without_video', label: 'produtos sem vídeo', count: productsWithoutVideoCount, link: '/produtos' },
     ];
 
-    return items.filter((item) => item.count > 0);
+    return items;
   }
 
   private async fetchReturnsAmount(companyId: string, start: Date, end: Date, channelId?: string): Promise<number> {
