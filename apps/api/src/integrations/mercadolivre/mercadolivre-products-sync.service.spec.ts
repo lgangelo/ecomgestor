@@ -23,6 +23,8 @@ interface TestVariant {
   suggestedPrice: number;
   imageUrl: string | null;
   inventory: { onHand: number; reserved: number } | null;
+  barcode: string | null;
+  costHistory: Array<{ cost: number }>;
   createdAt: Date;
 }
 
@@ -36,6 +38,11 @@ function makeVariant(overrides: Partial<TestVariant> = {}): TestVariant {
     suggestedPrice: overrides.suggestedPrice ?? 100,
     imageUrl: overrides.imageUrl ?? null,
     inventory: overrides.inventory === undefined ? { onHand: 10, reserved: 0 } : overrides.inventory,
+    barcode: overrides.barcode ?? null,
+    // Dados fiscais (Enviar Dados Fiscais) — sem custo cadastrado por padrão, igual a maioria dos
+    // testes existentes que nunca tratam disso; `costHistory` sempre precisa existir como array
+    // (o código de verdade sempre inclui isso via Prisma).
+    costHistory: overrides.costHistory ?? [],
     createdAt: new Date(),
   };
 }
@@ -47,6 +54,7 @@ function makeProductRow(variants: ReturnType<typeof makeVariant>[], overrides: P
     description: overrides.description ?? 'Descrição',
     status: overrides.status ?? 'ACTIVE',
     baseSku: overrides.baseSku ?? 'BASE-1',
+    categoryId: overrides.categoryId === undefined ? null : overrides.categoryId,
     imageUrl: overrides.imageUrl ?? 'https://cdn.example.com/capa.jpg',
     externalMaterial: overrides.externalMaterial ?? null,
     images: overrides.images ?? [],
@@ -66,6 +74,7 @@ function makeClient() {
     setItemDescription: jest.fn().mockResolvedValue(undefined),
     getItem: jest.fn(),
     updateItem: jest.fn().mockResolvedValue({}),
+    setFiscalInformation: jest.fn().mockResolvedValue({}),
   };
 }
 
@@ -90,11 +99,15 @@ function makeService(opts: {
   const syncJobCreate = jest.fn();
   const syncJobUpdate = jest.fn();
   const syncJobDeleteMany = jest.fn();
+  // Nulo por padrão — a maioria dos testes não configura perfil fiscal nenhum, então
+  // `tryFiscalInformation` nunca chama a API de verdade (payload sai `undefined`).
+  const fiscalProfileFindUnique = jest.fn().mockResolvedValue(null);
   const prisma = {
     client: {
       product: { findMany: productFindMany },
       channelProductMapping: { findMany: mappingFindMany, upsert: mappingUpsert, update: mappingUpdate, findUnique: mappingFindUnique },
       productVariant: { findMany: variantFindMany, findFirst: variantFindFirst },
+      categoryFiscalProfile: { findUnique: fiscalProfileFindUnique },
       syncJob: { findFirst: syncJobFindFirst, create: syncJobCreate, update: syncJobUpdate, deleteMany: syncJobDeleteMany },
     },
   };
@@ -127,6 +140,7 @@ function makeService(opts: {
     syncJobUpdate,
     syncJobDeleteMany,
     variantFindFirst,
+    fiscalProfileFindUnique,
   };
 }
 
@@ -748,6 +762,93 @@ describe('MercadoLivreProductsSyncService.syncPublished', () => {
     );
   });
 
+  it(
+    'ACHADO REAL (API "Enviar Dados Fiscais" confirmada pelo usuário): envia os dados fiscais ' +
+      'quando a categoria tem CategoryFiscalProfile configurado e a variação tem custo cadastrado',
+    async () => {
+      const variant = makeVariant({ barcode: '7891234567890', costHistory: [{ cost: 45.5 }] });
+      const product = makeProductRow([variant], { categoryId: 'category-1' });
+      const client = makeClient();
+      const { service, fiscalProfileFindUnique } = makeService({
+        products: [product],
+        existingMappings: [
+          { variantId: variant.id, externalProductId: 'MLB-1', syncStatus: ChannelMappingSyncStatus.CONFIRMED },
+        ],
+        client,
+      });
+      fiscalProfileFindUnique.mockResolvedValue({
+        ncm: '42022210',
+        cest: null,
+        exTipi: null,
+        csosn: '102',
+        unidadeMedida: 'UN',
+        origem: '0',
+        fichaConteudoImportacao: null,
+      });
+
+      await service.syncPublished(COMPANY_ID);
+
+      expect(client.setFiscalInformation).toHaveBeenCalledWith({
+        sku: 'SKU-1',
+        title: 'Bolsa Teste',
+        type: 'single',
+        measurement_unit: 'UN',
+        cost: 45.5,
+        tax_information: {
+          ncm: '42022210',
+          origin_type: 'reseller',
+          origin_detail: '0',
+          csosn: '102',
+          ean: '7891234567890',
+        },
+      });
+    },
+  );
+
+  it('nunca envia dados fiscais quando a categoria não tem CategoryFiscalProfile configurado (nunca inventa dado)', async () => {
+    const variant = makeVariant({ costHistory: [{ cost: 45.5 }] });
+    const product = makeProductRow([variant]);
+    const client = makeClient();
+    const { service } = makeService({
+      products: [product],
+      existingMappings: [
+        { variantId: variant.id, externalProductId: 'MLB-1', syncStatus: ChannelMappingSyncStatus.CONFIRMED },
+      ],
+      client,
+    });
+    // `fiscalProfileFindUnique` já resolve `null` por padrão em `makeService`.
+
+    await service.syncPublished(COMPANY_ID);
+
+    expect(client.setFiscalInformation).not.toHaveBeenCalled();
+  });
+
+  it('nunca envia dados fiscais quando a variação não tem custo cadastrado (nunca inventa um valor)', async () => {
+    const variant = makeVariant({ costHistory: [] });
+    const product = makeProductRow([variant], { categoryId: 'category-1' });
+    const client = makeClient();
+    const { service, fiscalProfileFindUnique } = makeService({
+      products: [product],
+      existingMappings: [
+        { variantId: variant.id, externalProductId: 'MLB-1', syncStatus: ChannelMappingSyncStatus.CONFIRMED },
+      ],
+      client,
+    });
+    fiscalProfileFindUnique.mockResolvedValue({
+      ncm: '42022210',
+      cest: null,
+      exTipi: null,
+      csosn: '102',
+      unidadeMedida: 'UN',
+      origem: '0',
+      fichaConteudoImportacao: null,
+    });
+
+    await service.syncPublished(COMPANY_ID);
+
+    expect(client.setFiscalInformation).not.toHaveBeenCalled();
+  });
+
   it('não chama a API quando o snapshot não mudou desde o último push (hash já salvo bate)', async () => {
     const variant = makeVariant();
     const product = makeProductRow([variant]);
@@ -798,6 +899,8 @@ describe('MercadoLivreProductsSyncService.syncPublished', () => {
         suggestedPrice: variant.suggestedPrice,
         imageUrl: variant.imageUrl,
         inventory: { onHand: 10, reserved: 0 },
+        barcode: null,
+        costHistory: [],
         product,
       },
     ]);

@@ -119,6 +119,38 @@ export interface MercadoLivreCreatedItem {
   status?: string;
 }
 
+/** Payload de `POST /items/fiscal_information` — CONFIRMADO via documentação oficial
+ * (developers.mercadolivre.com.br/pt_br/envio-dos-dados-fiscais, atualizada em 18/05/2026),
+ * ainda NÃO CONFIRMADO contra uma chamada real nesta conta. `sku` é o identificador (bate com o
+ * `SELLER_SKU` já gravado no item na criação — nunca precisa do `item_id`/`variation_id`
+ * separado). DECISÃO DO USUÁRIO: empresa é Simples Nacional (compra pronto, não fabrica) —
+ * `tax_rule_id` (só Regime Normal) nunca é enviado, `csosn` sempre é, `origin_type` é sempre
+ * `"reseller"`. */
+export interface MercadoLivreFiscalInformationInput {
+  sku: string;
+  title: string;
+  type: 'single' | 'bundle';
+  measurement_unit?: string;
+  cost: number;
+  tax_information: {
+    ncm: string;
+    origin_type: 'manufacturer' | 'reseller' | 'imported';
+    /** Código "Origem da Mercadoria" da NF-e (0-8) — mesmo valor já cadastrado em
+     * `CategoryFiscalProfile.origem`. */
+    origin_detail: string;
+    /** Só Regime Normal — Simples Nacional deixa em branco (nunca envia este campo). */
+    tax_rule_id?: number;
+    /** Só Simples Nacional — Regime Normal deixa em branco. */
+    csosn?: string;
+    cest?: string;
+    fci?: string;
+    ex_tipi?: string;
+    ean?: string;
+    net_weight?: number;
+    gross_weight?: number;
+  };
+}
+
 /** Item de `order_items[]` — CONFIRMADO contra uma chamada real em 2026-09-05 (a partir da VM de
  * produção, ver docs/integrations/mercado-livre.md seção 4). Campos abaixo são exatamente os que
  * vieram na resposta real; qualquer campo novo visto numa chamada futura deve ser adicionado aqui

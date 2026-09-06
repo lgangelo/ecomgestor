@@ -4,6 +4,7 @@ import {
   MercadoLivreCategoryPrediction,
   MercadoLivreCreateItemInput,
   MercadoLivreCreatedItem,
+  MercadoLivreFiscalInformationInput,
   MercadoLivreOrder,
   MercadoLivreOrderSearchResult,
   MercadoLivreShipment,
@@ -147,6 +148,14 @@ export class MercadoLivreClient {
    * mercado-livre.md); primeira tentativa deve vir de um script de diagnóstico. */
   async updateItem(itemId: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.request('PUT', `/items/${itemId}`, { body: input });
+  }
+
+  /** "Enviar Dados Fiscais" — CONFIRMADO via documentação oficial (developers.mercadolivre.com.br/
+   * pt_br/envio-dos-dados-fiscais), NÃO CONFIRMADO ainda contra uma chamada real nesta conta.
+   * Identifica o SKU pelo `sku` no corpo (bate com o `SELLER_SKU` já gravado na criação do item) —
+   * nunca precisa do `item_id` separado. */
+  async setFiscalInformation(input: MercadoLivreFiscalInformationInput): Promise<Record<string, unknown>> {
+    return this.request('POST', '/items/fiscal_information', { body: input });
   }
 
   /** Busca pedidos por vendedor — CONFIRMADO contra uma chamada real em produção em 2026-09-05

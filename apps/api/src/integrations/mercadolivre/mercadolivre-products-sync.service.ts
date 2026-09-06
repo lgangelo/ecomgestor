@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ChannelMappingSyncStatus, ProductExternalMaterial } from '@ecommerce-manager/database';
-import { MercadoLivreApiError, MercadoLivreCreateItemInput, MercadoLivreCreatedItem } from '@ecommerce-manager/integrations';
+import { ChannelMappingSyncStatus, ChannelType, ProductExternalMaterial } from '@ecommerce-manager/database';
+import { MercadoLivreApiError, MercadoLivreCreateItemInput, MercadoLivreCreatedItem, MercadoLivreFiscalInformationInput } from '@ecommerce-manager/integrations';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../audit/audit.service';
 import { AppLoggerService } from '../../common/logger/app-logger.service';
@@ -45,6 +45,13 @@ const PREFERRED_LISTING_TYPE_ID = 'gold_pro';
 // um ciclo inteiro nem estourar o rate limit estimado (~1500 req/min, não confirmado — ver
 // docs/integrations/mercado-livre.md).
 const MAX_PRODUCTS_PER_CYCLE = 50;
+
+// DECISÃO DO USUÁRIO: Venticelli Bolsas é Simples Nacional e compra pronto (nacional) pra
+// revender, nunca fabrica — `origin_type` do "Enviar Dados Fiscais" é sempre "reseller"
+// (developers.mercadolivre.com.br/pt_br/envio-dos-dados-fiscais). `origin_detail` continua vindo
+// do código "Origem da Mercadoria" (0-8) já cadastrado em `CategoryFiscalProfile.origem` — são
+// dois campos DIFERENTES, nunca confundir.
+const FISCAL_ORIGIN_TYPE = 'reseller';
 
 /** ACHADO REAL (produto SKU LG032-2, erro `item.description.type.invalid`): a descrição salva no
  * cadastro pode conter tags HTML (ex.: `<p>...</p>`) mesmo o formulário sendo um textarea puro —
@@ -152,6 +159,7 @@ interface ProductForSync {
   description: string | null;
   status: string;
   baseSku: string;
+  categoryId: string | null;
   imageUrl: string | null;
   externalMaterial: string | null;
   images: Array<{ url: string; position: number }>;
@@ -164,6 +172,8 @@ interface ProductForSync {
     suggestedPrice: unknown;
     imageUrl: string | null;
     inventory: { onHand: number; reserved: number } | null;
+    barcode: string | null;
+    latestCost: unknown;
   }>;
 }
 
@@ -216,13 +226,21 @@ export class MercadoLivreProductsSyncService {
    * correção. Ao trocar a fórmula do hash, todo produto já publicado passa a bater "mudou" no
    * próximo ciclo (o hash salvo antes nunca vai bater com o novo formato), reenviando as fotos
    * certas em lote, sem precisar de um script avulso de backfill. */
-  private snapshotHash(product: ProductForSync, variant: ProductForSync['variants'][number]): string {
+  private snapshotHash(
+    product: ProductForSync,
+    variant: ProductForSync['variants'][number],
+    fiscalPayload: MercadoLivreFiscalInformationInput | undefined,
+  ): string {
     const snapshot = {
       price: this.publishedPrice(variant.suggestedPrice),
       description: product.description ?? '',
       pictures: this.pictures(product, variant).map((p) => p.source),
       productStatus: product.status,
       variantStatus: variant.status,
+      // Inclui os dados fiscais no hash — mudar o perfil fiscal da categoria, o custo da
+      // variação, ou cadastrar o código de barras precisa disparar um reenvio, igual qualquer
+      // outra mudança relevante.
+      fiscal: fiscalPayload ?? null,
     };
     return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
   }
@@ -248,13 +266,84 @@ export class MercadoLivreProductsSyncService {
     return Array.from(new Set(urls)).map((source) => ({ source }));
   }
 
+  /** Busca `CategoryFiscalProfile` (canal Mercado Livre) pra categoria do produto — cacheado por
+   * ciclo (várias variações costumam repetir a mesma categoria), nunca busca de novo à toa. */
+  private async resolveFiscalProfile(
+    categoryId: string | null,
+    cache: Map<string, { ncm: string; cest: string | null; exTipi: string | null; csosn: string; unidadeMedida: string; origem: string; fichaConteudoImportacao: string | null } | null>,
+  ) {
+    if (!categoryId) return null;
+    if (cache.has(categoryId)) return cache.get(categoryId) ?? null;
+    const profile = await this.prisma.client.categoryFiscalProfile.findUnique({
+      where: { categoryId_channelType: { categoryId, channelType: ChannelType.MERCADO_LIVRE } },
+    });
+    cache.set(categoryId, profile);
+    return profile;
+  }
+
+  /** Monta o payload de "Enviar Dados Fiscais" (`POST /items/fiscal_information`) — devolve
+   * `undefined` (nunca lança) quando faltar dado essencial: categoria sem `CategoryFiscalProfile`
+   * configurado pro Mercado Livre (produto simplesmente não recebe dados fiscais ainda, precisa
+   * configurar a categoria primeiro — mesmo padrão do `set-category-channel-mapping` da TikTok) ou
+   * variação sem custo cadastrado (`cost` é campo central do payload, nunca inventa um valor). */
+  private buildFiscalInformationPayload(
+    product: ProductForSync,
+    variant: ProductForSync['variants'][number],
+    fiscalProfile: { ncm: string; cest: string | null; exTipi: string | null; csosn: string; unidadeMedida: string; origem: string; fichaConteudoImportacao: string | null } | null,
+  ): MercadoLivreFiscalInformationInput | undefined {
+    if (!fiscalProfile) return undefined;
+    if (variant.latestCost == null) return undefined;
+
+    return {
+      sku: variant.sku,
+      // A doc de "Enviar Dados Fiscais" não confirma um limite de tamanho pra `title` — reaproveita
+      // o limite de 60 já CONFIRMADO pro título/family_name da criação do item (mesmo produto),
+      // caução razoável até confirmar contra uma chamada real.
+      title: product.name.length > 60 ? product.name.slice(0, 60) : product.name,
+      type: 'single',
+      measurement_unit: fiscalProfile.unidadeMedida,
+      cost: Number(variant.latestCost),
+      tax_information: {
+        ncm: fiscalProfile.ncm,
+        origin_type: FISCAL_ORIGIN_TYPE,
+        origin_detail: fiscalProfile.origem,
+        // DECISÃO DO USUÁRIO: Simples Nacional — `csosn` sempre, `tax_rule_id` (só Regime Normal)
+        // nunca é enviado.
+        csosn: fiscalProfile.csosn,
+        ...(fiscalProfile.cest ? { cest: fiscalProfile.cest } : {}),
+        ...(fiscalProfile.exTipi ? { ex_tipi: fiscalProfile.exTipi } : {}),
+        ...(fiscalProfile.fichaConteudoImportacao ? { fci: fiscalProfile.fichaConteudoImportacao } : {}),
+        ...(variant.barcode ? { ean: variant.barcode } : {}),
+      },
+    };
+  }
+
+  /** Nunca aborta a sincronização principal (preço/foto/status) se os dados fiscais falharem —
+   * mesmo padrão não-fatal de `trySetDescription`. `payload === undefined` (categoria sem perfil
+   * fiscal configurado, ou variação sem custo) nunca é tratado como erro, só pula em silêncio. */
+  private async tryFiscalInformation(
+    client: Awaited<ReturnType<MercadoLivreConnectorFactory['forCompany']>>['client'],
+    payload: MercadoLivreFiscalInformationInput | undefined,
+  ): Promise<void> {
+    if (!payload) return;
+    try {
+      await client.setFiscalInformation(payload);
+    } catch (error) {
+      const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
+      this.logger.warn('mercadolivre_set_fiscal_information_failed', { operation: 'try_fiscal_information', sku: payload.sku, errorMessage: message });
+    }
+  }
+
   private async fetchProducts(companyId: string): Promise<ProductForSync[]> {
     const rows = await this.prisma.client.product.findMany({
       where: { companyId, status: 'ACTIVE' },
       take: MAX_PRODUCTS_PER_CYCLE,
       include: {
         images: { orderBy: { position: 'asc' } },
-        variants: { include: { inventory: true }, orderBy: { createdAt: 'asc' } },
+        variants: {
+          include: { inventory: true, costHistory: { take: 1, orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }] } },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 
@@ -264,6 +353,7 @@ export class MercadoLivreProductsSyncService {
       description: product.description,
       status: product.status,
       baseSku: product.baseSku,
+      categoryId: product.categoryId,
       imageUrl: product.imageUrl,
       externalMaterial: product.externalMaterial,
       images: product.images.map((i) => ({ url: i.url, position: i.position })),
@@ -276,6 +366,8 @@ export class MercadoLivreProductsSyncService {
         suggestedPrice: variant.suggestedPrice,
         imageUrl: variant.imageUrl,
         inventory: variant.inventory ? { onHand: variant.inventory.onHand, reserved: variant.inventory.reserved } : null,
+        barcode: variant.barcode,
+        latestCost: variant.costHistory[0]?.cost ?? null,
       })),
     }));
   }
@@ -859,6 +951,8 @@ export class MercadoLivreProductsSyncService {
       suggestedPrice: dbVariant.suggestedPrice,
       imageUrl: dbVariant.imageUrl,
       inventory: dbVariant.inventory ? { onHand: dbVariant.inventory.onHand, reserved: dbVariant.inventory.reserved } : null,
+      barcode: dbVariant.barcode,
+      latestCost: null as unknown,
     };
     const product: ProductForSync = {
       id: dbVariant.product.id,
@@ -866,6 +960,7 @@ export class MercadoLivreProductsSyncService {
       description: dbVariant.product.description,
       status: dbVariant.product.status,
       baseSku: dbVariant.product.baseSku,
+      categoryId: dbVariant.product.categoryId,
       imageUrl: dbVariant.product.imageUrl,
       externalMaterial: dbVariant.product.externalMaterial,
       images: dbVariant.product.images.map((i) => ({ url: i.url, position: i.position })),
@@ -954,7 +1049,11 @@ export class MercadoLivreProductsSyncService {
     if (missingProductIds.length > 0) {
       const inactiveVariants = await this.prisma.client.productVariant.findMany({
         where: { id: { in: missingProductIds } },
-        include: { product: { include: { images: { orderBy: { position: 'asc' } } } }, inventory: true },
+        include: {
+          product: { include: { images: { orderBy: { position: 'asc' } } } },
+          inventory: true,
+          costHistory: { take: 1, orderBy: [{ effectiveDate: 'desc' }, { createdAt: 'desc' }] },
+        },
       });
       for (const v of inactiveVariants) {
         const p = v.product;
@@ -964,6 +1063,7 @@ export class MercadoLivreProductsSyncService {
           description: p.description,
           status: p.status,
           baseSku: p.baseSku,
+          categoryId: p.categoryId,
           imageUrl: p.imageUrl,
           externalMaterial: p.externalMaterial,
           images: p.images.map((i) => ({ url: i.url, position: i.position })),
@@ -978,6 +1078,8 @@ export class MercadoLivreProductsSyncService {
           suggestedPrice: v.suggestedPrice,
           imageUrl: v.imageUrl,
           inventory: v.inventory ? { onHand: v.inventory.onHand, reserved: v.inventory.reserved } : null,
+          barcode: v.barcode,
+          latestCost: v.costHistory[0]?.cost ?? null,
         });
         variantToProduct.set(v.id, entry);
       }
@@ -988,6 +1090,12 @@ export class MercadoLivreProductsSyncService {
     let updated = 0;
     let failed = 0;
     let unchanged = 0;
+    // Cache por ciclo — várias variações costumam repetir a mesma categoria, nunca busca o
+    // perfil fiscal de novo à toa pra cada uma.
+    const fiscalProfileCache = new Map<
+      string,
+      { ncm: string; cest: string | null; exTipi: string | null; csosn: string; unidadeMedida: string; origem: string; fichaConteudoImportacao: string | null } | null
+    >();
 
     for (const mapping of mappings) {
       const product = variantToProduct.get(mapping.variantId!);
@@ -998,7 +1106,10 @@ export class MercadoLivreProductsSyncService {
         continue;
       }
 
-      const hash = this.snapshotHash(product, variant);
+      const fiscalProfile = await this.resolveFiscalProfile(product.categoryId, fiscalProfileCache);
+      const fiscalPayload = this.buildFiscalInformationPayload(product, variant, fiscalProfile);
+
+      const hash = this.snapshotHash(product, variant, fiscalPayload);
       if (hash === mapping.lastPushedSnapshotHash) {
         unchanged++;
         continue;
@@ -1013,6 +1124,9 @@ export class MercadoLivreProductsSyncService {
           status: product.status === 'ACTIVE' && variant.status === 'ACTIVE' ? 'active' : 'paused',
         });
         await this.trySetDescription(client, integration.id, mapping.externalProductId!, variant, product.description);
+        // Dados fiscais (NÃO CONFIRMADO ainda contra uma chamada real) — nunca bloqueia
+        // preço/foto/status/descrição se falhar, só loga (ver `tryFiscalInformation`).
+        await this.tryFiscalInformation(client, fiscalPayload);
         await this.prisma.client.channelProductMapping.update({
           where: { channelId_variantId: { channelId, variantId: mapping.variantId! } },
           data: { lastPushedSnapshotHash: hash, lastPushedAt: new Date() },
