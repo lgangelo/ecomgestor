@@ -96,9 +96,24 @@ export class MercadoLivreClient {
 
   /** Descrição é um recurso SEPARADO do item (confirmado pela pesquisa — mercado-livre.md,
    * seção 2) — precisa desta segunda chamada depois de criar o item, nunca um campo do payload
-   * de criação. */
+   * de criação.
+   *
+   * ACHADO REAL: `POST` só funciona a PRIMEIRA vez que a descrição é definida — num item que já
+   * tem descrição (ex.: reenviar depois de editar o texto, ou o ciclo de sincronização periódica
+   * atualizando uma descrição que mudou), a API rejeita com
+   * `"Item already has a description, use PUT instead"`. Tenta `POST` primeiro (funciona pra item
+   * novo) e, só nesse erro específico, refaz a mesma chamada com `PUT` — nunca chuta qual método
+   * usar de antemão, porque não temos guardado se a descrição já foi definida antes. */
   async setItemDescription(itemId: string, plainText: string): Promise<void> {
-    await this.request('POST', `/items/${itemId}/description`, { body: { plain_text: plainText } });
+    try {
+      await this.request('POST', `/items/${itemId}/description`, { body: { plain_text: plainText } });
+    } catch (error) {
+      if (error instanceof MercadoLivreApiError && /use PUT instead/i.test(error.message)) {
+        await this.request('PUT', `/items/${itemId}/description`, { body: { plain_text: plainText } });
+        return;
+      }
+      throw error;
+    }
   }
 
   /** Detalhe completo de um item já criado — usado pra inspecionar o estado real antes/depois de

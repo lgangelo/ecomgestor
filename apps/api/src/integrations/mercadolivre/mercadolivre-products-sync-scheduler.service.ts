@@ -5,7 +5,14 @@ import { RedisService } from '../../common/redis/redis.service';
 import { AppLoggerService } from '../../common/logger/app-logger.service';
 import { MercadoLivreProductsSyncService } from './mercadolivre-products-sync.service';
 
-const LOCK_TTL_MS = 25 * 60 * 1000;
+// DECISÃO DO USUÁRIO: ciclo a cada 5 minutos (antes 30) — produtos agora são cadastrados só na
+// nossa plataforma e publicados/atualizados automaticamente quando viram ACTIVE, então o atraso
+// entre "ativar" e "aparecer no canal" precisa ser curto. O ciclo em si já é barato quando não há
+// mudança nenhuma (hash bate, `syncPublished` pula sem chamar a API) — "se não tiver alteração,
+// descarta", nunca reenvia à toa. TTL do lock reduzido junto (era 25min, quase o período antigo de
+// 30min) pra continuar sempre menor que o intervalo do cron, senão uma execução travada bloquearia
+// vários ciclos seguidos.
+const LOCK_TTL_MS = 4 * 60 * 1000;
 
 /**
  * Job periódico de publicação/atualização automática de produto (Bloco 3) — mesmo padrão do
@@ -13,10 +20,9 @@ const LOCK_TTL_MS = 25 * 60 * 1000;
  * entre réplicas), só no processo da API (nunca no worker — ver
  * `MercadoLivreProductsSyncSchedulerModule`).
  *
- * IMPORTANTE (ver docs/integrations/mercado-livre.md e o plano desta etapa): `updateItem` com
- * `price`/`pictures`/`status` num item JÁ EXISTENTE nunca foi confirmado contra uma chamada real
- * antes deste código — `MERCADOLIVRE_PRODUCTS_SYNC_ENABLED` deve ficar `false` no primeiro deploy
- * até rodar o script de confirmação manual contra 1 item real.
+ * `updateItem`/`createItem` com preço/fotos/status/atributos num item já existente já foram
+ * confirmados contra chamadas reais em produção (ver docs/integrations/mercado-livre.md) —
+ * `MERCADOLIVRE_PRODUCTS_SYNC_ENABLED` já roda ligado.
  */
 @Injectable()
 export class MercadoLivreProductsSyncSchedulerService {
@@ -29,7 +35,7 @@ export class MercadoLivreProductsSyncSchedulerService {
     this.logger.setContext('MercadoLivreProductsSyncScheduler');
   }
 
-  @Cron(CronExpression.EVERY_30_MINUTES)
+  @Cron(CronExpression.EVERY_5_MINUTES)
   async run() {
     if (!this.productsSync.isEnabled()) return;
 

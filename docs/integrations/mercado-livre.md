@@ -479,7 +479,8 @@ de ordem de rotas já documentado pra Shopee/TikTok).
 ## Achado real corrigido: anúncios duplicados na publicação automática (Bloco 3)
 
 Em produção, o mesmo produto acumulou **157 anúncios duplicados** ao longo de vários ciclos do
-agendador (a cada 30 min). Causa raiz confirmada em `mercadolivre-products-sync.service.ts`: o
+agendador (a cada 30 min na época; hoje o ciclo roda a cada 5 min). Causa raiz confirmada em
+`mercadolivre-products-sync.service.ts`: o
 vínculo (`ChannelProductMapping`) só era salvo **depois** de `client.setItemDescription` —
 qualquer falha nessa chamada (conteúdo específico da descrição rejeitado pelo Mercado Livre, nunca
 confirmado qual regra exatamente) abortava a função antes do vínculo ser gravado. O item já tinha
