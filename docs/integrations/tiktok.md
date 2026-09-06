@@ -149,6 +149,18 @@ O cache de atributos (`CategoryChannelMapping.cachedAttributes`, `cache-tiktok-c
 continua válido como otimização (evita uma chamada ao vivo por publicação pra uma categoria cujos
 atributos raramente mudam), só não foi isso que resolveu o bug de verdade.
 
+**Segunda causa real, depois do fix do `shop_cipher`**: `Create Product` recusava com "Invalid
+Parameter. Parameter `package_dimensions` is invalid because all package dimensions must be
+positive numeric values." (código `12052116`) — confirmado que `package_weight`/
+`package_dimensions` são medidas da EMBALAGEM DE ENVIO ("measured after packing the product",
+doc oficial), nunca do produto em si; nunca mandávamos o campo. Decisão do usuário: usar um padrão
+fixo (200g, 10x5x10cm) pra todo produto, já que não existe um campo próprio de "dimensões de
+envio" separado das medidas do produto no nosso cadastro.
+
+**CONFIRMADO EM PRODUÇÃO, primeiro produto real criado com sucesso**: `product_id=1737384312405525828`
+(categoria "Bolsas"/`601445`, via `publish-tiktok-item.ts`) — `Create Product` funciona de ponta a
+ponta depois dos dois fixes acima.
+
 ## 3. Host da API (produção)
 
 Confirmado: `https://open-api.tiktokglobalshop.com` é o host usado para as chamadas de API de

@@ -59,10 +59,14 @@ interface ProductForPublish {
  * chamada só — nunca precisa da ginástica de `family_name`/"item por cor" que o Mercado Livre
  * exige (modelo "User Products").
  *
- * NÃO CONFIRMADO NADA AINDA contra uma chamada real de criação nesta conta — todo método aqui é
- * best-effort a partir da documentação oficial (ver docs/integrations/tiktok.md, seção nova). O
- * kill switch (`tiktok.productsSyncEnabled`) nasce DESLIGADO por isso — ao contrário do Mercado
- * Livre, que já tinha sido confirmado antes de ligar por padrão.
+ * CONFIRMADO contra uma chamada real de criação em produção (primeiro produto real:
+ * `product_id=1737384312405525828`, categoria "Bolsas"/601445, via `publish-tiktok-item.ts`) —
+ * depois de corrigir o `shop_cipher` indevido no upload de imagem e usar um `package_weight`/
+ * `package_dimensions` fixo (ver histórico em docs/integrations/tiktok.md). `syncStatus`
+ * (ativar/desativar) só confirmado via documentação ainda, não contra uma chamada real. O kill
+ * switch (`tiktok.productsSyncEnabled`) continua DESLIGADO até o usuário decidir ligar o ciclo
+ * automático completo pra todo o catálogo — hoje só a publicação manual (`publishSingleProduct`)
+ * foi exercitada de verdade.
  */
 @Injectable()
 export class TikTokProductsPublishService {
