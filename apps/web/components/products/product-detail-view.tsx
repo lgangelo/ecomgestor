@@ -91,6 +91,8 @@ export function ProductDetailView({ productId }: { productId: string }) {
             />
             <VariantFormDialog
               productId={productId}
+              baseSku={product.baseSku}
+              nextVariantNumber={product.variants.length + 1}
               trigger={
                 <Button>
                   <Plus className="h-4 w-4" />

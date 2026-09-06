@@ -17,20 +17,39 @@ import { apiFetch } from '@/lib/api-client';
 import { useCreateVariant } from '@/hooks/use-products';
 import { ImageUploadField } from './image-upload-field';
 
-export function VariantFormDialog({ productId, trigger }: { productId: string; trigger: React.ReactElement }) {
+export function VariantFormDialog({
+  productId,
+  baseSku,
+  nextVariantNumber,
+  trigger,
+}: {
+  productId: string;
+  baseSku?: string;
+  nextVariantNumber?: number;
+  trigger: React.ReactElement;
+}) {
   const [open, setOpen] = React.useState(false);
   const createVariant = useCreateVariant(productId);
   const queryClient = useQueryClient();
   const [imageFile, setImageFile] = React.useState<File | null>(null);
 
+  const suggestedSku = baseSku ? `${baseSku}-${nextVariantNumber ?? 1}` : '';
+
   const [form, setForm] = React.useState({
-    sku: '',
+    sku: suggestedSku,
     barcode: '',
     color: '',
     size: '',
     suggestedPrice: '',
     minStock: '0',
   });
+
+  // Recalcula o SKU sugerido toda vez que o modal abre — evita repetir o mesmo sufixo se o
+  // usuário abrir de novo depois de já ter criado uma variação nesta sessão.
+  React.useEffect(() => {
+    if (open) setForm((f) => ({ ...f, sku: suggestedSku }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -50,7 +69,7 @@ export function VariantFormDialog({ productId, trigger }: { productId: string; t
     }
     setOpen(false);
     setImageFile(null);
-    setForm({ sku: '', barcode: '', color: '', size: '', suggestedPrice: '', minStock: '0' });
+    setForm({ sku: suggestedSku, barcode: '', color: '', size: '', suggestedPrice: '', minStock: '0' });
   }
 
   return (
