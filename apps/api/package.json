@@ -63,6 +63,7 @@
     "check-tiktok-upload-image": "node dist/cli/check-tiktok-upload-image.js",
     "retry-all-mercadolivre-description-failures": "node dist/cli/retry-all-mercadolivre-description-failures.js",
     "set-category-channel-mapping": "node dist/cli/set-category-channel-mapping.js",
+    "check-tiktok-publish-dry-run": "node dist/cli/check-tiktok-publish-dry-run.js",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"

@@ -1,4 +1,4 @@
-import { Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelMappingSyncStatus, ChannelType } from '@ecommerce-manager/database';
 import {
@@ -209,6 +209,123 @@ export class TikTokProductsPublishService {
     });
   }
 
+  /** Monta o payload completo de `createProduct` pra UM produto (resolve categoria, armazém,
+   * atributos de cor/tamanho, faz upload de todas as imagens de verdade) — nunca chama
+   * `createProduct` (isso fica a cargo de quem chama: `publishEligible`, no ciclo automático, ou
+   * `buildProductPayload`, no dry-run manual). Caches (`warehouseId`/`attrsByCategory`) são
+   * compartilhados entre produtos do MESMO ciclo/chamada, pra nunca buscar de novo à toa. */
+  private async buildCreateProductPayload(
+    product: ProductForPublish,
+    eligibleVariants: ProductForPublish['variants'],
+    connector: Awaited<ReturnType<TikTokConnectorFactory['forCompany']>>['connector'],
+    caches: { warehouseId?: string; attrsByCategory: Map<string, TikTokCategoryAttribute[]> },
+  ): Promise<TikTokCreateProductInput> {
+    if (!product.categoryId) {
+      throw new UnprocessableEntityException('Produto sem categoria cadastrada — não é possível descobrir a categoria da TikTok Shop.');
+    }
+    const categoryMapping = await this.prisma.client.categoryChannelMapping.findUnique({
+      where: { categoryId_channelType: { categoryId: product.categoryId, channelType: ChannelType.TIKTOK_SHOP } },
+    });
+    if (!categoryMapping) {
+      throw new UnprocessableEntityException(
+        `Categoria do produto sem mapeamento pra TikTok Shop configurado — rode set-category-channel-mapping pra categoria ${product.categoryId}.`,
+      );
+    }
+
+    if (!caches.warehouseId) caches.warehouseId = await this.resolveWarehouseId(connector);
+    const warehouseId = caches.warehouseId;
+
+    let attrs = caches.attrsByCategory.get(categoryMapping.externalCategoryId);
+    if (!attrs) {
+      attrs = await connector.getCategoryAttributes(
+        categoryMapping.externalCategoryId,
+        categoryMapping.externalCategoryVersion as 'v1' | 'v2' | undefined,
+      );
+      caches.attrsByCategory.set(categoryMapping.externalCategoryId, attrs);
+    }
+    const { color: colorAttr, size: sizeAttr } = this.resolveVariationAttributes(attrs);
+
+    const mainImageUrls = [product.imageUrl, ...product.images.map((i) => i.url)].filter(
+      (url): url is string => url != null && /^https?:\/\//.test(url),
+    );
+    const mainImages: Array<{ uri: string }> = [];
+    for (const url of Array.from(new Set(mainImageUrls))) {
+      const buffer = await this.fetchImageBuffer(url);
+      const uploaded = await connector.uploadImage(buffer, url.split('/').pop() ?? 'capa.jpg', 'MAIN_IMAGE');
+      mainImages.push({ uri: uploaded.uri });
+    }
+
+    // sku_img só pode ficar em UM tipo de atributo (o "principal", cor) — uma imagem por
+    // valor distinto, nunca repetida por SKU (achado da doc oficial).
+    const skuImageByColor = new Map<string, { uri: string }>();
+
+    const skus: TikTokCreateProductSku[] = [];
+    for (const variant of eligibleVariants) {
+      const sales_attributes = [];
+      const colorValue = this.resolveSalesAttributeValue(colorAttr, variant.color);
+      if (variant.color && colorAttr && !colorValue) {
+        throw new UnprocessableEntityException(`Cor "${variant.color}" não encontrada na lista de valores do atributo "${colorAttr.name}" desta categoria.`);
+      }
+      if (colorValue) {
+        if (variant.color && variant.imageUrl && !skuImageByColor.has(variant.color) && /^https?:\/\//.test(variant.imageUrl)) {
+          const buffer = await this.fetchImageBuffer(variant.imageUrl);
+          const uploaded = await connector.uploadImage(buffer, variant.imageUrl.split('/').pop() ?? 'cor.jpg', 'ATTRIBUTE_IMAGE');
+          skuImageByColor.set(variant.color, { uri: uploaded.uri });
+        }
+        sales_attributes.push({ ...colorValue, ...(variant.color && skuImageByColor.has(variant.color) ? { sku_img: skuImageByColor.get(variant.color) } : {}) });
+      }
+      const sizeValue = this.resolveSalesAttributeValue(sizeAttr, variant.size);
+      if (variant.size && sizeAttr && !sizeValue) {
+        throw new UnprocessableEntityException(`Tamanho "${variant.size}" não encontrado na lista de valores do atributo "${sizeAttr.name}" desta categoria.`);
+      }
+      if (sizeValue) sales_attributes.push(sizeValue);
+
+      skus.push({
+        ...(sales_attributes.length ? { sales_attributes } : {}),
+        inventory: [{ warehouse_id: warehouseId, quantity: this.available(variant) }],
+        price: { amount: String(variant.suggestedPrice), currency: 'BRL' },
+        seller_sku: variant.sku,
+      });
+    }
+
+    return {
+      title: product.name.length > 255 ? product.name.slice(0, 255) : product.name,
+      description: product.description ?? product.name,
+      category_id: categoryMapping.externalCategoryId,
+      ...(categoryMapping.externalCategoryVersion ? { category_version: categoryMapping.externalCategoryVersion as 'v1' | 'v2' } : {}),
+      main_images: mainImages,
+      skus,
+    };
+  }
+
+  /** DRY-RUN manual (pedido do usuário, antes de ligar o ciclo automático pra todo o catálogo):
+   * monta o payload de UM produto de verdade (faz upload real das imagens — só não cria o
+   * produto) e devolve pra revisão, sem nunca chamar `createProduct`. Usado pelo CLI de
+   * diagnóstico `check-tiktok-publish-dry-run`. Produto precisa estar ACTIVE com pelo menos 1
+   * variante ainda não publicada (mesma regra de elegibilidade de `publishEligible`). */
+  async buildProductPayload(companyId: string, productId: string): Promise<TikTokCreateProductInput> {
+    const integration = await this.credentialsService.requireIntegration(companyId);
+    if (!integration.channelId) throw new NotFoundException('Canal TikTok Shop ainda não conectado.');
+    const channelId = integration.channelId;
+
+    const products = await this.fetchProducts(companyId);
+    const product = products.find((p) => p.id === productId);
+    if (!product) throw new NotFoundException('Produto não encontrado, ou não está ACTIVE.');
+
+    const existingMappings = await this.prisma.client.channelProductMapping.findMany({
+      where: { channelId, variantId: { in: product.variants.map((v) => v.id) } },
+      select: { variantId: true },
+    });
+    const alreadyPublished = new Set(existingMappings.map((m) => m.variantId));
+    const eligibleVariants = product.variants.filter((v) => v.status === 'ACTIVE' && !alreadyPublished.has(v.id));
+    if (eligibleVariants.length === 0) {
+      throw new UnprocessableEntityException('Nenhuma variante elegível — todas já publicadas na TikTok Shop, ou nenhuma ACTIVE.');
+    }
+
+    const { connector } = await this.connectorFactory.forCompany(companyId);
+    return this.buildCreateProductPayload(product, eligibleVariants, connector, { attrsByCategory: new Map() });
+  }
+
   /** Publica todo produto ACTIVE ainda sem vínculo TikTok Shop (nenhuma variante mapeada) — uma
    * chamada de `createProduct` por produto, com TODAS as variações como `skus[]`. */
   async publishEligible(companyId: string): Promise<{ published: number; failed: number; skipped: number }> {
@@ -231,8 +348,7 @@ export class TikTokProductsPublishService {
     let failed = 0;
     let skipped = 0;
     // Cache por ciclo — nunca busca de novo pro mesmo warehouse/categoria dentro do mesmo lote.
-    let warehouseId: string | undefined;
-    const attrsByCategory = new Map<string, TikTokCategoryAttribute[]>();
+    const caches: { warehouseId?: string; attrsByCategory: Map<string, TikTokCategoryAttribute[]> } = { attrsByCategory: new Map() };
 
     for (const product of products) {
       const eligibleVariants = product.variants.filter((v) => v.status === 'ACTIVE' && !alreadyPublishedVariantIds.has(v.id));
@@ -242,82 +358,7 @@ export class TikTokProductsPublishService {
       }
 
       try {
-        if (!product.categoryId) {
-          throw new UnprocessableEntityException('Produto sem categoria cadastrada — não é possível descobrir a categoria da TikTok Shop.');
-        }
-        const categoryMapping = await this.prisma.client.categoryChannelMapping.findUnique({
-          where: { categoryId_channelType: { categoryId: product.categoryId, channelType: ChannelType.TIKTOK_SHOP } },
-        });
-        if (!categoryMapping) {
-          throw new UnprocessableEntityException(
-            `Categoria do produto sem mapeamento pra TikTok Shop configurado — rode set-category-channel-mapping pra categoria ${product.categoryId}.`,
-          );
-        }
-
-        if (!warehouseId) warehouseId = await this.resolveWarehouseId(connector);
-
-        let attrs = attrsByCategory.get(categoryMapping.externalCategoryId);
-        if (!attrs) {
-          attrs = await connector.getCategoryAttributes(
-            categoryMapping.externalCategoryId,
-            categoryMapping.externalCategoryVersion as 'v1' | 'v2' | undefined,
-          );
-          attrsByCategory.set(categoryMapping.externalCategoryId, attrs);
-        }
-        const { color: colorAttr, size: sizeAttr } = this.resolveVariationAttributes(attrs);
-
-        const mainImageUrls = [product.imageUrl, ...product.images.map((i) => i.url)].filter(
-          (url): url is string => url != null && /^https?:\/\//.test(url),
-        );
-        const mainImages: Array<{ uri: string }> = [];
-        for (const url of Array.from(new Set(mainImageUrls))) {
-          const buffer = await this.fetchImageBuffer(url);
-          const uploaded = await connector.uploadImage(buffer, url.split('/').pop() ?? 'capa.jpg', 'MAIN_IMAGE');
-          mainImages.push({ uri: uploaded.uri });
-        }
-
-        // sku_img só pode ficar em UM tipo de atributo (o "principal", cor) — uma imagem por
-        // valor distinto, nunca repetida por SKU (achado da doc oficial).
-        const skuImageByColor = new Map<string, { uri: string }>();
-
-        const skus: TikTokCreateProductSku[] = [];
-        for (const variant of eligibleVariants) {
-          const sales_attributes = [];
-          const colorValue = this.resolveSalesAttributeValue(colorAttr, variant.color);
-          if (variant.color && colorAttr && !colorValue) {
-            throw new UnprocessableEntityException(`Cor "${variant.color}" não encontrada na lista de valores do atributo "${colorAttr.name}" desta categoria.`);
-          }
-          if (colorValue) {
-            if (variant.color && variant.imageUrl && !skuImageByColor.has(variant.color) && /^https?:\/\//.test(variant.imageUrl)) {
-              const buffer = await this.fetchImageBuffer(variant.imageUrl);
-              const uploaded = await connector.uploadImage(buffer, variant.imageUrl.split('/').pop() ?? 'cor.jpg', 'ATTRIBUTE_IMAGE');
-              skuImageByColor.set(variant.color, { uri: uploaded.uri });
-            }
-            sales_attributes.push({ ...colorValue, ...(variant.color && skuImageByColor.has(variant.color) ? { sku_img: skuImageByColor.get(variant.color) } : {}) });
-          }
-          const sizeValue = this.resolveSalesAttributeValue(sizeAttr, variant.size);
-          if (variant.size && sizeAttr && !sizeValue) {
-            throw new UnprocessableEntityException(`Tamanho "${variant.size}" não encontrado na lista de valores do atributo "${sizeAttr.name}" desta categoria.`);
-          }
-          if (sizeValue) sales_attributes.push(sizeValue);
-
-          skus.push({
-            ...(sales_attributes.length ? { sales_attributes } : {}),
-            inventory: [{ warehouse_id: warehouseId, quantity: this.available(variant) }],
-            price: { amount: String(variant.suggestedPrice), currency: 'BRL' },
-            seller_sku: variant.sku,
-          });
-        }
-
-        const payload: TikTokCreateProductInput = {
-          title: product.name.length > 255 ? product.name.slice(0, 255) : product.name,
-          description: product.description ?? product.name,
-          category_id: categoryMapping.externalCategoryId,
-          ...(categoryMapping.externalCategoryVersion ? { category_version: categoryMapping.externalCategoryVersion as 'v1' | 'v2' } : {}),
-          main_images: mainImages,
-          skus,
-        };
-
+        const payload = await this.buildCreateProductPayload(product, eligibleVariants, connector, caches);
         const created = await connector.createProduct(payload);
         const externalProductId = String((created as Record<string, unknown>).product_id ?? '');
         if (!externalProductId) {
