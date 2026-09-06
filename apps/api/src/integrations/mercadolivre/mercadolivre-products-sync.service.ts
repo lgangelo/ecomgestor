@@ -45,7 +45,17 @@ const MAX_PRODUCTS_PER_CYCLE = 50;
  * origem exata não confirmada (poderia ser um cadastro antigo, colado de outro sistema), mas o
  * Mercado Livre exige texto plano em qualquer caso, diferente dos outros canais. Remove as tags
  * só nesta fronteira (o valor original no banco não é alterado), convertendo quebras de bloco
- * (`<p>`, `<br>`, `<div>`, `<li>`) em quebra de linha real pra não colar as frases. */
+ * (`<p>`, `<br>`, `<div>`, `<li>`) em quebra de linha real pra não colar as frases.
+ *
+ * ACHADO REAL (2ª rodada, confirmado calculando as posições exatas reclamadas por
+ * `item.description.type.invalid` contra o texto real de várias descrições em produção): mesmo
+ * SEM nenhuma tag HTML restante, o Mercado Livre continuava rejeitando — TODAS as posições
+ * reclamadas caíam exatamente em cima de um EMOJI (✨🎨📏🧵💡🚚💳👉, entre outros). O Mercado
+ * Livre considera emoji "não é texto plano", diferente dos outros canais (TikTok Shop/Shopee, que
+ * aceitam sem problema — nunca usar esta função pra descrição de outro canal). `\p{Extended_
+ * Pictographic}` (Unicode property escape, cobre emoji de qualquer faixa, inclusive os de par
+ * substituto/"surrogate pair" como 🎨) é a forma correta e completa de remover isso em JS, sem
+ * manter uma lista de faixas Unicode na mão. */
 function stripHtmlForPlainText(text: string): string {
   return text
     .replace(/<\/(p|div|li)>/gi, '\n')
@@ -57,6 +67,10 @@ function stripHtmlForPlainText(text: string): string {
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]{2,}/g, ' ').trim())
+    .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

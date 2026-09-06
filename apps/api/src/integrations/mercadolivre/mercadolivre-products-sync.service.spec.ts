@@ -233,6 +233,23 @@ describe('MercadoLivreProductsSyncService.publishEligible', () => {
   );
 
   it(
+    'ACHADO REAL (2ª rodada, confirmado calculando as posições exatas reclamadas em produção): remove ' +
+      'EMOJI da descrição também — sem nenhuma tag HTML, o Mercado Livre ainda rejeitava porque toda ' +
+      'posição reclamada caía em cima de um emoji (✨🎨📏🧵💡🚚💳👉)',
+    async () => {
+      const variant = makeVariant();
+      const product = makeProductRow([variant], {
+        description: '<p><span>✨ Destaques do produto:</span></p><p><span>🎨 Cores disponíveis:</span></p>',
+      });
+      const { service, client } = makeService({ products: [product] });
+
+      await service.publishEligible(COMPANY_ID);
+
+      expect(client.setItemDescription).toHaveBeenCalledWith('MLB-NEW-1', 'Destaques do produto:\nCores disponíveis:');
+    },
+  );
+
+  it(
     'ACHADO REAL corrigido: quando setItemDescription falha, o vínculo já foi salvo (item já existe no ' +
       'Mercado Livre) — antes, essa falha abortava antes de gravar o vínculo, e o próximo ciclo criava ' +
       'um anúncio DUPLICADO do mesmo produto pra sempre (confirmado em produção: 157 anúncios duplicados)',
