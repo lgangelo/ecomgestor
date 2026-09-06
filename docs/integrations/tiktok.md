@@ -161,6 +161,17 @@ envio" separado das medidas do produto no nosso cadastro.
 (categoria "Bolsas"/`601445`, via `publish-tiktok-item.ts`) — `Create Product` funciona de ponta a
 ponta depois dos dois fixes acima.
 
+**Investigação à parte — campos fiscais (NCM/CEST/CFOP/CSOSN/etc.) e NF-e**: o "Create Product" não
+tem nenhum campo pra isso (conferido campo a campo na doc oficial). Existe sim um endpoint real,
+`POST /fulfillment/202502/invoice/upload` ("Upload Invoice", só Brasil) — mas ele recebe o XML de
+uma NF-e JÁ EMITIDA (base64) vinculada a um pedido/pacote, não os campos fiscais do produto; é uma
+etapa de pós-venda (informar a nota pra TikTok), não de cadastro. **DECISÃO DO USUÁRIO**: hoje a
+Venticelli Bolsas emite a nota usando o emissor PRÓPRIO de cada canal (TikTok, Mercado Livre,
+Shopee) — nenhuma integração de NF-e própria existe ainda, e criar uma (SEFAZ, certificado
+digital, assinatura de XML) é um projeto grande à parte, fora de escopo por enquanto. A tela de
+"Informações fiscais" (NCM/CEST/CFOP/etc.) do Seller Center provavelmente alimenta só o emissor
+interno da própria TikTok, sem API pública equivalente encontrada.
+
 ## 3. Host da API (produção)
 
 Confirmado: `https://open-api.tiktokglobalshop.com` é o host usado para as chamadas de API de
