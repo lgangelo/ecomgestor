@@ -120,36 +120,34 @@ Paginação (`page_size`/`page_token`) vai na query string; filtros (janela de t
 no corpo JSON da requisição, mesmo que vazio (`{}`). `orders`/`{id}` (detalhe de um pedido) e os
 endpoints de finance (`statements`, `.../statement_transactions`) continuam GET.
 
-**Achado real (`Get Attributes`, publicação de produto) — RECLASSIFICADO depois de mais
-investigação**: a chamada respondia "Unexpected identifier. The 'shop_cipher' query parameter is
-not required for this request." com o parâmetro presente (código `36009004`) e "Missing
-identifier... required" (código `106013`, documentado) sem ele — o que parecia contradizer tanto a
-doc oficial (que marca `shop_cipher` como `Required` nesse endpoint) quanto o resto da integração.
+**Achado real — CAUSA REAL CONFIRMADA, upload de imagem não aceita `shop_cipher`**: uma
+investigação longa (publicação de produto, testando a categoria "Bolsas"/`601445`) começou com a
+chamada `Get Attributes` respondendo "Unexpected identifier. The 'shop_cipher' query parameter is
+not required for this request." (código `36009004`) — o que parecia contradizer a doc oficial (que
+marca `shop_cipher` como `Required` nesse endpoint). Várias hipóteses foram testadas e descartadas
+em produção, uma a uma: `shop_cipher` salvo desatualizado (descartado via
+`check-tiktok-shop-cipher.ts`, bate exatamente com um buscado na hora); categoria não-folha
+(descartado via `check-tiktok-mapped-categories.ts`, `601445` é `is_leaf: true` de verdade);
+`category_version` omitido incorretamente (descartado — funciona idêntico com e sem `v1`
+explícito); e até cachear `Get Attributes` inteiro, pulando a chamada (não resolveu — o erro
+continuou idêntico, provando que a causa nunca foi essa chamada).
 
-Duas coisas descartaram a hipótese de shop_cipher estar errado/desatualizado: (1)
-`check-tiktok-shop-cipher.ts`, rodado em produção, confirmou que o valor salvo bate exatamente com
-um buscado na hora via `Get Authorized Shops`; (2) a doc oficial da própria TikTok (página de
-"Create Product", que lista uma tabela de erros mais completa que a de "Get Attributes") confirma
-que o código `36009004` é **"invalid param error"** — um código **GENÉRICO/comum a vários
-endpoints**, não específico de `shop_cipher`. O texto da mensagem ("shop_cipher... not required")
-é só o exemplo/template que a TikTok usa pra esse código genérico — não necessariamente o parâmetro
-real que está inválido.
+A causa real só apareceu com um breadcrumb bracketing cada chamada de API dentro do fluxo de
+publicação: o erro acontecia sempre dentro de `connector.uploadImage` (upload da foto de capa),
+NUNCA em `getCategoryAttributes` — e a razão de nunca termos visto isso antes é que o script de
+diagnóstico isolado (`check-tiktok-category-attributes`) nunca fazia upload de imagem nenhuma,
+só testava atributos; por isso "funcionava isolado" e "falhava no fluxo completo" pareciam
+apontar pra categoria, quando na verdade eram dois caminhos de código totalmente diferentes.
 
-**Suspeita mais forte agora (ainda não confirmada)**: a doc do "Get Attributes" é explícita —
-"Note: It must be a leaf category" — e `set-category-channel-mapping.ts` **nunca validou isso**:
-só grava o `externalCategoryId` que a pessoa digitar, sem checar contra a árvore real da TikTok. As
-6 categorias mapeadas (ex.: "Bolsas" → `601445`) podem muito bem ser categorias de GRUPO (com
-subcategorias por baixo, tipo "Bolsa de Ombro"/"Bolsa Transversal"), não folhas de verdade — o que
-bateria exatamente com "invalid param error" só nesse endpoint (que exige folha), enquanto os
-outros endpoints confirmados (`getCategories`, busca de produto/pedido/estoque) nunca se importam
-com isso. `check-tiktok-mapped-categories.ts` foi criado pra confirmar isso — busca de novo cada
-categoria mapeada e destaca se aparecem subcategorias com `parent_id` igual ao id configurado.
+Confirmado na documentação oficial de **"Upload Product Image"** e **"Upload Product File"**: a
+query de AMBOS os endpoints lista só `app_key`/`sign`/`timestamp` — **`shop_cipher` não faz parte
+dos parâmetros aceitos por nenhum dos dois**, diferente de quase todo o resto da integração (que
+exige o parâmetro). `TikTokClient.requestMultipart` (compartilhado pelos dois uploads) mandava
+`shop_cipher` sem condição nenhuma desde sempre — corrigido pra nunca mandar.
 
-Até isso ser confirmado (ou descartado) e corrigido, a publicação automática de produto
-(`TikTokProductsPublishService`) fica bloqueada bem no primeiro produto real testado — o kill
-switch (`tiktok.productsSyncEnabled`) permanece desligado. **Nunca reverter a chamada de
-`getCategoryAttributes` pra omitir `shop_cipher` de novo** — já confirmado (via `check-tiktok-shop-cipher.ts`
-e via a doc oficial) que o parâmetro está certo; o problema é outro.
+O cache de atributos (`CategoryChannelMapping.cachedAttributes`, `cache-tiktok-category-attributes.ts`)
+continua válido como otimização (evita uma chamada ao vivo por publicação pra uma categoria cujos
+atributos raramente mudam), só não foi isso que resolveu o bug de verdade.
 
 ## 3. Host da API (produção)
 
