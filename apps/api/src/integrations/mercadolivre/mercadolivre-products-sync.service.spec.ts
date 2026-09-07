@@ -822,6 +822,33 @@ describe('MercadoLivreProductsSyncService.syncPublished', () => {
   );
 
   it(
+    'ACHADO REAL (item em revisão no Mercado Livre, "status:under_review", não aceita nenhuma ' +
+      'atualização): conta como falha só UMA vez e nunca tenta de novo (erro não é de rate limit)',
+    async () => {
+      const variant = makeVariant();
+      const product = makeProductRow([variant]);
+      const client = makeClient();
+      const underReviewError = new MercadoLivreApiError('Cannot update item MLB-1 [status:under_review, has_bids:false]', 'VALIDATION', 400, undefined, {
+        cause: [{ department: 'items', cause_id: 340, type: 'error', code: 'item.status.not_modifiable', message: 'status is not modifiable.' }],
+      });
+      client.updateItem.mockRejectedValue(underReviewError);
+      const { service, mappingUpdate } = makeService({
+        products: [product],
+        existingMappings: [
+          { variantId: variant.id, externalProductId: 'MLB-1', syncStatus: ChannelMappingSyncStatus.CONFIRMED },
+        ],
+        client,
+      });
+
+      const result = await service.syncPublished(COMPANY_ID);
+
+      expect(result).toEqual({ updated: 0, failed: 1, unchanged: 0 });
+      expect(client.updateItem).toHaveBeenCalledTimes(1);
+      expect(mappingUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
     'ACHADO REAL (sync forçado): quando o SKU já tem dados fiscais registrados (409 CONFLICT no ' +
       'POST), reenvia via PUT /items/fiscal_information/{sku} em vez de falhar em silêncio',
     async () => {

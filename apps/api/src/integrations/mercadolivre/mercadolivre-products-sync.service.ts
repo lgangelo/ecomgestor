@@ -1256,6 +1256,7 @@ export class MercadoLivreProductsSyncService {
             variantId: mapping.variantId,
             errorMessage: message,
           });
+          break;
         }
       }
     }
