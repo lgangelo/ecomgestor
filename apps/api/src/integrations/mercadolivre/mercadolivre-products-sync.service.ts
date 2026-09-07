@@ -318,6 +318,15 @@ export class MercadoLivreProductsSyncService {
     };
   }
 
+  /** ACHADO REAL (sync forçado, 2026-09-07): distingue a recusa específica do Mercado Livre em
+   * ativar um item sem estoque do lado de lá (`cause[].code === 'item.status.invalid'`) de
+   * qualquer outra falha de validação — só esta justifica reenviar sem o campo `status`. */
+  private isActivateWithoutStockError(error: unknown): boolean {
+    if (!(error instanceof MercadoLivreApiError)) return false;
+    const cause = (error.rawResponse as { cause?: Array<{ code?: string }> } | undefined)?.cause;
+    return Array.isArray(cause) && cause.some((c) => c?.code === 'item.status.invalid');
+  }
+
   /** Nunca aborta a sincronização principal (preço/foto/status) se os dados fiscais falharem —
    * mesmo padrão não-fatal de `trySetDescription`. `payload === undefined` (categoria sem perfil
    * fiscal configurado, ou variação sem custo) nunca é tratado como erro, só pula em silêncio. */
@@ -329,6 +338,22 @@ export class MercadoLivreProductsSyncService {
     try {
       await client.setFiscalInformation(payload);
     } catch (error) {
+      // ACHADO REAL (sync forçado, 2026-09-07): SKU que já tem dados fiscais registrados devolve
+      // 409 CONFLICT ("There is already a sku") no POST — confirmado via documentação oficial que
+      // atualização é feita por PUT /items/fiscal_information/{sku}, nunca reenviando o POST.
+      if (error instanceof MercadoLivreApiError && error.statusCode === 409) {
+        try {
+          await client.updateFiscalInformation(payload.sku, payload);
+          return;
+        } catch (updateError) {
+          const message =
+            updateError instanceof MercadoLivreApiError
+              ? `${updateError.message} — ${JSON.stringify(updateError.rawResponse)}`
+              : String(updateError);
+          this.logger.warn('mercadolivre_update_fiscal_information_failed', { operation: 'try_fiscal_information', sku: payload.sku, errorMessage: message });
+          return;
+        }
+      }
       const message = error instanceof MercadoLivreApiError ? `${error.message} — ${JSON.stringify(error.rawResponse)}` : String(error);
       this.logger.warn('mercadolivre_set_fiscal_information_failed', { operation: 'try_fiscal_information', sku: payload.sku, errorMessage: message });
     }
@@ -1151,22 +1176,46 @@ export class MercadoLivreProductsSyncService {
         continue;
       }
 
+      // CONFIRMADO contra chamada real (sync forçado, 2026-09-07): preço/fotos aceitam sempre;
+      // `status: 'active'` é recusado pelo Mercado Livre quando `available_quantity` ainda está
+      // zerado do lado de lá ("Is not possible to activate an item without stock", cause
+      // `item.status.invalid`) — estoque é sincronizado por outro processo (outbox, ver
+      // `mercadolivre-inventory-sync.service.ts`), que pode não ter alcançado este item ainda.
+      const desiredStatus = product.status === 'ACTIVE' && variant.status === 'ACTIVE' ? 'active' : 'paused';
+      let statusSkippedForStock = false;
       try {
-        await client.updateItem(mapping.externalProductId!, {
-          price: this.publishedPrice(variant.suggestedPrice),
-          pictures: this.pictures(product, variant),
-          // NÃO CONFIRMADO contra uma chamada real (ver script de diagnóstico de confirmação) —
-          // ver docs/integrations/mercado-livre.md antes de confiar cegamente neste campo.
-          status: product.status === 'ACTIVE' && variant.status === 'ACTIVE' ? 'active' : 'paused',
-        });
+        try {
+          await client.updateItem(mapping.externalProductId!, {
+            price: this.publishedPrice(variant.suggestedPrice),
+            pictures: this.pictures(product, variant),
+            status: desiredStatus,
+          });
+        } catch (error) {
+          if (desiredStatus !== 'active' || !this.isActivateWithoutStockError(error)) throw error;
+          // Atualiza preço/fotos mesmo sem conseguir ativar; nunca salva o hash aqui de propósito
+          // (ver abaixo) — assim o próximo ciclo tenta ativar de novo, e assim que o estoque
+          // chegar do outro lado a ativação vinga sozinha, sem ação manual.
+          statusSkippedForStock = true;
+          this.logger.warn('mercadolivre_activate_without_stock_pending', {
+            operation: 'sync_published',
+            variantId: mapping.variantId,
+            externalProductId: mapping.externalProductId,
+          });
+          await client.updateItem(mapping.externalProductId!, {
+            price: this.publishedPrice(variant.suggestedPrice),
+            pictures: this.pictures(product, variant),
+          });
+        }
         await this.trySetDescription(client, integration.id, mapping.externalProductId!, variant, product.description);
         // Dados fiscais (NÃO CONFIRMADO ainda contra uma chamada real) — nunca bloqueia
         // preço/foto/status/descrição se falhar, só loga (ver `tryFiscalInformation`).
         await this.tryFiscalInformation(client, fiscalPayload);
-        await this.prisma.client.channelProductMapping.update({
-          where: { channelId_variantId: { channelId, variantId: mapping.variantId! } },
-          data: { lastPushedSnapshotHash: hash, lastPushedAt: new Date() },
-        });
+        if (!statusSkippedForStock) {
+          await this.prisma.client.channelProductMapping.update({
+            where: { channelId_variantId: { channelId, variantId: mapping.variantId! } },
+            data: { lastPushedSnapshotHash: hash, lastPushedAt: new Date() },
+          });
+        }
         await this.audit.log({
           companyId,
           userId: null,

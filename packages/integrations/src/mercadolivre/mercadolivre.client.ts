@@ -150,12 +150,20 @@ export class MercadoLivreClient {
     return this.request('PUT', `/items/${itemId}`, { body: input });
   }
 
-  /** "Enviar Dados Fiscais" — CONFIRMADO via documentação oficial (developers.mercadolivre.com.br/
-   * pt_br/envio-dos-dados-fiscais), NÃO CONFIRMADO ainda contra uma chamada real nesta conta.
-   * Identifica o SKU pelo `sku` no corpo (bate com o `SELLER_SKU` já gravado na criação do item) —
-   * nunca precisa do `item_id` separado. */
+  /** "Enviar Dados Fiscais" (1ª vez) — CONFIRMADO contra chamada real em produção. Identifica o SKU
+   * pelo `sku` no corpo (bate com o `SELLER_SKU` já gravado na criação do item) — nunca precisa do
+   * `item_id` separado. ACHADO REAL: reenviar para um SKU que já tem dados fiscais registrados
+   * devolve 409 CONFLICT ("There is already a sku") — use `updateFiscalInformation` nesse caso
+   * (ver `MercadoLivreProductsSyncService.tryFiscalInformation`). */
   async setFiscalInformation(input: MercadoLivreFiscalInformationInput): Promise<Record<string, unknown>> {
     return this.request('POST', '/items/fiscal_information', { body: input });
+  }
+
+  /** Atualiza os dados fiscais de um SKU que já foi registrado antes — CONFIRMADO via
+   * documentação oficial (`PUT /items/fiscal_information/{sku}`, substitui o objeto inteiro,
+   * incluindo NCM/CSOSN/CEST). NÃO CONFIRMADO ainda contra uma chamada real nesta conta. */
+  async updateFiscalInformation(sku: string, input: MercadoLivreFiscalInformationInput): Promise<Record<string, unknown>> {
+    return this.request('PUT', `/items/fiscal_information/${encodeURIComponent(sku)}`, { body: input });
   }
 
   /** Busca pedidos por vendedor — CONFIRMADO contra uma chamada real em produção em 2026-09-05

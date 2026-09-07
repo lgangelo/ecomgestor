@@ -1,4 +1,5 @@
 import { ChannelMappingSyncStatus } from '@ecommerce-manager/database';
+import { MercadoLivreApiError } from '@ecommerce-manager/integrations';
 import { MercadoLivreProductsSyncService } from './mercadolivre-products-sync.service';
 import type { ConfigService } from '@nestjs/config';
 import type { PrismaService } from '../../common/prisma/prisma.service';
@@ -75,6 +76,7 @@ function makeClient() {
     getItem: jest.fn(),
     updateItem: jest.fn().mockResolvedValue({}),
     setFiscalInformation: jest.fn().mockResolvedValue({}),
+    updateFiscalInformation: jest.fn().mockResolvedValue({}),
   };
 }
 
@@ -766,6 +768,67 @@ describe('MercadoLivreProductsSyncService.syncPublished', () => {
       }),
     );
   });
+
+  it(
+    'ACHADO REAL (sync forçado): quando o Mercado Livre recusa ativar por falta de estoque do ' +
+      'lado de lá, atualiza preço/fotos mesmo assim e NUNCA salva o hash (pra tentar ativar de novo no próximo ciclo)',
+    async () => {
+      const variant = makeVariant();
+      const product = makeProductRow([variant]);
+      const client = makeClient();
+      const stockError = new MercadoLivreApiError('Validation error', 'VALIDATION', 400, undefined, {
+        cause: [{ department: 'items', cause_id: 323, type: 'error', code: 'item.status.invalid', message: 'Is not possible to activate an item without stock.' }],
+      });
+      client.updateItem.mockRejectedValueOnce(stockError).mockResolvedValueOnce({});
+      const { service, mappingUpdate } = makeService({
+        products: [product],
+        existingMappings: [
+          { variantId: variant.id, externalProductId: 'MLB-1', syncStatus: ChannelMappingSyncStatus.CONFIRMED },
+        ],
+        client,
+      });
+
+      const result = await service.syncPublished(COMPANY_ID);
+
+      expect(result).toEqual({ updated: 1, failed: 0, unchanged: 0 });
+      expect(client.updateItem).toHaveBeenCalledTimes(2);
+      expect(client.updateItem).toHaveBeenNthCalledWith(2, 'MLB-1', { price: 100, pictures: expect.any(Array) });
+      expect(mappingUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
+    'ACHADO REAL (sync forçado): quando o SKU já tem dados fiscais registrados (409 CONFLICT no ' +
+      'POST), reenvia via PUT /items/fiscal_information/{sku} em vez de falhar em silêncio',
+    async () => {
+      const variant = makeVariant({ costHistory: [{ cost: 45.5 }] });
+      const product = makeProductRow([variant], { categoryId: 'category-1' });
+      const client = makeClient();
+      client.setFiscalInformation.mockRejectedValueOnce(
+        new MercadoLivreApiError('There is already a sku: SKU-1', 'PERMANENT', 409, undefined, { error_code: '409 CONFLICT' }),
+      );
+      const { service, fiscalProfileFindUnique } = makeService({
+        products: [product],
+        existingMappings: [
+          { variantId: variant.id, externalProductId: 'MLB-1', syncStatus: ChannelMappingSyncStatus.CONFIRMED },
+        ],
+        client,
+      });
+      fiscalProfileFindUnique.mockResolvedValue({
+        ncm: '42022210',
+        cest: null,
+        exTipi: null,
+        csosn: '102',
+        unidadeMedida: 'UN',
+        origem: '0',
+        fichaConteudoImportacao: null,
+      });
+
+      await service.syncPublished(COMPANY_ID);
+
+      expect(client.updateFiscalInformation).toHaveBeenCalledWith('SKU-1', expect.objectContaining({ sku: 'SKU-1' }));
+    },
+  );
 
   it(
     'ACHADO REAL (API "Enviar Dados Fiscais" confirmada pelo usuário): envia os dados fiscais ' +
