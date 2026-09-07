@@ -798,6 +798,30 @@ describe('MercadoLivreProductsSyncService.syncPublished', () => {
   );
 
   it(
+    'ACHADO REAL (sync forçado): quando o Mercado Livre responde rate limit, espera o Retry-After ' +
+      'e tenta mais uma vez antes de contar como falha',
+    async () => {
+      const variant = makeVariant();
+      const product = makeProductRow([variant]);
+      const client = makeClient();
+      const rateLimitError = new MercadoLivreApiError('Rate limit excedido pelo Mercado Livre', 'RATE_LIMIT', 429, 0);
+      client.updateItem.mockRejectedValueOnce(rateLimitError).mockResolvedValueOnce({});
+      const { service } = makeService({
+        products: [product],
+        existingMappings: [
+          { variantId: variant.id, externalProductId: 'MLB-1', syncStatus: ChannelMappingSyncStatus.CONFIRMED },
+        ],
+        client,
+      });
+
+      const result = await service.syncPublished(COMPANY_ID);
+
+      expect(result).toEqual({ updated: 1, failed: 0, unchanged: 0 });
+      expect(client.updateItem).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it(
     'ACHADO REAL (sync forçado): quando o SKU já tem dados fiscais registrados (409 CONFLICT no ' +
       'POST), reenvia via PUT /items/fiscal_information/{sku} em vez de falhar em silêncio',
     async () => {
